@@ -308,7 +308,7 @@ export class ShowcaseAgents {
       try {
         context = this.context(a);
         if (!context.markets.length && !context.account.positions.length)
-          throw fail('等待新鲜且已核实的 BSC 候选市场');
+          throw fail(this.gateway.marketReason?.() ?? '等待新鲜且已核实的 BSC 候选市场');
       } catch (e) {
         this.status(a.id, {
           state: 'observing',

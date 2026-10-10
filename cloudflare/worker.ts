@@ -138,6 +138,8 @@ export class TradingPlatform extends DurableObject<any> {
           market: this.market.statuses()[0],
           nativeUsd: this.market.fxValue?.usd ?? null,
           nativeFxAt: this.market.fxValue?.at ?? null,
+          nativeFxSource: this.market.fxValue?.source ?? null,
+          marketService: this.market.gmgn.status(),
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
@@ -206,10 +208,11 @@ export class TradingPlatform extends DurableObject<any> {
         ] as string[];
         await this.market.refresh(tokens);
         await app.paper.tick();
-        await this.risk.tick([
-          ...tokens,
-          ...app.showcase.freshMarkets().map((m: any) => m.address),
-        ]);
+        if (!this.market.gmgn.status().limited)
+          await this.risk.tick([
+            ...tokens,
+            ...app.showcase.freshMarkets().map((m: any) => m.address),
+          ]);
         await this.market.refresh(tokens);
         await app.showcase.tick();
         await this.risk.task;

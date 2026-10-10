@@ -764,6 +764,7 @@ export async function createPlatformCore(options) {
           '/app.js': 'app.js',
           '/style.css': 'style.css',
           '/landing.css': 'landing.css',
+          '/hero-mark.svg': 'hero-mark.svg',
           '/orb.svg': 'orb.svg',
           '/agents.md': 'agents.md',
         }[path];

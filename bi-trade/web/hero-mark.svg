@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 140" fill="none">
+ <defs>
+  <linearGradient id="body" x1="22" y1="11" x2="112" y2="130" gradientUnits="userSpaceOnUse"><stop stop-color="#173e82"/><stop offset=".28" stop-color="#568edb"/><stop offset=".5" stop-color="#d2e9ff"/><stop offset=".66" stop-color="#548bd5"/><stop offset="1" stop-color="#204986"/></linearGradient>
+  <linearGradient id="edge" x1="25" y1="10" x2="90" y2="120" gradientUnits="userSpaceOnUse"><stop stop-color="#c9e4ff"/><stop offset=".53" stop-color="#406eae"/><stop offset="1" stop-color="#1a3c78"/></linearGradient>
+  <radialGradient id="dot"><stop stop-color="#d1e8ff"/><stop offset=".55" stop-color="#76a7e6"/><stop offset="1" stop-color="#3e6dab"/></radialGradient>
+ </defs>
+ <g transform="translate(21 12) rotate(-14 50 50)" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(3 5)" stroke="#183d76" stroke-width="14"><path d="M24 14V70C24 81 34 87 47 87C66 87 80 73 80 56C80 39 66 27 48 27H44"/><path d="M43 14V55C43 63 48 69 56 69C64 69 70 63 70 55C70 47 64 41 56 41"/></g>
+  <g stroke="url(#edge)" stroke-width="14"><path d="M24 14V70C24 81 34 87 47 87C66 87 80 73 80 56C80 39 66 27 48 27H44"/><path d="M43 14V55C43 63 48 69 56 69C64 69 70 63 70 55C70 47 64 41 56 41"/></g>
+  <g stroke="url(#body)" stroke-width="11"><path d="M24 14V70C24 81 34 87 47 87C66 87 80 73 80 56C80 39 66 27 48 27H44"/><path d="M43 14V55C43 63 48 69 56 69C64 69 70 63 70 55C70 47 64 41 56 41"/></g>
+  <circle cx="89" cy="14" r="6.5" fill="url(#dot)" stroke="#b3d3ff" stroke-width=".8"/>
+ </g>
+</svg>

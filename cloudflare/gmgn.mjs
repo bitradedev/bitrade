@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 const HOST = 'https://openapi.gmgn.ai',
   types = [6, 7, 1, 16, 8, 3, 9, 10, 2, 17, 18, 0];
 export const unwrap = (value) => value?.data ?? value;
@@ -13,7 +13,63 @@ export class GmgnHTTP {
     this.lastAt = saved?.lastAt ?? 0;
     this.cooldown = saved?.cooldown ?? 0;
     this.spacing = saved?.spacing ?? 3000;
+    this.failures = saved?.failures ?? 0;
+    this.errorCode = saved?.errorCode ?? null;
+    this.lastSuccessAt = saved?.lastSuccessAt ?? null;
+    this.keyId = createHash('sha256')
+      .update(key ?? '')
+      .digest('hex')
+      .slice(0, 24);
     this.cache = new Map();
+  }
+  status() {
+    return {
+      limited: this.now() < this.cooldown,
+      retryAt: this.cooldown || null,
+      errorCode: this.errorCode,
+      consecutiveLimits: this.failures,
+      spacingMs: this.spacing,
+      lastSuccessAt: this.lastSuccessAt,
+    };
+  }
+  saveBudget() {
+    this.store?.put('cloud-settings', {
+      id: 'gmgn-budget',
+      lastAt: this.lastAt,
+      cooldown: this.cooldown,
+      spacing: this.spacing,
+      failures: this.failures,
+      errorCode: this.errorCode,
+      lastSuccessAt: this.lastSuccessAt,
+    });
+  }
+  limited(response, body) {
+    const now = this.now(),
+      candidate = String(body?.error?.code ?? body?.error ?? body?.code ?? '');
+    this.errorCode = /^[A-Z_0-9]{1,80}$/.test(candidate) ? candidate : 'RATE_LIMIT';
+    this.failures++;
+    // Obey every valid server deadline, including Retry-After. Repeated bans get
+    // exponential backoff; restart and concurrent consumers cannot reset it.
+    const deadlines = [
+      body?.reset_at,
+      body?.data?.reset_at,
+      body?.error?.reset_at,
+      response.headers.get('X-RateLimit-Reset'),
+    ]
+      .map(Number)
+      .filter((x) => Number.isFinite(x) && x * 1000 > now && x * 1000 < now + 31 * 86400000)
+      .map((x) => x * 1000 + 5000);
+    const retry = response.headers.get('Retry-After');
+    if (retry) {
+      const at = /^\d+(?:\.\d+)?$/.test(retry) ? now + Number(retry) * 1000 : Date.parse(retry);
+      if (Number.isFinite(at) && at > now && at < now + 31 * 86400000) deadlines.push(at + 5000);
+    }
+    const base = this.errorCode === 'RATE_LIMIT_BANNED' ? 300000 : 65000;
+    const backoff = Math.min(3600000, base * 2 ** Math.min(this.failures - 1, 8));
+    this.cooldown = Math.max(now + backoff, ...deadlines);
+    this.spacing = Math.min(15000, Math.max(5000, this.spacing * 2));
+    this.saveBudget();
+    throw Error('GMGN 行情限频，等待额度恢复后自动重试');
   }
   request(path, params, body) {
     const task = this.tail
@@ -24,12 +80,7 @@ export class GmgnHTTP {
         const wait = Math.max(0, this.spacing - (this.now() - this.lastAt));
         if (wait) await new Promise((r) => setTimeout(r, wait));
         this.lastAt = this.now();
-        this.store?.put('cloud-settings', {
-          id: 'gmgn-budget',
-          lastAt: this.lastAt,
-          cooldown: this.cooldown,
-          spacing: this.spacing,
-        });
+        this.saveBudget();
         const url = new URL(path, HOST);
         for (const [k, v] of Object.entries({
           ...params,
@@ -53,74 +104,63 @@ export class GmgnHTTP {
           try {
             body = await response.json();
           } catch {}
-          const reset = Number(
-            body?.reset_at ??
-              body?.data?.reset_at ??
-              body?.error?.reset_at ??
-              response.headers.get('X-RateLimit-Reset'),
-          );
-          this.cooldown =
-            Number.isFinite(reset) &&
-            reset * 1000 > this.now() &&
-            reset * 1000 < this.now() + 31 * 86400000
-              ? reset * 1000 + 5000
-              : this.now() + 65000;
-          this.spacing = Math.min(15000, Math.max(5000, this.spacing * 2));
-          const candidate = String(body?.error?.code ?? body?.error ?? body?.code ?? ''),
-            errorCode = /^[A-Z_0-9]{1,80}$/.test(candidate) ? candidate : 'RATE_LIMIT';
-          this.store?.put('cloud-settings', {
-            id: 'gmgn-budget',
-            lastAt: this.lastAt,
-            cooldown: this.cooldown,
-            spacing: this.spacing,
-            errorCode,
-          });
-          throw Error('GMGN 行情限频，等待额度恢复后自动重试');
+          this.limited(response, body);
         }
         if (response.status === 401 || response.status === 403) {
           this.cooldown = this.now() + 300000;
-          this.store?.put('cloud-settings', {
-            id: 'gmgn-budget',
-            lastAt: this.lastAt,
-            cooldown: this.cooldown,
-            spacing: this.spacing,
-            errorCode: 'AUTHORIZATION_REQUIRED',
-          });
+          this.errorCode = 'AUTHORIZATION_REQUIRED';
+          this.saveBudget();
           throw Error('GMGN 行情认证或访问权限未通过，暂停请求后重试');
         }
         if (!response.ok) throw Error('GMGN 行情请求失败：HTTP ' + response.status);
         const data = await response.json();
+        if (Number(data.code) === 429) this.limited(response, data);
         if (data.code !== undefined && Number(data.code) !== 0 && Number(data.code) !== 200)
           throw Error('GMGN 行情返回错误');
-        return { ...data, _bitradeReadAt: this.now() };
+        this.cooldown = 0;
+        this.failures = 0;
+        this.errorCode = null;
+        this.lastSuccessAt = this.now();
+        this.saveBudget();
+        return { ...data, _bitradeReadAt: this.lastSuccessAt };
       });
     this.tail = task;
     return task;
   }
   cached(name, address, ttl, load) {
-    const id = name + ':' + address,
+    const id = this.keyId + ':' + name + ':' + address,
       old = this.cache.get(id);
-    if (old && this.now() - old.at < ttl) return old.task;
-    const task = load().catch((e) => {
-      this.cache.delete(id);
-      throw e;
-    });
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < ttl) return old.task;
+    const saved = this.store?.get('cloud-gmgn-cache', id);
+    if (saved && this.now() - saved.at >= 0 && this.now() - saved.at < ttl)
+      return Promise.resolve(saved.value);
+    const task = load()
+      .then((value) => {
+        const at = value._bitradeReadAt;
+        this.store?.put('cloud-gmgn-cache', { id, at, value });
+        this.cache.set(id, { at, task: Promise.resolve(value) });
+        return value;
+      })
+      .catch((e) => {
+        this.cache.delete(id);
+        throw e;
+      });
     this.cache.set(id, { at: this.now(), task });
     if (this.cache.size > 300) this.cache.delete(this.cache.keys().next().value);
     return task;
   }
   info(chain, address) {
-    return this.cached('info', address, 60000, () =>
+    return this.cached('info', chain + ':' + address, 60000, () =>
       this.request('/v1/token/info', { chain, address }),
     );
   }
   security(chain, address) {
-    return this.cached('security', address, 90000, () =>
+    return this.cached('security', chain + ':' + address, 90000, () =>
       this.request('/v1/token/security', { chain, address }),
     );
   }
   holders(chain, address) {
-    return this.cached('holders', address, 90000, () =>
+    return this.cached('holders', chain + ':' + address, 90000, () =>
       this.request('/v1/market/token_top_holders', {
         chain,
         address,
@@ -137,10 +177,12 @@ export class GmgnHTTP {
       limit: 8,
       quote_address_type: types,
     };
-    return this.request(
-      '/v1/trenches',
-      { chain: 'bsc' },
-      { version: 'v2', new_creation: section, near_completion: section, completed: section },
+    return this.cached('trenches', 'bsc', 300000, () =>
+      this.request(
+        '/v1/trenches',
+        { chain: 'bsc' },
+        { version: 'v2', new_creation: section, near_completion: section, completed: section },
+      ),
     );
   }
   close() {}

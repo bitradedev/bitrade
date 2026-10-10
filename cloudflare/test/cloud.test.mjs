@@ -7,6 +7,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {CloudStore} from '../store.mjs';
 import {CloudRpc} from '../rpc.mjs';
 import {GmgnHTTP} from '../gmgn.mjs';
+import {NativePrice,BNB_USD_FEED} from '../native-price.mjs';
 import {EncryptedVault} from '../../bi-trade/lib/vault-core.mjs';
 import {PaperDesk} from '../../bi-trade/lib/paper-desk.mjs';
 import {mergeLedger} from '../import.mjs';
@@ -33,6 +34,51 @@ test('BSC RPC denies financial methods, validates the chain and includes the act
  const wrong=new CloudRpc('https://rpc.example.com',{fetchImpl:async()=>Response.json({result:'0x1'})});await assert.rejects(wrong.block(),/主网/);
 });
 test('GMGN HTTP uses the existing read-only API schema and never sends private signing credentials',async()=>{const calls=[],g=new GmgnHTTP('dummy-api',{now:()=>Date.now()+10000* calls.length,fetchImpl:async(url,opts)=>{calls.push({url:String(url),opts});return Response.json({code:0,data:{}});}});await g.info('bsc',TOKEN);await g.holders('bsc',TOKEN);await g.trenches();assert.ok(calls.every(c=>c.opts.headers['X-APIKEY']==='dummy-api'&&!c.opts.headers['X-Signature']));assert.equal(new URL(calls[1].url).pathname,'/v1/market/token_top_holders');const body=JSON.parse(calls[2].opts.body);assert.equal(body.version,'v2');assert.equal(body.completed.limit,8);assert.ok(body.completed.quote_address_type.includes(6));});
+test('Repeated GMGN bans persist increasing backoff, honor both server deadlines and block all consumers',async t=>{
+ const {store}=fixture(t);let now=1000000,calls=0;
+ const fetchImpl=async()=>{calls++;return Response.json({code:429,error:'RATE_LIMIT_BANNED',reset_at:(now+700000)/1000},{status:429,headers:{'Retry-After':'800'}});};
+ let g=new GmgnHTTP('test',{store,now:()=>now,fetchImpl});
+ await Promise.allSettled([g.info('bsc',TOKEN),g.holders('bsc',TOKEN),g.security('bsc',TOKEN)]);
+ assert.equal(calls,1);assert.equal(g.status().retryAt,now+805000);
+ g=new GmgnHTTP('test',{store,now:()=>now,fetchImpl});await assert.rejects(g.trenches(),/限频/);assert.equal(calls,1);
+ now=g.cooldown;await assert.rejects(g.info('bsc',TOKEN),/限频/);assert.equal(g.failures,2);
+ // Third ban's own backoff exceeds the server deadline.
+ now=g.cooldown;await assert.rejects(g.info('bsc',TOKEN),/限频/);assert.equal(g.cooldown,now+1200000);
+ assert.equal(store.get('cloud-settings','gmgn-budget').errorCode,'RATE_LIMIT_BANNED');
+});
+test('GMGN success clears the limit and persistent cache keeps the original evidence time across eviction',async t=>{
+ const {store}=fixture(t);let now=1000000,calls=0;
+ const fetchImpl=async()=>{calls++;return Response.json({code:0,data:{address:TOKEN}});};
+ let g=new GmgnHTTP('test',{store,now:()=>now,fetchImpl});
+ const rows=await Promise.all([g.info('bsc',TOKEN),g.info('bsc',TOKEN)]);assert.equal(calls,1);assert.equal(rows[0]._bitradeReadAt,now);
+ now+=1000;g=new GmgnHTTP('test',{store,now:()=>now,fetchImpl});
+ assert.equal((await g.info('bsc',TOKEN))._bitradeReadAt,now-1000);assert.equal(calls,1);
+ now+=60000;await g.info('bsc',TOKEN);assert.equal(calls,2);
+ assert.equal(g.status().errorCode,null);assert.equal(g.status().lastSuccessAt,now);
+ // A replacement key cannot reuse the previous credential's response.
+ now+=10000;await new GmgnHTTP('other',{store,now:()=>now,fetchImpl}).info('bsc',TOKEN);assert.equal(calls,3);
+});
+test('Application-level 429 and malformed reset dates cannot bypass the GMGN circuit breaker',async()=>{
+ const g=new GmgnHTTP('test',{now:()=>1000000,fetchImpl:async()=>Response.json({code:429,error:'RATE_LIMIT_BANNED',reset_at:'bad'})});
+ await assert.rejects(g.info('bsc',TOKEN),/限频/);assert.equal(g.cooldown,1300000);assert.equal(g.status().limited,true);
+});
+test('Native BNB price verifies oracle identity, rounds and source age without calling GMGN',async()=>{
+ const now=1000000,calls=[];let round=[4n,76000000000n,990n,995n,4n];
+ const rpc={block:async()=>({number:42,time:now}),read:async(to,_abi,fn,_args,block)=>{calls.push({to,fn,block});return fn==='description'?'BNB / USD':fn==='decimals'?8:round;}};
+ const price=new NativePrice(rpc,{now:()=>now});const [a,b]=await Promise.all([price.read(),price.read()]);
+ assert.equal(a.usd,760);assert.equal(a.at,995000);assert.equal(a.readAt,now);assert.equal(a,b);assert.ok(calls.every(c=>c.to===BNB_USD_FEED&&c.block===42));assert.equal(calls.length,3);
+ for(const bad of [[4n,0n,990n,995n,4n],[4n,1n,1n,1n,4n],[4n,1n,1001n,1001n,4n],[4n,1n,990n,995n,3n]]){
+  round=bad;await assert.rejects(price.read(),/无效或已过期/);
+ }
+ await assert.rejects(new NativePrice({...rpc,read:async()=> 'OTHER / USD'},{now:()=>now}).read(),/身份/);
+});
+test('GMGN cooldown cannot mark a healthy BSC chain disconnected or manufacture token candidates',async t=>{
+ const {store}=fixture(t);let gmgnCalls=0;const now=Date.now();
+ const rpc={chain:'bsc',block:async()=>({number:100,time:Date.now(),hash:'original',transactions:[]})};
+ const market=new CloudMarket(store,{rpc,gmgn:{status:()=>({limited:true}),trenches:async()=>{gmgnCalls++;throw Error();}}});
+ market.nativePrice={read:async()=>({id:'native-fx',usd:760,at:now,readAt:now,source:'Chainlink test'})};
+ await market.refresh();assert.equal(gmgnCalls,0);assert.equal(market.statuses()[0].connected,true);assert.equal(market.fxValue.usd,760);assert.equal(market.markets().length,0);assert.match(market.marketReason(),/限频/);
+});
 test('Cloud market quotes exact reserves and real gas evidence; unknown taxes and reorgs reject',async t=>{const {store}=fixture(t),now=Date.now(),route={kind:'v2',token:TOKEN,quote:'0x0000000000000000000000000000000000000000',pool:RECIPIENT,fee:25};let fork=false,gaps=0;
  const rpc={chain:'bsc',block:async(n)=>({number:n??100,time:Date.now(),hash:fork?'fork':'original',transactions:[]}),knownBlock:()=>null,read:async(_to,_abi,name)=>name==='decimals'?18:name==='getReserves'?[1000000n*10n**18n,1000n*10n**18n,0]:name==='token0'?TOKEN:null};
  const market=new CloudMarket(store,{rpc,gmgn:{},onGap:()=>gaps++});market.fxValue={usd:500,at:now};market.metadata.set(TOKEN,{at:now,security:{buy_tax:0,sell_tax:0}});market.routes.set(TOKEN,{block:90,route});market.venues.bsc.poolToken0=async()=>TOKEN;

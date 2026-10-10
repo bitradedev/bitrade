@@ -16,6 +16,7 @@ import {
 } from '../paper-terminal/src/server/adapters/math.js';
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP, unwrap } from './gmgn.mjs';
+import { NativePrice } from './native-price.mjs';
 const finite = (x: any) =>
   x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x)) ? Number(x) : null;
 const raw = (x: any) => {
@@ -31,6 +32,7 @@ export class CloudMarket {
   store: any;
   venues: any;
   gas: any;
+  nativePrice: any;
   catalog = new Map<string, any>();
   metadata = new Map<string, any>();
   routes = new Map<string, any>();
@@ -51,6 +53,7 @@ export class CloudMarket {
     Object.assign(this, { store, rpc, gmgn, gap: onGap });
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
+    this.nativePrice = new NativePrice(rpc);
     for (const m of store.all('cloud-markets')) this.catalog.set(m.address, m);
     for (const m of store.all('cloud-metadata')) this.metadata.set(m.id, m);
     this.fxValue = store.get('cloud-settings', 'native-fx');
@@ -98,23 +101,37 @@ export class CloudMarket {
     return b;
   }
   async fx() {
-    if (this.fxValue && Date.now() - this.fxValue.at >= 0 && Date.now() - this.fxValue.at < 90000)
+    if (
+      this.fxValue &&
+      Date.now() - this.fxValue.at >= 0 &&
+      Date.now() - this.fxValue.at < 90000 &&
+      Date.now() - (this.fxValue.readAt ?? this.fxValue.at) < 20000
+    )
       return this.fxValue;
-    const info = unwrap(await this.gmgn.info('bsc', CHAIN_CONFIG.bsc.wrapped)),
-      usd = Number(info?.price?.price);
-    if (!Number.isFinite(usd) || usd <= 0) throw Error('BNB 美元行情未核实');
-    this.fxValue = { id: 'native-fx', usd, at: Date.now() };
+    try {
+      this.fxValue = await this.nativePrice.read();
+    } catch {
+      // GMGN is a backup, not a prerequisite for the native USD reference.
+      const response = await this.gmgn.info('bsc', CHAIN_CONFIG.bsc.wrapped),
+        info = unwrap(response),
+        usd = Number(info?.price?.price),
+        at = response._bitradeReadAt ?? Date.now();
+      if (!Number.isFinite(usd) || usd <= 0 || Date.now() - at < 0 || Date.now() - at >= 90000)
+        throw Error('BNB 美元行情未核实');
+      this.fxValue = { id: 'native-fx', usd, at, readAt: at, source: 'GMGN WBNB/USD' };
+    }
     this.store.put('cloud-settings', this.fxValue);
     return this.fxValue;
   }
   async loadMetadata(token: string) {
     const old = this.metadata.get(token);
     if (old && Date.now() - old.at >= 0 && Date.now() - old.at < 90000) return old;
-    const info = unwrap(await this.gmgn.info('bsc', token)),
-      security = unwrap(await this.gmgn.security('bsc', token));
+    const responses = [await this.gmgn.info('bsc', token), await this.gmgn.security('bsc', token)],
+      [info, security] = responses.map(unwrap);
     if (address(info.address) !== token || address(security.address) !== token)
       throw Error('行情资料的合约地址不匹配');
-    const next = { id: token, at: Date.now(), info, security };
+    const at = Math.min(Date.now(), ...responses.map((r) => r._bitradeReadAt ?? Date.now()));
+    const next = { id: token, at, info, security };
     this.metadata.set(token, next);
     this.store.put('cloud-metadata', next);
     return next;
@@ -274,13 +291,25 @@ export class CloudMarket {
     if (this.refreshTask) return this.refreshTask;
     this.refreshTask = (async () => {
       try {
-        await this.discover();
+        await this.updateHead();
       } catch (e: any) {
-        this.head.lastError = e.message;
+        this.head.connected = false;
+        this.head.lastError = String(e.message).slice(0, 260);
+        return;
       }
       try {
         await this.fx();
-        await this.updateHead();
+      } catch {
+        /* An unavailable USD feed does not disconnect the chain. */
+      }
+      if (this.gmgn.status?.().limited) return;
+      try {
+        await this.discover();
+      } catch {
+        /* Continue updating already discovered markets when discovery is unavailable. */
+      }
+      if (this.gmgn.status?.().limited) return;
+      try {
         const candidates = [...this.catalog.keys()],
           selected = [
             ...new Set([...tokens, ...candidates.slice(this.cursor, this.cursor + 2)]),
@@ -289,13 +318,17 @@ export class CloudMarket {
         for (const token of selected) await this.refreshMarket(token);
         await this.updateHead();
       } catch (e: any) {
-        this.head.connected = false;
-        this.head.lastError = String(e.message).slice(0, 260);
+        // Chain connectivity is reported by RPC, independently of token data.
       }
     })().finally(() => {
       this.refreshTask = null;
     });
     return this.refreshTask;
+  }
+  marketReason() {
+    return this.gmgn.status?.().limited
+      ? '行情服务限频冷却中，候选币与风控资料暂不可用；恢复后自动继续。'
+      : '等待取得合格候选市场';
   }
   async pulse() {
     const b = await this.updateHead(),
