@@ -34,7 +34,7 @@ export function publicEndpoint(value) {
 export class CloudRpc {
   constructor(
     url = 'https://bsc-rpc.publicnode.com',
-    { fetchImpl = (...args) => fetch(...args) } = {},
+    { fetchImpl = (...args) => fetch(...args), receiptUrl = null } = {},
   ) {
     this.url = publicEndpoint(url);
     this.fetch = fetchImpl;
@@ -43,6 +43,10 @@ export class CloudRpc {
     this.pending = new Map();
     this.id = 0;
     this.tail = Promise.resolve();
+    this.receiptRpc =
+      receiptUrl && publicEndpoint(receiptUrl) !== this.url
+        ? new CloudRpc(receiptUrl, { fetchImpl })
+        : null;
   }
   async request(method, params = []) {
     if (!ALLOWED.has(method)) throw Error('Cloud RPC is read-only');
@@ -111,8 +115,25 @@ export class CloudRpc {
   knownBlock(number) {
     return this.cache.get(number);
   }
-  receipt(hash) {
-    return this.request('eth_getTransactionReceipt', [hash]);
+  async receipt(hash) {
+    if (!this.receiptRpc) return this.request('eth_getTransactionReceipt', [hash]);
+    // Publicnode's anonymous endpoint denies receipts as archive requests.
+    // Use BNB Chain's explicitly configured public receipt endpoint, while
+    // binding every sample back to the exact primary chain's canonical block.
+    const raw = await this.receiptRpc.request('eth_getTransactionReceipt', [hash]);
+    if (!raw) return null;
+    if (
+      typeof raw.transactionHash !== 'string' ||
+      raw.transactionHash.toLowerCase() !== hash.toLowerCase() ||
+      !/^0x[0-9a-f]+$/i.test(raw.blockNumber ?? '') ||
+      !/^0x[0-9a-f]{64}$/i.test(raw.blockHash ?? '')
+    )
+      throw Error('BSC 回执身份未核实');
+    const block = Number(BigInt(raw.blockNumber)),
+      [primary, secondary] = await Promise.all([this.block(block), this.receiptRpc.block(block)]);
+    if (primary.hash !== secondary.hash || raw.blockHash !== primary.hash)
+      throw Error('BSC 回执节点与报价节点的区块不一致');
+    return raw;
   }
   logs(filter) {
     return this.request('eth_getLogs', [filter]);

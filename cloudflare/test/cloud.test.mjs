@@ -33,6 +33,14 @@ test('BSC RPC denies financial methods, validates the chain and includes the act
  await assert.rejects(rpc.request('eth_sendRawTransaction',['secret']),/read-only/);await rpc.block();await rpc.read(TOKEN,[{type:'function',name:'decimals',stateMutability:'view',inputs:[],outputs:[{type:'uint8'}]}],'decimals',[],100,RECIPIENT);assert.equal(calls.at(-1).params[0].from,RECIPIENT);assert.equal(calls.at(-1).params[1],'0x64');
  const wrong=new CloudRpc('https://rpc.example.com',{fetchImpl:async()=>Response.json({result:'0x1'})});await assert.rejects(wrong.block(),/主网/);
 });
+test('Independent receipt RPC verifies BSC chain, transaction identity and identical canonical blocks before using fee samples',async()=>{
+ const hash='0x'+'12'.repeat(32),blockHash='0x'+'34'.repeat(32),calls=[];let bad=false,wrongChain=false;
+ const rpc=new CloudRpc('https://price.example',{receiptUrl:'https://receipts.example',fetchImpl:async(url,opts)=>{const q=JSON.parse(opts.body);calls.push({url,method:q.method});return Response.json({result:q.method==='eth_chainId'?(wrongChain?'0x1':'0x38'):q.method==='eth_getTransactionReceipt'?{transactionHash:hash,blockNumber:'0x64',blockHash,status:'0x1',gasUsed:'0x100',logs:[]}:{number:'0x64',hash:bad&&url.includes('receipts')?'0x'+'56'.repeat(32):blockHash,timestamp:'0x'+Math.floor(Date.now()/1000).toString(16),transactions:[]}});}});
+ assert.equal((await rpc.receipt(hash)).transactionHash,hash);assert.ok(calls.filter(c=>c.method==='eth_getTransactionReceipt').every(c=>c.url.includes('receipts')));
+ await assert.rejects(rpc.receipt('0x'+'aa'.repeat(32)),/身份/);
+ rpc.cache.clear();rpc.receiptRpc.cache.clear();bad=true;await assert.rejects(rpc.receipt(hash),/不一致/);
+ rpc.cache.clear();rpc.receiptRpc.cache.clear();rpc.receiptRpc.verified=false;bad=false;wrongChain=true;await assert.rejects(rpc.receipt(hash),/主网/);
+});
 test('GMGN HTTP uses the existing read-only API schema and never sends private signing credentials',async()=>{const calls=[],g=new GmgnHTTP('dummy-api',{now:()=>Date.now()+10000* calls.length,fetchImpl:async(url,opts)=>{calls.push({url:String(url),opts});return Response.json({code:0,data:{}});}});await g.info('bsc',TOKEN);await g.holders('bsc',TOKEN);await g.trenches();assert.ok(calls.every(c=>c.opts.headers['X-APIKEY']==='dummy-api'&&!c.opts.headers['X-Signature']));assert.equal(new URL(calls[1].url).pathname,'/v1/market/token_top_holders');const body=JSON.parse(calls[2].opts.body);assert.equal(body.version,'v2');assert.equal(body.completed.limit,8);assert.ok(body.completed.quote_address_type.includes(6));});
 test('Repeated GMGN bans persist increasing backoff, honor both server deadlines and block all consumers',async t=>{
  const {store}=fixture(t);let now=1000000,calls=0;
@@ -92,6 +100,17 @@ test('Paper accounts use the independent native reference even with zero GMGN ca
  market.fxValue={usd:750,at:now,source:'Chainlink test'};
  assert.equal(market.markets().length,0);assert.equal(paper.fx(),750);paper.seed('native-test',paper.fx());assert.ok(Math.abs(paper.view('native-test').balanceUsd-1000)<.00001);assert.equal(paper.fills().length,0);
  market.fxValue.at=now-90001;assert.equal(paper.fx(),null);market.fxValue.at=now+60000;assert.equal(paper.fx(),null);market.fxValue.at=now;market.head.connected=false;assert.equal(paper.fx(),null);
+});
+test('Mature independent markets and risk reports continue during GMGN bans without touching its cooldown',async t=>{
+ const {store}=fixture(t);let gmgnCalls=0;const token='0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82',pool='0x0ed7e52944161450477ee417de9cd3a859b14fd0',now=Date.now();
+ const rpc={chain:'bsc',block:async()=>({number:100,time:Date.now(),hash:'original',transactions:[]})};
+ const md={id:token,at:now,source:'public-bsc',info:{address:token,symbol:'CAKE',biggest_pool_address:pool,liquidity:1000000,price:{volume_24h:100000,price:1}},security:{address:token,buy_tax:0,sell_tax:0,is_honeypot:false,verifiedPool:pool}};
+ const publicData={supports:t=>t===token,candidates:()=>[{address:token,symbol:'CAKE'}],metadata:async()=>md,status:()=>[]};
+ const market=new CloudMarket(store,{rpc,publicData,gmgn:{status:()=>({limited:true,retryAt:now+3600000}),trenches:async()=>{gmgnCalls++;throw Error();}}});
+ market.nativePrice={read:async()=>({id:'native-fx',usd:750,at:now,readAt:now,source:'Chainlink test'})};
+ market.venues.bsc={pool:async(t,q,p)=>({kind:'v2',token:t,quote:q,pool:p}),decimals:async()=>18,spot:async()=>1/750,conversion:async()=>null};
+ await market.refresh();assert.equal(gmgnCalls,0);assert.equal(market.markets().length,1);assert.equal(market.markets()[0].quality,'verified');assert.equal(market.markets()[0].priceUsd,1);assert.equal(market.markets()[0].dataSource,'BSC RPC · DEX Screener · Honeypot.is');assert.equal(market.marketWait(),null);
+ assert.throws(()=>market.verifyExternalTaxes('bsc',token,{kind:'v2',pool:TOKEN}),/不一致/);
 });
 test('Cloud market quotes exact reserves and real gas evidence; unknown taxes and reorgs reject',async t=>{const {store}=fixture(t),now=Date.now(),route={kind:'v2',token:TOKEN,quote:'0x0000000000000000000000000000000000000000',pool:RECIPIENT,fee:25};let fork=false,gaps=0;
  const rpc={chain:'bsc',block:async(n)=>({number:n??100,time:Date.now(),hash:fork?'fork':'original',transactions:[]}),knownBlock:()=>null,read:async(_to,_abi,name)=>name==='decimals'?18:name==='getReserves'?[1000000n*10n**18n,1000n*10n**18n,0]:name==='token0'?TOKEN:null};

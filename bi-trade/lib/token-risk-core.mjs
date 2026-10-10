@@ -209,6 +209,18 @@ export class TokenRiskGuard {
     const startedAt = this.now(),
       task = (async () => {
         try {
+          const provided = await this.source.riskReport?.(token);
+          if (provided) {
+            if (
+              provided.token !== token ||
+              provided.chain !== 'bsc' ||
+              !Number.isFinite(provided.fetchedAt) ||
+              provided.fetchedAt > this.now()
+            )
+              throw Error('风险报告身份或时间无效');
+            if (!this.stopped) this.store.put('token-risk-reports', provided);
+            return this.snapshot(token);
+          }
           const responses = [
               await this.source.info('bsc', token),
               await this.source.holders('bsc', token),

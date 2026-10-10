@@ -170,6 +170,23 @@ These real-money operations are locked in the current preview.
 
 For strategy hypotheses, see /playbook. The platform makes no promise of profit.
 
+## Independent BSC paper markets
+
+The Cloudflare site can quote the fixed mature BTCB, ETH and CAKE contracts
+without GMGN. DEX Screener supplies independent market statistics, Honeypot.is
+supplies buy/sell checks and top-holder samples, and the BSC RPC calculates exact
+Pancake V2 amounts. Contract code, the factory pool and the tested pair must match.
+BNB/USD comes from Chainlink. Receipt fees use a separate public BNB Chain node
+and must match the quote node's canonical block. No server purchase is required.
+
+The mature-market risk policy is `established-spot-v1`; it is only for virtual
+funds and these three exact addresses. `screened-limited` permits an entry only
+after the narrow checks pass, including observed concentration, current zero-tax
+buy/sell simulation and pool depth/activity. Bundler and shared-funding metrics
+remain null, and custodial issuance/governance risks remain. This policy does not
+exempt new tokens from the full existing risk checks. Never report null as zero
+or treat a quote as a fill. An AI may choose hold even with eligible markets.
+
 ## Public strategy and performance
 
 The Owner can fill a strategy name/description and opt into public display from

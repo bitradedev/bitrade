@@ -9,6 +9,7 @@ import { CloudMarket } from './market.js';
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
 import { marketFetch } from './market-source.mjs';
+import { PublicBscData } from './public-data.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
 
@@ -66,13 +67,25 @@ export class TradingPlatform extends DurableObject<any> {
               fetchImpl: marketFetch(this.env),
             },
           ),
-          rpc = new CloudRpc(this.env.BSC_RPC_URL),
+          rpc = new CloudRpc(this.env.BSC_RPC_URL, { receiptUrl: this.env.BSC_RECEIPT_RPC_URL }),
+          publicData =
+            this.env.BI_TRADE_PUBLIC_MARKET === 'true' ? new PublicBscData(this.store, rpc) : null,
           market = new CloudMarket(this.store, {
             rpc,
             gmgn: source,
+            publicData,
             onGap: () => this.app?.paper.gap(),
           });
-        const risk = new TokenRiskGuard(this.store, { source }),
+        const risk = new TokenRiskGuard(this.store, {
+            source: {
+              riskReport: (token: string) =>
+                publicData?.supports(token) ? publicData.riskReport(token) : null,
+              info: (...args: any[]) => source.info(...args),
+              holders: (...args: any[]) => source.holders(...args),
+              security: (...args: any[]) => source.security(...args),
+              close: () => source.close(),
+            },
+          }),
           planner = new OpenAIPlanner({ timeoutMs: 90000 });
         // Refresh exact market evidence after the remote model returns; it may take over a minute.
         const freshPlanner = {
@@ -143,6 +156,7 @@ export class TradingPlatform extends DurableObject<any> {
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
           marketConfigured: !!(
             this.env.GMGN_API_KEY ||
+            this.market.publicData ||
             (this.env.GMGN_RELAY_URL && this.env.GMGN_RELAY_TOKEN)
           ),
           market: this.market.statuses()[0],
@@ -151,6 +165,8 @@ export class TradingPlatform extends DurableObject<any> {
           nativeFxSource: this.market.fxValue?.source ?? null,
           marketService: this.market.gmgn.status(),
           marketTransport: this.env.GMGN_RELAY_URL ? 'private-relay' : 'cloudflare-fetch',
+          publicMarketEnabled: Boolean(this.market.publicData),
+          publicMarketSources: this.market.publicData?.status() ?? [],
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
@@ -219,11 +235,10 @@ export class TradingPlatform extends DurableObject<any> {
         ] as string[];
         await this.market.refresh(tokens);
         await app.paper.tick();
-        if (!this.market.gmgn.status().limited)
-          await this.risk.tick([
-            ...tokens,
-            ...app.showcase.freshMarkets().map((m: any) => m.address),
-          ]);
+        await this.risk.tick([
+          ...tokens,
+          ...app.showcase.freshMarkets().map((m: any) => m.address),
+        ]);
         await this.market.refresh(tokens);
         await app.showcase.tick();
         await this.risk.task;

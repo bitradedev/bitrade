@@ -29,6 +29,7 @@ const key = (_chain: string, token: string) => token.toLowerCase();
 export class CloudMarket {
   rpc: any;
   gmgn: any;
+  publicData: any;
   store: any;
   venues: any;
   gas: any;
@@ -48,9 +49,14 @@ export class CloudMarket {
   gap: () => void;
   constructor(
     store: any,
-    { rpc = new CloudRpc(), gmgn = new GmgnHTTP(null), onGap = () => {} }: any = {},
+    {
+      rpc = new CloudRpc(),
+      gmgn = new GmgnHTTP(null),
+      publicData = null,
+      onGap = () => {},
+    }: any = {},
   ) {
-    Object.assign(this, { store, rpc, gmgn, gap: onGap });
+    Object.assign(this, { store, rpc, gmgn, publicData, gap: onGap });
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
@@ -72,6 +78,15 @@ export class CloudMarket {
   }
   markets() {
     return [...this.catalog.values()];
+  }
+  marketScope() {
+    return this.publicData
+      ? {
+          kind: 'established',
+          tokens: this.publicData.candidates().map((a: any) => a.symbol),
+          policy: 'established-spot-v1',
+        }
+      : null;
   }
   nativeReference(chain = 'bsc') {
     return chain === 'bsc' ? this.fxValue : null;
@@ -129,6 +144,12 @@ export class CloudMarket {
   async loadMetadata(token: string) {
     const old = this.metadata.get(token);
     if (old && Date.now() - old.at >= 0 && Date.now() - old.at < 90000) return old;
+    if (this.publicData?.supports(token)) {
+      const next = await this.publicData.metadata(token);
+      this.metadata.set(token, next);
+      this.store.put('cloud-metadata', next);
+      return next;
+    }
     const responses = [await this.gmgn.info('bsc', token), await this.gmgn.security('bsc', token)],
       [info, security] = responses.map(unwrap);
     if (address(info.address) !== token || address(security.address) !== token)
@@ -145,7 +166,15 @@ export class CloudMarket {
     const md = await this.loadMetadata(token),
       hint = md.info.biggest_pool_address;
     const revision = this.quoteRevision.bsc,
-      route = await this.venues.bsc.resolve(address(token), block, hint);
+      route =
+        md.source === 'public-bsc'
+          ? await this.venues.bsc.pool(
+              address(token),
+              address(CHAIN_CONFIG.bsc.wrapped),
+              address(hint),
+              block,
+            )
+          : await this.venues.bsc.resolve(address(token), block, hint);
     if (revision !== this.quoteRevision.bsc) throw Error('核价期间发生区块重组');
     this.routes.set(token, { block, route });
     capMap(this.routes, 100);
@@ -159,6 +188,8 @@ export class CloudMarket {
     const s = md.security,
       buy = finite(s.buy_tax),
       sell = finite(s.sell_tax);
+    if (md.source === 'public-bsc' && s.verifiedPool !== r.pool)
+      throw new RouteBlocked('TAX_UNKNOWN', '买卖税检测与当前池不一致');
     if (buy === null || sell === null) throw new RouteBlocked('TAX_UNKNOWN', '外盘买卖税字段缺失');
     if (buy !== 0 || sell !== 0)
       throw new RouteBlocked(
@@ -227,6 +258,11 @@ export class CloudMarket {
         volumeUsd: finite(md.info.price?.volume_24h),
         buyTaxPct: Number(r.state?.buyTaxRate ?? 0) / 100,
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
+        dataSource:
+          md.source === 'public-bsc' ? 'BSC RPC · DEX Screener · Honeypot.is' : 'BSC RPC · GMGN',
+        marketDataAt: md.at,
+        priceChange: md.info.priceChange ?? null,
+        transactions: md.info.txns ?? null,
         updatedAt: Date.now(),
         block: b.number,
         quality: 'verified',
@@ -240,6 +276,24 @@ export class CloudMarket {
     return m;
   }
   async discover() {
+    // Keep a narrow, independently verified mature-asset universe available
+    // even while the meme-token provider is cooling down.
+    for (const item of this.publicData?.candidates() ?? []) {
+      if (!this.catalog.has(item.address)) {
+        const m = {
+          id: item.address,
+          address: item.address,
+          chain: 'bsc',
+          symbol: item.symbol,
+          quality: 'unavailable',
+          updatedAt: 0,
+          discoveredAt: Date.now(),
+        };
+        this.catalog.set(item.address, m);
+        this.store.put('cloud-markets', m);
+      }
+    }
+    if (this.gmgn.status?.().limited) return;
     if (Date.now() - this.discoveryAt < 300000 && this.catalog.size) return;
     const data = unwrap(await this.gmgn.trenches());
     this.discoveryAt = Date.now();
@@ -277,7 +331,7 @@ export class CloudMarket {
     );
     for (const [token] of this.catalog) {
       if (this.catalog.size <= 12) break;
-      if (!held.has(token)) {
+      if (!held.has(token) && !this.publicData?.supports(token)) {
         this.catalog.delete(token);
         this.metadata.delete(token);
         this.routes.delete(token);
@@ -305,13 +359,13 @@ export class CloudMarket {
       } catch {
         /* An unavailable USD feed does not disconnect the chain. */
       }
-      if (this.gmgn.status?.().limited) return;
+      if (this.gmgn.status?.().limited && !this.publicData) return;
       try {
         await this.discover();
       } catch {
         /* Continue updating already discovered markets when discovery is unavailable. */
       }
-      if (this.gmgn.status?.().limited) return;
+      if (this.gmgn.status?.().limited && !this.publicData) return;
       try {
         const candidates = [...this.catalog.keys()],
           selected = [
@@ -329,11 +383,19 @@ export class CloudMarket {
     return this.refreshTask;
   }
   marketReason() {
+    if (this.publicData) return '正在核对成熟外盘的独立行情与买卖检测，取得有效数据后自动继续。';
     return this.gmgn.status?.().limited
       ? '行情服务限频冷却中，候选币与风控资料暂不可用；恢复后自动继续。'
       : '等待取得合格候选市场';
   }
   marketWait() {
+    if (this.publicData) {
+      const waits = this.publicData
+        .status()
+        .filter((s: any) => s.limited)
+        .map((s: any) => s.retryAt);
+      return waits.length ? { retryAt: Math.max(...waits) } : null;
+    }
     const status = this.gmgn.status?.();
     return status?.limited ? { retryAt: status.retryAt } : null;
   }
@@ -579,7 +641,7 @@ export class CloudMarket {
           ...notes,
           ...gas.notes,
           `流动性冲击排除已知协议/创作者/反狙击费；多步兑换冲击保守相加，归因 ${impactQuality}`,
-          `原生币美元价格：GMGN ${new Date(fx.at).toISOString()}；模拟收款地址 ${recipient}，不继承目标钱包豁免`,
+          `原生币美元价格：${fx.source ?? '已核实美元参考'} ${new Date(fx.at).toISOString()}；模拟收款地址 ${recipient}，不继承目标钱包豁免`,
         ],
       },
       quality: counterfactual ? 'estimated' : 'verified',

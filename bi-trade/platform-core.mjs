@@ -597,6 +597,7 @@ export async function createPlatformCore(options) {
     return {
       agents,
       summary,
+      marketScope: gateway.marketScope?.() ?? null,
       activity: rows.slice(page * 20, (page + 1) * 20),
       page,
       hasOlder: rows.length > (page + 1) * 20,

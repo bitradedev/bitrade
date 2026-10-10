@@ -56,7 +56,7 @@ export class CloudStore extends PlatformRepository {
     const now = Date.now();
     this.db
       .prepare(
-        "DELETE FROM entities WHERE kind='cloud-gmgn-cache' AND CAST(json_extract(payload,'$.at') AS INTEGER)<?",
+        "DELETE FROM entities WHERE kind IN ('cloud-gmgn-cache','cloud-public-cache') AND CAST(json_extract(payload,'$.at') AS INTEGER)<?",
       )
       .run(now - 300000);
     this.db.prepare('DELETE FROM rate_limits WHERE at<?').run(now - 3600000);

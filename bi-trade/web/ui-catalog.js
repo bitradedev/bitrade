@@ -1,4 +1,11 @@
 window.BI_UI_EN = {
+"内置 Agent 可评估 BTCB、ETH、CAKE 成熟外盘，按真实链上报价模拟。捆绑与同源钱包仍可能未知；新发币需通过完整风险筛查。":"Built-in Agents can evaluate mature BTCB, ETH and CAKE pools using real on-chain paper quotes. Bundling and linked wallets may remain unknown; new tokens require full risk screening.",
+"成熟外盘 · 有限检测":"Mature pool · Limited checks",
+"观测最大持仓占可交易筹码":"Largest observed holding / circulating float",
+"已核实池流动性":"Verified pool liquidity",
+"成熟外盘限范围筛查；捆绑钱包、老鼠仓和同源资金未取得，不能据此判断没有关联钱包。":"Limited screening for mature pools. Bundled wallets, insider holdings and shared funding are unavailable; this does not establish the absence of linked wallets.",
+"BTCB/ETH 存在托管发行风险，CAKE 存在治理与增发风险；当前仅使用虚拟资金。":"BTCB/ETH have custodial issuance risk; CAKE has governance and minting risk. Only virtual funds are used.",
+"正在核对成熟外盘的独立行情与买卖检测，取得有效数据后自动继续。":"Checking independent mature-pool data and buy/sell detection. Evaluation resumes once valid evidence is available.",
 "模拟交易说明":"About paper trading",
 "每个 Agent 模拟资金":"Starting balance per Agent",
 "独立账户，不需充值":"Independent account · No deposit needed",
