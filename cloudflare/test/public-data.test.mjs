@@ -88,8 +88,35 @@ test('HTTP cache age is subtracted from evidence time instead of refreshing old 
 });
 test('Holder source failures do not invalidate independent exit trading evidence but cannot allow an entry',async()=>{
  const s=store(),p=new PublicBscData(s,{}, {now:()=>NOW}),d=evidence();
- p.evidence=async()=>({...d,at:NOW});p.read=async()=>{throw Error('holders down');};
+ p.evidence=p.tradingEvidence=async()=>({...d,at:NOW});p.read=async()=>{throw Error('holders down');};
  const md=await p.metadata(A.address);assert.equal(md.source,'public-bsc');assert.equal(md.security.verifiedPool,A.pool);await assert.rejects(p.riskReport(A.address),/holders down/);
+});
+test('Chart cooldown cannot block proven mature trading metadata or fabricate missing chart statistics',async()=>{
+ const s=store(),p=new PublicBscData(s,{}, {now:()=>NOW}),d=evidence();
+ s.put('cloud-settings',{id:'public-budget-dex',retryAt:NOW+300000,lastError:'HTTP 429'});
+ p.tradingEvidence=async()=>({...d,at:NOW});p.evidence=async()=>{throw Error('chart cooldown');};
+ const md=await p.metadata(A.address);assert.equal(md.at,NOW);assert.equal(md.marketDataAt,null);assert.equal(md.info.symbol,A.symbol);assert.equal(md.info.liquidity,null);assert.equal(md.info.price.volume_24h,null);assert.equal(md.info.priceChange,null);assert.equal(md.info.txns,null);assert.equal(md.security.verifiedPool,A.pool);
+ await assert.rejects(p.riskReport(A.address),/chart cooldown/);assert.equal(p.status()[0].retryAt,NOW+300000);
+});
+test('Trading proofs coalesce without chart requests, preserve upstream age and reject unsupported tokens',async()=>{
+ const s=store();let now=NOW,reads=0,calls=0;
+ const rpc={block:async()=>({number:100}),request:async()=>{reads++;return '0x6000';},read:async(_to,_abi,name,args)=>{reads++;return name==='getPair'?A.pool:name==='totalSupply'?1000000n:args[0]===A.pool?10000n:0n;}};
+ const fetchImpl=async url=>{calls++;assert.match(url,/^https:\/\/api\.honeypot\.is\//);return Response.json(evidence().check,{headers:{Age:'30'}});};
+ let p=new PublicBscData(s,rpc,{fetchImpl,now:()=>now});
+ const [a,b]=await Promise.all([p.tradingEvidence(A.address),p.tradingEvidence(A.address)]);assert.deepEqual(a,b);assert.equal(calls,1);assert.equal(reads,5);assert.equal(a.at,NOW-30000);assert.equal(a.proof.block,100);
+ p=new PublicBscData(s,rpc,{fetchImpl,now:()=>now});assert.equal((await p.tradingEvidence(A.address)).at,NOW-30000);assert.equal(calls,1);assert.equal(reads,5);
+ await assert.rejects(p.metadata(A.address),/身份/);await assert.rejects(p.tradingEvidence(WBNB),/名单外/);
+ now+=60000;await p.tradingEvidence(A.address);assert.equal(calls,2);assert.equal(reads,10);
+});
+test('Optional chart statistics retain their original timestamp and disappear when stale or from a different pool',async()=>{
+ const s=store();let now=NOW;const p=new PublicBscData(s,{}, {now:()=>now}),d=evidence();
+ d.pair.priceChange={h24:2};d.pair.txns={h24:{buys:10,sells:9}};
+ p.tradingEvidence=async()=>({...d,at:now});
+ const id='dex:/latest/dex/pairs/bsc/'+A.pool;s.put('cloud-public-cache',{id,at:NOW-30000,value:{pairs:[d.pair]}});
+ let md=await p.metadata(A.address);assert.equal(md.at,NOW);assert.equal(md.marketDataAt,NOW-30000);assert.deepEqual(md.info.priceChange,{h24:2});
+ now=NOW+90000;md=await p.metadata(A.address);assert.equal(md.marketDataAt,null);assert.equal(md.info.liquidity,null);assert.equal(md.info.priceChange,null);assert.equal(md.info.txns,null);
+ s.put('cloud-public-cache',{id,at:now,value:{pairs:[{...d.pair,quoteToken:{address:A.address}}]}});assert.equal((await p.metadata(A.address)).marketDataAt,null);
+ for(const value of [{pairs:{}},{pairs:[null,{pairAddress:123}]},{pairs:[{...d.pair,baseToken:{address:{}}}]},{pairs:[{...d.pair,labels:{}}]}]){s.put('cloud-public-cache',{id,at:now,value});assert.equal((await p.metadata(A.address)).marketDataAt,null);}
 });
 test('Risk guard consumes the independent mature report with original age and still sends arbitrary tokens to strict GMGN screening',async()=>{
  const s=store();let oldCalls=0;const report=evaluateEstablishedRisk(A.address,evidence(),NOW);
@@ -100,7 +127,7 @@ test('Risk guard consumes the independent mature report with original age and st
  report.fetchedAt=NOW-120001;s.put('token-risk-reports',report);assert.equal(guard.snapshot(A.address).buyAllowed,false);
 });
 test('Independent metadata cannot substitute another trading pair or incomplete identity proof',async()=>{
- for(const change of [d=>d.check.token.address=WBNB,d=>d.check.pair.pair.address=WBNB,d=>d.check.simulationSuccess=false,d=>d.proof.pool=WBNB,d=>d.proof.codeHash=WBNB,d=>delete d.check.simulationResult.buyTax]){
-  const p=new PublicBscData(store(),{}, {now:()=>NOW}),d=evidence();change(d);p.evidence=async()=>({...d,at:NOW});await assert.rejects(p.metadata(A.address),/身份/);
+ for(const change of [d=>d.check.token.address=WBNB,d=>d.check.chain.id='1',d=>d.check.pair.chainId='1',d=>d.check.pair.pair.address=WBNB,d=>d.check.simulationSuccess=false,d=>d.check.contractCode.isProxy=true,d=>d.check.honeypotResult.isHoneypot=true,d=>d.proof.pool=WBNB,d=>d.proof.codeHash=WBNB,d=>delete d.check.simulationResult.buyTax,d=>delete d.check.simulationResult.sellTax,d=>d.check.simulationResult.transferTax=1,d=>d.at=NOW-120000,d=>d.at=NOW+1000]){
+  const p=new PublicBscData(store(),{}, {now:()=>NOW}),d={...evidence(),at:NOW};change(d);p.tradingEvidence=async()=>d;await assert.rejects(p.metadata(A.address),/身份/);
  }
 });

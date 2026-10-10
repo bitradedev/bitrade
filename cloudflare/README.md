@@ -99,6 +99,7 @@ pnpm exec wrangler secret delete BI_TRADE_MIGRATION_TOKEN
 - `/api/health` 检查服务和实盘锁；`/api/runtime` 提供不含密钥的行情、候选、调度状态和限频恢复时间。
 - GMGN 请求共用队列。429 遵守返回的恢复时间，并降低采集速度；风控缓存保留实际读取时间，不刷新旧数据的年龄。缺数据、未知税或过期报价均不制造模拟成交。
 - 公共数据源按 [RFC 9110 的 Retry-After 定义](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)区分整数秒数与 HTTP 日期；数字不会同时进入日期解析。429 至少冷却5分钟，有效更长等待仍保留，重启不重置期限。最近HTTP失败的时间、状态及解析后的服务端期限保留，恢复不会修改旧资料年龄。
+- 固定CAKE/BTCB/ETH的价格与卖出核价使用BSC RPC、Chainlink及Honeypot.is交易检测，图表限频不会阻断已核实的退出路线。官方工厂池、代码哈希、税和检测年龄仍检查。图表统计只引用原始时间仍有效的缓存，缺失或过期时显示未知；新开仓仍需完整图表、持仓及风控报告，不把可报价等同于可开仓。
 - 使用真实 BSC 固定区块报价和近期成交 Gas 样本，保留 Flap、Four.meme、Pancake V2/V3 路线及反向报价。没有签名、发送交易或 GMGN 金融执行接口。
 - 初期账本由一个 Durable Object 串行保护，适合早期用户规模。增长后需按账户拆分对象，并把公开排名聚合独立处理。
 - Cloudflare 免费方案有请求、CPU、SQL 读写与存储配额；AI 和 GMGN 也有各自额度。免费额度耗尽会影响服务，应在 Cloudflare 面板观察用量，再决定是否升级。本项目不会自动开通付费方案。

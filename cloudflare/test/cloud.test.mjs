@@ -12,6 +12,8 @@ import {EncryptedVault} from '../../bi-trade/lib/vault-core.mjs';
 import {PaperDesk} from '../../bi-trade/lib/paper-desk.mjs';
 import {mergeLedger} from '../import.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
+import {PublicBscData} from '../public-data.mjs';
+import {ESTABLISHED_ASSETS} from '../../bi-trade/lib/established-risk.mjs';
 const requireTool=createRequire(realpathSync('node_modules/wrangler/package.json')),{build}=requireTool('esbuild'),{Miniflare,convertV4MiniflareOptions}=requireTool('miniflare');
 mkdirSync('.cloud-test-build',{recursive:true});
 await build({entryPoints:['cloudflare/market.ts'],bundle:true,platform:'node',format:'esm',outfile:'.cloud-test-build/market.mjs'});
@@ -125,6 +127,28 @@ test('Cloud market quotes exact reserves and real gas evidence; unknown taxes an
  const q=await market.quote({chain:'bsc',side:'buy',token:TOKEN,recipient:RECIPIENT,nativeAmountRaw:'100000000000000000',block:100});assert.equal(q.inputRaw,'100000000000000000');assert.ok(BigInt(q.outputRaw)>0n);assert.equal(q.fees.includedInOutput,true);assert.equal(q.venue,'v2');
  market.metadata.get(TOKEN).security.buy_tax=null;await assert.rejects(market.quote({chain:'bsc',side:'buy',token:TOKEN,recipient:RECIPIENT,nativeAmountRaw:q.inputRaw,block:100}),/税字段缺失/);
  fork=true;await market.updateHead();assert.equal(gaps,1);assert.equal(market.routes.size,0);
+});
+
+test('Mature chain quotes and automatic exit prices continue during chart cooldown while entry screening stays blocked',async t=>{
+ const {store}=fixture(t),a=ESTABLISHED_ASSETS[0],wrapped='0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',factory='0xca143ce32fe78f1f7019d7d551a6402fc5350c73',now=Date.now();let outbound=0;
+ store.put('cloud-settings',{id:'public-budget-dex',retryAt:now+300000,lastError:'HTTP 429'});
+ const check={chain:{id:'56'},token:{address:a.address},pair:{chainId:'56',pair:{address:a.pool}},simulationSuccess:true,simulationResult:{buyTax:0,sellTax:0,transferTax:0},honeypotResult:{isHoneypot:false},contractCode:{isProxy:false,hasProxyCalls:false,openSource:true,rootOpenSource:true}};
+ const rpc={chain:'bsc',block:async n=>({number:n??100,time:Date.now(),hash:'original',transactions:[]}),knownBlock:()=>null,read:async(_to,_abi,name)=>name==='decimals'?18:name==='getReserves'?[1000000n*10n**18n,1000n*10n**18n,0]:name==='token0'?a.address:name==='token1'?wrapped:name==='factory'?factory:name==='getPair'?a.pool:null};
+ const data=new PublicBscData(store,rpc,{fetchImpl:async()=>{outbound++;throw Error('Unexpected HTTP request during chart cooldown');}});
+ data.tradingEvidence=async()=>({at:now,check,proof:{pool:a.pool,codeHash:a.codeHash}});
+ const market=new CloudMarket(store,{rpc,publicData:data,gmgn:{status:()=>({limited:true}),trenches:async()=>{throw Error('Do not bypass GMGN cooldown');}}});
+ market.nativePrice={read:async()=>({id:'native-fx',usd:750,at:now,readAt:now,source:'Chainlink fixture'})};
+ market.gas.bsc.estimate=async()=>({gasUsd:.01,approvalUsd:0,sourceFeeFrozenAt:now,notes:['isolated receipt fixture']});
+ await market.refresh([a.address],{limit:1});let m=market.getMarket('bsc',a.address);
+ assert.equal(m.quality,'verified');assert.equal(m.priceUsd,.75);assert.equal(m.marketDataAt,null);assert.equal(m.volumeUsd,null);assert.equal(m.priceChange,null);assert.equal(m.dataSource,'BSC RPC · Honeypot.is');
+ const paper=new PaperDesk(store,market),q=await paper.quote({id:'isolated-exit',address:RECIPIENT},'sell',a.address,'1000000000000000000',100);
+ assert.equal(q.spentInputRaw,q.inputRaw);assert.ok(BigInt(q.outputRaw)>0n);assert.equal(q.quality,'verified');assert.equal(q.nativeUsd,750);
+ const guard=new TokenRiskGuard(store,{source:{riskReport:token=>data.riskReport(token)}});t.after(()=>guard.close());
+ await assert.rejects(guard.assertBuy(a.address,{sizeUsd:10,marketPrice:m.priceUsd}),/风险|资料|冷却/);assert.equal(guard.snapshot(a.address).buyAllowed,false);assert.equal(outbound,0);assert.equal(data.status()[0].retryAt,now+300000);
+ Object.assign(m,{marketDataAt:now-120001,liquidityUsd:1000000,volumeUsd:100000,priceChange:{h24:99},transactions:{h24:{buys:10,sells:1}}});
+ await market.pulse(1);m=market.getMarket('bsc',a.address);assert.equal(m.quality,'verified');assert.equal(m.volumeUsd,null);assert.equal(m.transactions,null);assert.equal(m.marketDataAt,null);assert.equal(m.priceChange,null);
+ check.simulationResult.sellTax=null;market.metadata.delete(a.address);await assert.rejects(paper.quote({id:'isolated-exit',address:RECIPIENT},'sell',a.address,q.inputRaw,100),/身份/);
+ assert.equal(store.all('paper-fills').length,0);assert.equal(outbound,0);
 });
 
 test('Actual Workerd SQLite isolates owners, survives eviction, locks money and serves unchanged page bytes',async t=>{

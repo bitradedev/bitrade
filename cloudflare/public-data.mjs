@@ -14,6 +14,7 @@ const ABI = parseAbi([
   'function balanceOf(address) view returns (uint256)',
 ]);
 const HOSTS = { dex: 'https://api.dexscreener.com', safety: 'https://api.honeypot.is' };
+const lower = (value) => (typeof value === 'string' ? value.toLowerCase() : null);
 export class PublicBscData {
   constructor(store, rpc, { fetchImpl = (...args) => fetch(...args), now = Date.now } = {}) {
     Object.assign(this, { store, rpc, fetch: fetchImpl, now });
@@ -112,21 +113,18 @@ export class PublicBscData {
     this.queues.set(service, task);
     return task;
   }
-  async evidence(token) {
+  async tradingEvidence(token) {
     const asset = establishedAsset(token);
     if (!asset) throw Error('成熟外盘名单外的合约仍需完整的新币风控资料');
-    const id = 'evidence:' + asset.address,
+    const id = 'trading-evidence:' + asset.address,
       old = this.store.get('cloud-public-cache', id);
     if (old && this.now() - old.at >= 0 && this.now() - old.at < 60000) return old.value;
     if (this.pending.has(id)) return this.pending.get(id);
     const task = (async () => {
-      const rows = await Promise.all([
-        this.read('dex', '/latest/dex/pairs/bsc/' + asset.pool),
-        this.read(
-          'safety',
-          '/v2/IsHoneypot?chainID=56&address=' + asset.address + '&pair=' + asset.pool,
-        ),
-      ]);
+      const check = await this.read(
+        'safety',
+        '/v2/IsHoneypot?chainID=56&address=' + asset.address + '&pair=' + asset.pool,
+      );
       const b = await this.rpc.block();
       const [pool, code, supply, burnBalance, poolBalance] = await Promise.all([
         this.rpc.read(FACTORY, ABI, 'getPair', [asset.address, WBNB], b.number),
@@ -135,10 +133,8 @@ export class PublicBscData {
         this.rpc.read(asset.address, ABI, 'balanceOf', [DEAD], b.number),
         this.rpc.read(asset.address, ABI, 'balanceOf', [asset.pool], b.number),
       ]);
-      const pair = rows[0].value.pairs?.find((p) => p.pairAddress?.toLowerCase() === asset.pool);
       const value = {
-        pair,
-        check: rows[1].value,
+        check: check.value,
         proof: {
           pool: String(pool).toLowerCase(),
           codeHash: keccak256(code),
@@ -147,9 +143,31 @@ export class PublicBscData {
           poolBalance: String(poolBalance),
           block: b.number,
         },
-        at: Math.min(...rows.map((r) => r.at)),
+        at: check.at,
       };
+      this.store.put('cloud-public-cache', { id, at: value.at, value });
+      return value;
+    })().finally(() => this.pending.delete(id));
+    this.pending.set(id, task);
+    return task;
+  }
+  async evidence(token) {
+    const asset = establishedAsset(token);
+    if (!asset) throw Error('成熟外盘名单外的合约仍需完整的新币风控资料');
+    const id = 'evidence:' + asset.address,
+      old = this.store.get('cloud-public-cache', id);
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < 60000) return old.value;
+    if (this.pending.has(id)) return this.pending.get(id);
+    const task = (async () => {
+      const [chart, trading] = await Promise.all([
+        this.read('dex', '/latest/dex/pairs/bsc/' + asset.pool),
+        this.tradingEvidence(token),
+      ]);
+      const pair = (Array.isArray(chart.value?.pairs) ? chart.value.pairs : []).find(
+        (p) => lower(p?.pairAddress) === asset.pool,
+      );
       if (!pair) throw Error('官方池独立行情缺失');
+      const value = { ...trading, pair, at: Math.min(chart.at, trading.at) };
       this.store.put('cloud-public-cache', { id, at: value.at, value });
       return value;
     })().finally(() => this.pending.delete(id));
@@ -169,18 +187,17 @@ export class PublicBscData {
     );
   }
   async metadata(token) {
-    const d = await this.evidence(token),
+    const d = await this.tradingEvidence(token),
       report = evaluateEstablishedRisk(token, d, d.at);
-    // Exit quotes need current trading evidence, independently of holder screening.
-    // Missing holder evidence still blocks new entries through riskReport().
+    // On-chain execution and sell detection do not depend on chart statistics.
+    // Full chart/holder evidence remains mandatory for entries via riskReport().
     const c = d.check,
       a = establishedAsset(token);
     if (
-      d.pair.chainId !== 'bsc' ||
-      d.pair.dexId !== 'pancakeswap' ||
-      d.pair.baseToken?.address?.toLowerCase() !== a.address ||
-      d.pair.quoteToken?.address?.toLowerCase() !== WBNB ||
-      d.pair.pairAddress?.toLowerCase() !== a.pool ||
+      !a ||
+      !Number.isFinite(d.at) ||
+      this.now() - d.at < 0 ||
+      this.now() - d.at >= 120000 ||
       String(c.chain?.id) !== '56' ||
       String(c.pair?.chainId) !== '56' ||
       c.token?.address?.toLowerCase() !== a.address ||
@@ -198,19 +215,36 @@ export class PublicBscData {
       d.proof.pool !== a.pool
     )
       throw Error('成熟外盘买卖税或身份尚未核实');
+    const chart = this.store.get('cloud-public-cache', 'dex:/latest/dex/pairs/bsc/' + a.pool),
+      cached = (Array.isArray(chart?.value?.pairs) ? chart.value.pairs : []).find(
+        (p) => lower(p?.pairAddress) === a.pool,
+      ),
+      pair =
+        chart &&
+        this.now() - chart.at >= 0 &&
+        this.now() - chart.at < 120000 &&
+        cached?.chainId === 'bsc' &&
+        cached.dexId === 'pancakeswap' &&
+        lower(cached.baseToken?.address) === a.address &&
+        lower(cached.quoteToken?.address) === WBNB &&
+        Array.isArray(cached.labels) &&
+        cached.labels.includes('v2')
+          ? cached
+          : null;
     return {
       id: token,
       at: d.at,
       source: 'public-bsc',
+      marketDataAt: pair ? chart.at : null,
       info: {
         address: token,
-        name: d.pair.baseToken.name,
-        symbol: d.pair.baseToken.symbol,
-        biggest_pool_address: d.pair.pairAddress,
-        liquidity: d.pair.liquidity.usd,
-        price: { price: d.pair.priceUsd, volume_24h: d.pair.volume?.h24 },
-        priceChange: d.pair.priceChange,
-        txns: d.pair.txns,
+        name: pair?.baseToken.name ?? c.token?.name ?? a.symbol,
+        symbol: a.symbol,
+        biggest_pool_address: a.pool,
+        liquidity: pair?.liquidity?.usd ?? null,
+        price: { price: pair?.priceUsd ?? null, volume_24h: pair?.volume?.h24 ?? null },
+        priceChange: pair?.priceChange ?? null,
+        txns: pair?.txns ?? null,
       },
       security: {
         address: token,

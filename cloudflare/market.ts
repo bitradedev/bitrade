@@ -244,6 +244,10 @@ export class CloudMarket {
         (BigInt(r.state?.buyTaxRate || 0) || BigInt(r.state?.sellTaxRate || 0))
       )
         throw Error('外盘转账税清算尚未核实');
+      const statsAt =
+          md.source === 'public-bsc' && Object.hasOwn(md, 'marketDataAt') ? md.marketDataAt : md.at,
+        statsFresh =
+          Number.isFinite(statsAt) && Date.now() - statsAt >= 0 && Date.now() - statsAt < 120000;
       m = {
         ...m,
         decimals,
@@ -254,15 +258,19 @@ export class CloudMarket {
         stage: ['flap', 'four'].includes(r.kind) ? 'curve' : 'dex',
         priceUsd,
         nativeUsd: fx.usd,
-        liquidityUsd: finite(md.info.liquidity),
-        volumeUsd: finite(md.info.price?.volume_24h),
+        liquidityUsd: statsFresh ? finite(md.info.liquidity) : null,
+        volumeUsd: statsFresh ? finite(md.info.price?.volume_24h) : null,
         buyTaxPct: Number(r.state?.buyTaxRate ?? 0) / 100,
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
         dataSource:
-          md.source === 'public-bsc' ? 'BSC RPC · DEX Screener · Honeypot.is' : 'BSC RPC · GMGN',
-        marketDataAt: md.at,
-        priceChange: md.info.priceChange ?? null,
-        transactions: md.info.txns ?? null,
+          md.source === 'public-bsc'
+            ? statsFresh
+              ? 'BSC RPC · DEX Screener · Honeypot.is'
+              : 'BSC RPC · Honeypot.is'
+            : 'BSC RPC · GMGN',
+        marketDataAt: statsFresh ? statsAt : null,
+        priceChange: statsFresh ? (md.info.priceChange ?? null) : null,
+        transactions: statsFresh ? (md.info.txns ?? null) : null,
         updatedAt: Date.now(),
         block: b.number,
         quality: 'verified',
@@ -450,8 +458,22 @@ export class CloudMarket {
           continue;
         const priceUsd = spot * 10 ** (td - qd) * usd;
         if (!Number.isFinite(priceUsd) || priceUsd <= 0 || Date.now() - b.time > 15000) continue;
+        const statsFresh =
+          Number.isFinite(m.marketDataAt) &&
+          Date.now() - m.marketDataAt >= 0 &&
+          Date.now() - m.marketDataAt < 120000;
         const next = {
           ...m,
+          ...(md.source === 'public-bsc' && !statsFresh
+            ? {
+                liquidityUsd: null,
+                volumeUsd: null,
+                priceChange: null,
+                transactions: null,
+                marketDataAt: null,
+                dataSource: 'BSC RPC · Honeypot.is',
+              }
+            : {}),
           priceUsd,
           nativeUsd: fx.usd,
           updatedAt: Date.now(),
