@@ -5,7 +5,7 @@ import { fileURLToPath,pathToFileURL } from 'node:url';
 import { decodeEventLog,getEventSelector,type Address } from 'viem';
 import type { Candle,Chain,ChainStatus,Market,MarketEvent,MarketGateway,Quote,QuoteRequest } from '../shared/domain.js';
 import { ERC20,EVENTS,V1_LAUNCH,V2_ABI } from './adapters/abi.js';
-import { GmgnReadQueue,unwrap } from './adapters/gmgn.js';
+import { GmgnReadQueue,unwrap,gmgnProxy } from './adapters/gmgn.js';
 import { ReceiptGas } from './adapters/fees.js';
 import { hexBlock,ReadRpc } from './adapters/rpc.js';
 import {ConfirmedBscHeaders,readBscBlockReceipts} from './adapters/bsc-block-reader.js';
@@ -66,7 +66,7 @@ export class LiveGateway implements MarketGateway {
    this.audit('BSC 事件核验队列满，丢弃旧记录且不补造成交',{id:job.id,replayed:job.replayed});
    if(!job.replayed&&this.running){this.status.bsc.gaps++;this.publish({id:'gap:proof:'+job.id,chain:'bsc',kind:'gap',block:this.status.bsc.head,at:this.status.bsc.chainTime,receivedAt:Date.now(),payload:{reason:'实时回执队列溢出，丢弃的成交不能用于连续覆盖'}});}
   });
-  this.proxy=options.proxy??'http://127.0.0.1:7897';this.dataDir=options.dataDir??resolve(workspace,'paper-terminal/src/server/adapters/runtime');
+  this.proxy=gmgnProxy(options.proxy);this.dataDir=options.dataDir??resolve(workspace,'paper-terminal/src/server/adapters/runtime');
   const guardedAudit=(kind:string,message:string,details?:unknown)=>{if(!this.stopped)options.onAudit?.(kind,message,details);};this.rpc={bsc:new ReadRpc('bsc',this.proxy,guardedAudit),robinhood:new ReadRpc('robinhood',this.proxy,guardedAudit)};
   this.venues={bsc:new Venues(this.rpc.bsc),robinhood:new Venues(this.rpc.robinhood)};this.gas={bsc:new ReceiptGas(this.rpc.bsc),robinhood:new ReceiptGas(this.rpc.robinhood)};this.gmgn=new GmgnReadQueue(this.proxy,guardedAudit);
   const references=(chain:Chain)=>new QuoteReferences((quote,block)=>this.rpc[chain].withProofBudget(async()=>{

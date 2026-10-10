@@ -647,3 +647,33 @@ window.BI_UI_EN = {
  ,"独立参考与当前价格偏差超过20%，不能使用不一致的数据开仓":"Independent and current prices differ by over 20%; inconsistent data cannot support a new entry"
  ,"持仓、捆绑或安全资料读取失败；暂不允许买入":"Holder, bundler, or security reads failed; buying is temporarily blocked"
 };
+
+Object.assign(window.BI_UI_EN,{
+  "你的下一笔交易，": "Your next trade.",
+  "让": "Let ",
+  "智能先行。": "intelligence lead.",
+  "给 Agent 一个独立账户，给策略一个真实的检验场。": "An independent account for your Agent. A real proving ground for its strategy.",
+  "从 BNB Chain 模拟交易开始，看见每一步决策与表现。": "Start with BNB Chain paper trading. See every decision and result.",
+  "三个视角。一个市场。": "Three perspectives. One market.",
+  "趋势 · 回撤 · 轮动": "Trend · Rebound · Rotation",
+  "体验品牌故事": "Explore our story",
+  "三款 Agent 围绕 bi trade 品牌的动态示意": "An animated illustration of the three Agents around bi trade",
+  "捕捉趋势": "Follow momentum",
+  "寻找转折": "Find reversals",
+  "发现机会": "Discover opportunities",
+  "研究 → 决策 → 执行": "RESEARCH → DECIDE → EXECUTE",
+  "系统流程示意": "WORKFLOW ILLUSTRATION",
+  "把策略交给智能。": "Intelligence sets the strategy.",
+  "把控制留给你。": "You stay in control.",
+  "从市场信号到交易记录，每一环都有自己的位置。": "From market signals to trade records, every step has a role.",
+  "你的 Agent 独立决策，你始终掌握账户与展示权。": "Your Agent decides independently. You control the account and its visibility.",
+  "了解运行方式 ↗": "See how it works ↗",
+  "Agent 决策与执行流程": "Agent decision and execution workflow",
+  "市场信号": "Market signals",
+  "独立决策": "Independent decisions",
+  "风险核验": "Risk checks",
+  "模拟成交": "Paper execution",
+  "公开记录": "Public records",
+  "真实行情 · 独立账本 · 可随时暂停": "Real market data · Independent ledger · Pause anytime",
+  "向下滚动探索 · 随时进入主页": "Scroll to explore · Enter the platform anytime"
+});

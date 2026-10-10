@@ -11,6 +11,35 @@ import {SHOWCASE_PROFILES} from '../lib/showcase-agents.mjs';
 import {publicAgent} from '../lib/public-agents.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
+test('root always opens the scroll introduction; home and account routes remain directly accessible',async t=>{
+ const f=await fixture(t);
+ assert.match(await (await fetch(f.url+'/')).text(),/id="intro-content"/);
+ assert.match(await (await fetch(f.url+'/home')).text(),/landing.css/);
+ assert.match(await (await fetch(f.url+'/dashboard')).text(),/id="content"/);
+ assert.equal(f.app.store.all('agents').length,0);
+});
+test('configured reverse proxies give independent visitors separate session quotas; untrusted headers cannot bypass them',async t=>{
+ const f=await fixture(t,{trustedProxyIPs:['127.0.0.1']});
+ for(let n=1;n<=11;n++)assert.equal((await f.call('/api/session',{},null,{'X-Forwarded-For':'198.51.100.'+n})).status,200);
+ for(let n=0;n<10;n++)assert.equal((await f.call('/api/session',{},null,{'X-Forwarded-For':'203.0.113.1'})).status,200);
+ assert.equal((await f.call('/api/session',{},null,{'X-Forwarded-For':'203.0.113.1'})).status,429);
+ const direct=await fixture(t);
+ for(let n=1;n<=10;n++)assert.equal((await direct.call('/api/session',{},null,{'X-Forwarded-For':'198.51.100.'+n})).status,200);
+ assert.equal((await direct.call('/api/session',{},null,{'X-Forwarded-For':'198.51.100.11'})).status,429);
+});
+test('verified owners and Agent tokens use separate request quotas and indexed ledger lookups retain account isolation',async t=>{
+ const scopes=[];const f=await fixture(t,{rateLimit:(_req,kind,_max,_ms,scope)=>scopes.push({kind,scope})});
+ const one=await f.owner(),two=await f.owner(),a=await f.register(one),b=await f.register(two);
+ scopes.length=0;await f.call('/api/state',undefined,one);await f.call('/api/state',undefined,two);
+ await f.agentCall(a,'get_account');await f.agentCall(b,'get_account');await f.call('/api/health',undefined,null,{Authorization:'Bearer '+'a'.repeat(43)});
+ const keys=scopes.filter(x=>x.kind==='requests').map(x=>x.scope);
+ assert.match(keys[0],/^owner:/);assert.notEqual(keys[0],keys[1]);assert.equal(keys[2],'agent:'+a.agentId);assert.equal(keys[3],'agent:'+b.agentId);assert.match(keys[4],/^ip:/);
+ assert.deepEqual(f.app.store.byOwner('agents',one.state.owner.id).map(x=>x.id),[a.agentId]);
+ f.app.store.put('query-test',{id:'a',agentId:a.agentId});f.app.store.put('query-test',{id:'b',agentId:b.agentId});
+ assert.deepEqual(f.app.store.forAgent('query-test',a.agentId).map(x=>x.id),['a']);
+ const plan=f.app.store.db.prepare("EXPLAIN QUERY PLAN SELECT payload FROM entities WHERE kind=? AND json_extract(payload,'$.agentId')=? ORDER BY rowid").all('query-test',a.agentId);
+ assert.match(JSON.stringify(plan),/entities_by_agent/);
+});
 const TOKEN='0x1111111111111111111111111111111111111111',OWNER=accounts.privateKeyToAccount('0x'+'31'.repeat(32)),OTHER=accounts.privateKeyToAccount('0x'+'32'.repeat(32));
 function gateway(){const g={head:100,headAt:Date.now(),connected:true,calls:0,failure:null,fx:1000,quotes:[],start(){},stop(){},statuses(){return [{chain:'bsc',head:this.head,headAt:this.headAt,connected:this.connected}]},markets(){return [{chain:'bsc',address:TOKEN,symbol:'TEST',nativeUsd:this.fx,priceUsd:1,quality:'verified',updatedAt:Date.now(),venue:'pancake-v2'}]},getMarket(){return this.markets()[0]},async quote(p){this.calls++;this.quotes.push(p);if(this.failure)throw this.failure;const input=p.nativeAmountRaw??p.tokenAmountRaw;return {id:'quote-'+this.calls,chain:'bsc',token:p.token,side:p.side,block:p.block,inputRaw:input,spentInputRaw:input,refundRaw:'0',outputRaw:String(p.side==='buy'?BigInt(input)*1000n:BigInt(input)/1000n),at:Date.now(),quality:'verified',nativeUsd:this.fx,priceUsd:1,tokenDecimals:18,fees:{gasUsd:.01,approvalUsd:0,protocolUsd:.02,taxUsd:0,conversionUsd:0,includedInOutput:true,quality:'verified'}}},advance(){this.head++;this.headAt=Date.now();}};return g;}
 async function fixture(t,options={}){if(options.showcase===true)options={...options,showcaseOptions:{riskGuard:{snapshot:token=>({token,state:'screened',buyAllowed:true,reasons:[],metrics:{liquidityUsd:100000,referencePriceUsd:1}}),tick(){},async assertBuy(){},async close(){}},...(options.showcaseOptions??{})}};const dataDir=mkdtempSync(resolve(ROOT,'run-')),g=gateway(),rpc=options.rpc??{calls:0,balance:async()=>0n},app=await createPlatformApp({dataDir,gateway:g,rpc,showcase:false,...options}),url=await app.start(0);t.after(async()=>{await app.close();assert.ok(dataDir.startsWith(ROOT+'\\')||dataDir.startsWith(ROOT+'/'));rmSync(dataDir,{recursive:true,force:true});});

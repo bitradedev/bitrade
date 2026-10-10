@@ -57,7 +57,7 @@
    select.addEventListener('change',()=>{const chosen=select.value;if(!['zh','en'].includes(chosen)||chosen===language)return;if(document.querySelector('dialog[open] .secret')){select.value=language;window.notify?.(t('请先保存一次性凭据，再切换语言。'));return;}save('bi-ui-language',chosen);language=chosen;applyTheme();location.reload();});
    container.append(button,select);header.insertBefore(container,header.querySelector('#wallet-button,.skip')??null);
   }
-  if(location.pathname==='/intro'||location.pathname==='/intro.html')translateStatic(document.body);
+  if(location.pathname==='/'||location.pathname==='/intro'||location.pathname==='/intro.html')translateStatic(document.body);
   else for(const selector of ['header.nav','footer','.skip','#entry-overlay','.modal-head'])translateStatic(document.querySelector(selector));
   document.title=t(document.title);controls();
  }

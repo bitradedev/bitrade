@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  if(location.pathname==='/'&&['#agents','#leaderboard','#how-it-works','#transactions','#token'].includes(location.hash)){location.replace('/home'+location.hash);return;}
   const body=document.body,root=document.documentElement;
   const hero=document.querySelector('.hero'),perspective=document.querySelector('.perspective'),journey=document.querySelector('.journey'),builtins=document.querySelector('.builtins'),finale=document.querySelector('.finale');
   const visual=document.querySelector('.visual-stage'),sculpture=document.querySelector('.sculpture'),halo=document.querySelector('.art-halo'),outer=document.querySelector('.outer-ribbon'),inner=document.querySelector('.inner-ribbon'),orbits=document.querySelector('.orbits');

@@ -4,10 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 // Align request timestamps with the API without changing the Windows clock.
 const require = createRequire(realpathSync(fileURLToPath(new URL('../node_modules/gmgn-cli/package.json', import.meta.url))));
-const { ProxyAgent } = require('undici');
+const { ProxyAgent, Agent } = require('undici');
 const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY;
-if (!proxy) throw new Error('A configured proxy is required for this connection.');
-const dispatcher = new ProxyAgent(proxy);
+const dispatcher = proxy ? new ProxyAgent(proxy) : new Agent({connect:{family:4}});
 const originalNow = Date.now.bind(Date);
 const started = performance.now();
 let serverTime;

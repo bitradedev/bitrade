@@ -1,0 +1,29 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Install pnpm
+        run: npm install --global pnpm@11.25.0
+      - name: Install locked dependencies
+        run: pnpm setup
+      - name: Check readable core formatting
+        run: pnpm check:format
+      - name: Build server and client
+        run: pnpm build
+      - name: Test product, Cloudflare runtime and research terminal
+        run: pnpm test:all
+      - name: Verify Cloudflare deployment bundle
+        run: pnpm build:cloud

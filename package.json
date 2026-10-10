@@ -16,13 +16,17 @@
     "build:cloud": "wrangler deploy --dry-run --outdir .cloud-build",
     "test:cloud": "node --test --test-isolation=none cloudflare/test/*.test.mjs",
     "cloud:dev": "wrangler dev --port 8796 --ip 127.0.0.1 --local-upstream 127.0.0.1:8796 --upstream-protocol http",
-    "cloud:deploy": "wrangler deploy"
+    "cloud:deploy": "wrangler deploy",
+    "test:all": "pnpm test && pnpm test:cloud && pnpm --dir paper-terminal test",
+    "format:core": "prettier --write bi-trade/platform*.mjs bi-trade/lib/*.mjs cloudflare/*.mjs cloudflare/*.ts",
+    "check:format": "prettier --check bi-trade/platform*.mjs bi-trade/lib/*.mjs cloudflare/*.mjs cloudflare/*.ts"
   },
   "dependencies": {
     "gmgn-cli": "^1.6.6",
     "viem": "2.57.3"
   },
   "devDependencies": {
+    "prettier": "^3.9.9",
     "wrangler": "^4.149.0"
   }
 }

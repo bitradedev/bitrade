@@ -20,9 +20,11 @@ export function validateCliArgs(args:string[]){
  const ci=args.indexOf('--chain');if(ci<0||!['bsc','robinhood'].includes(args[ci+1]))throw Error('Invalid CLI chain');
  const ai=args.indexOf('--address');if(ai>=0)address(args[ai+1]);
 }
+export function gmgnProxy(value=process.env.PAPER_PROXY??'http://127.0.0.1:7897'){return value.trim().toLowerCase()==='direct'?'':value;}
 export class GmgnReadQueue {
  private closed=false;
- constructor(private proxy='http://127.0.0.1:7897',private audit?:Audit){}
+ private proxy:string;
+ constructor(proxy?:string,private audit?:Audit){this.proxy=gmgnProxy(proxy);}
  request(args:string[],options:CliQueueOptions={}):Promise<any>{validateCliArgs(args);if(this.closed)return Promise.reject(new RouteBlocked('GMGN_CANCELLED','只读网关已停止'));return cliScheduler.enqueue(this,signal=>this.execute(args,signal),options);}
  private async execute(args:string[],signal:AbortSignal){
   if(signal.aborted)throw signal.reason;await mkdir(queueDir,{recursive:true});let lock;
