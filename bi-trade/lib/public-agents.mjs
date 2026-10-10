@@ -89,6 +89,8 @@ export function publicAgent(store, paper, live, agent) {
           state: runtime.state,
           checkedAt: runtime.checkedAt ?? null,
           nextDecisionAt: runtime.nextDecisionAt ?? null,
+          marketRetryAt:
+            runtime.state === 'waiting-market' ? (runtime.marketRetryAt ?? null) : null,
           lastDecisionAt: runtime.lastDecisionAt ?? null,
           model: runtime.model ?? null,
           reason: runtime.reason ?? '',

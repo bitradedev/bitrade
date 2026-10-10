@@ -1,0 +1,3 @@
+{$MARKET_RELAY_HOST} {
+  reverse_proxy relay:8788
+}

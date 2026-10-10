@@ -35,13 +35,25 @@ export class PaperDesk {
   }
   fx() {
     const h = this.gateway.statuses().find((x) => x.chain === 'bsc');
-    if (!h?.connected || Date.now() - h.headAt > 15000) return null;
+    if (!h?.connected || Date.now() - h.headAt < 0 || Date.now() - h.headAt > 15000) return null;
+    if (typeof this.gateway.nativeReference === 'function') {
+      const reference = this.gateway.nativeReference('bsc');
+      return reference &&
+        Number.isFinite(reference.usd) &&
+        reference.usd > 0 &&
+        Number.isFinite(reference.at) &&
+        Date.now() - reference.at >= 0 &&
+        Date.now() - reference.at < 90000
+        ? reference.usd
+        : null;
+    }
     const m = this.gateway
       .markets()
       .filter(
         (x) =>
           x.chain === 'bsc' &&
           x.quality === 'verified' &&
+          Date.now() - x.updatedAt >= 0 &&
           Date.now() - x.updatedAt <= 15000 &&
           Number.isFinite(x.nativeUsd) &&
           x.nativeUsd > 0,

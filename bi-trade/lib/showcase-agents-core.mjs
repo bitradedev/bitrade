@@ -310,17 +310,21 @@ export class ShowcaseAgents {
         if (!context.markets.length && !context.account.positions.length)
           throw fail(this.gateway.marketReason?.() ?? '等待新鲜且已核实的 BSC 候选市场');
       } catch (e) {
+        const wait = this.gateway.marketWait?.();
         this.status(a.id, {
-          state: 'observing',
+          state: 'waiting-market',
           model: config.model,
+          nextDecisionAt: 0,
+          marketRetryAt: wait?.retryAt ?? null,
           reason: e.status ? e.message : '等待 BSC 行情恢复',
         });
         continue;
       }
       if (!context.account.positions.length && !context.markets.some((m) => m.risk.buyAllowed)) {
         this.status(a.id, {
-          state: 'observing',
+          state: 'waiting-risk',
           model: config.model,
+          marketRetryAt: null,
           nextDecisionAt: this.now() + config.intervalMinutes * 60000,
           reason: '尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。',
         });
@@ -336,6 +340,7 @@ export class ShowcaseAgents {
       }
       this.status(a.id, {
         state: 'thinking',
+        marketRetryAt: null,
         model: config.model,
         nextDecisionAt: this.now() + config.intervalMinutes * 60000,
         reason: 'AI 正在评估真实行情和当前模拟持仓',

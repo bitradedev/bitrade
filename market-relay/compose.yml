@@ -1,0 +1,22 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    expose: ["8788"]
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    mem_limit: 256m
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+volumes:
+  caddy_data:
+  caddy_config:

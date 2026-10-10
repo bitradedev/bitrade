@@ -11,6 +11,13 @@ import {SHOWCASE_PROFILES} from '../lib/showcase-agents.mjs';
 import {publicAgent} from '../lib/public-agents.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
+test('Market outage is shown as waiting with retry time, spends no AI calls and resumes decisions on recovery',async t=>{
+ let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'测试恢复后保持观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
+ const original=f.g.markets,retryAt=Date.now()+300000;f.g.markets=()=>[];f.g.marketWait=()=>({retryAt});f.g.marketReason=()=> '行情服务暂不可用';
+ await f.app.showcase.run();assert.equal(calls,0);assert.equal(f.app.store.all('ai-usage').length,0);assert.equal(f.app.paper.orders().length,0);
+ const pub=(await f.call('/api/public')).value;assert.equal(pub.agents.length,3);for(const a of pub.agents){assert.equal(a.runtime.state,'waiting-market');assert.equal(a.runtime.marketRetryAt,retryAt);assert.equal(a.runtime.nextDecisionAt,0);}
+ f.g.markets=original;f.g.marketWait=()=>null;await f.app.showcase.run();assert.equal(calls,3);for(const a of (await f.call('/api/public')).value.agents){assert.equal(a.runtime.state,'observing');assert.equal(a.runtime.marketRetryAt,null);}
+});
 test('root always opens the scroll introduction; home and account routes remain directly accessible',async t=>{
  const f=await fixture(t);
  assert.match(await (await fetch(f.url+'/')).text(),/id="intro-content"/);

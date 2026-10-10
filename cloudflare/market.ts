@@ -73,6 +73,9 @@ export class CloudMarket {
   markets() {
     return [...this.catalog.values()];
   }
+  nativeReference(chain = 'bsc') {
+    return chain === 'bsc' ? this.fxValue : null;
+  }
   getMarket(chain: string, token: string) {
     return chain === 'bsc' ? this.catalog.get(token.toLowerCase()) : null;
   }
@@ -329,6 +332,10 @@ export class CloudMarket {
     return this.gmgn.status?.().limited
       ? '行情服务限频冷却中，候选币与风控资料暂不可用；恢复后自动继续。'
       : '等待取得合格候选市场';
+  }
+  marketWait() {
+    const status = this.gmgn.status?.();
+    return status?.limited ? { retryAt: status.retryAt } : null;
   }
   async pulse() {
     const b = await this.updateHead(),

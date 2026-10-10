@@ -19,7 +19,7 @@ test('English UI translation preserves order actions, asset addresses, amounts, 
  const {ui}=preferences({'bi-ui-language':'en'}),address='0x1111111111111111111111111111111111111111';
  const html='<button data-action="demo-sell" data-id="agent-1" data-token="'+address+'" data-amount="123">模拟卖出</button>';
  assert.equal(ui.t(html),html.replace('模拟卖出','Paper sell'));
- assert.equal(ui.t('<select aria-label="交易类型"><option value="paper">模拟交易</option></select>'),'<select aria-label="Trade type"><option value="paper">Paper trades</option></select>');
+ assert.equal(ui.t('<select aria-label="交易类型"><option value="paper">模拟交易</option></select>'),'<select aria-label="Trade type"><option value="paper">Paper trading</option></select>');
  assert.equal(ui.t('钱包地址">⧉</button>'),' wallet address">⧉</button>');
  assert.equal(ui.t('已实现盈亏</span><b class="'),'Realized profit / loss</span><b class="');
 });

@@ -120,6 +120,9 @@ export class GmgnHTTP {
         this.cooldown = 0;
         this.failures = 0;
         this.errorCode = null;
+        // Recover pacing gradually after successful reads. A previous ban must
+        // not leave a permanent 15-second interval that starves fresh risk evidence.
+        this.spacing = Math.max(3000, Math.ceil(this.spacing * 0.8));
         this.lastSuccessAt = this.now();
         this.saveBudget();
         return { ...data, _bitradeReadAt: this.lastSuccessAt };

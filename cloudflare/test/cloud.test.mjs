@@ -62,6 +62,13 @@ test('Application-level 429 and malformed reset dates cannot bypass the GMGN cir
  const g=new GmgnHTTP('test',{now:()=>1000000,fetchImpl:async()=>Response.json({code:429,error:'RATE_LIMIT_BANNED',reset_at:'bad'})});
  await assert.rejects(g.info('bsc',TOKEN),/限频/);assert.equal(g.cooldown,1300000);assert.equal(g.status().limited,true);
 });
+test('Successful recovery gradually restores bounded pacing and persists it instead of starving fresh risk reads',async t=>{
+ const {store}=fixture(t);let now=1000000;store.put('cloud-settings',{id:'gmgn-budget',lastAt:0,cooldown:0,spacing:15000,failures:3});
+ const g=new GmgnHTTP('test',{store,now:()=>now,fetchImpl:async()=>Response.json({code:0,data:{}})});
+ await g.info('bsc',TOKEN);assert.equal(g.spacing,12000);assert.equal(g.failures,0);
+ for(let n=0;n<10;n++){now+=20000;await g.security('bsc','0x'+String(n+1).padStart(40,'0'));}
+ assert.equal(g.spacing,3000);assert.equal(store.get('cloud-settings','gmgn-budget').spacing,3000);
+});
 test('Native BNB price verifies oracle identity, rounds and source age without calling GMGN',async()=>{
  const now=1000000,calls=[];let round=[4n,76000000000n,990n,995n,4n];
  const rpc={block:async()=>({number:42,time:now}),read:async(to,_abi,fn,_args,block)=>{calls.push({to,fn,block});return fn==='description'?'BNB / USD':fn==='decimals'?8:round;}};
@@ -78,6 +85,13 @@ test('GMGN cooldown cannot mark a healthy BSC chain disconnected or manufacture 
  const market=new CloudMarket(store,{rpc,gmgn:{status:()=>({limited:true}),trenches:async()=>{gmgnCalls++;throw Error();}}});
  market.nativePrice={read:async()=>({id:'native-fx',usd:760,at:now,readAt:now,source:'Chainlink test'})};
  await market.refresh();assert.equal(gmgnCalls,0);assert.equal(market.statuses()[0].connected,true);assert.equal(market.fxValue.usd,760);assert.equal(market.markets().length,0);assert.match(market.marketReason(),/限频/);
+});
+test('Paper accounts use the independent native reference even with zero GMGN candidates and reject stale or future prices',t=>{
+ const {store}=fixture(t),market=new CloudMarket(store,{rpc:{chain:'bsc'},gmgn:{}}),paper=new PaperDesk(store,market),now=Date.now();
+ market.head={chain:'bsc',connected:true,head:100,headAt:now,chainTime:now};
+ market.fxValue={usd:750,at:now,source:'Chainlink test'};
+ assert.equal(market.markets().length,0);assert.equal(paper.fx(),750);paper.seed('native-test',paper.fx());assert.ok(Math.abs(paper.view('native-test').balanceUsd-1000)<.00001);assert.equal(paper.fills().length,0);
+ market.fxValue.at=now-90001;assert.equal(paper.fx(),null);market.fxValue.at=now+60000;assert.equal(paper.fx(),null);market.fxValue.at=now;market.head.connected=false;assert.equal(paper.fx(),null);
 });
 test('Cloud market quotes exact reserves and real gas evidence; unknown taxes and reorgs reject',async t=>{const {store}=fixture(t),now=Date.now(),route={kind:'v2',token:TOKEN,quote:'0x0000000000000000000000000000000000000000',pool:RECIPIENT,fee:25};let fork=false,gaps=0;
  const rpc={chain:'bsc',block:async(n)=>({number:n??100,time:Date.now(),hash:fork?'fork':'original',transactions:[]}),knownBlock:()=>null,read:async(_to,_abi,name)=>name==='decimals'?18:name==='getReserves'?[1000000n*10n**18n,1000n*10n**18n,0]:name==='token0'?TOKEN:null};

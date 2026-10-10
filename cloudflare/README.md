@@ -35,6 +35,8 @@ AI 服务地址和模型通过 `BI_TRADE_AI_BASE_URL` / `BI_TRADE_AI_MODEL` 配�
 
 ## 安装与验证
 
+若服务商确认 Cloudflare 直连与其访问策略不兼容，可按 [独立只读行情中继](../market-relay/README.md) 部署获准的固定 IPv4 出口，再配置 `GMGN_RELAY_URL` 和 `GMGN_RELAY_TOKEN`。当前未配置这两个值，生产继续使用直连；不能把中继代码准备完等同于行情或 Agent 已恢复。公开 Agent 状态会区分等待行情和等待风险核验，行情冷却时显示单独的连接尝试时间。
+
 需要 Node.js 24 和 pnpm 11.25。根目录安装依赖即可构建云端，不必启动本机行情进程。
 
 ```sh

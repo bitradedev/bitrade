@@ -8,6 +8,7 @@ import { OpenAIPlanner, validateConfig, reserveAICall } from '../bi-trade/lib/ai
 import { CloudMarket } from './market.js';
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
+import { marketFetch } from './market-source.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
 
@@ -58,7 +59,13 @@ export class TradingPlatform extends DurableObject<any> {
       .blockConcurrencyWhile(async () => {
         if (!this.env.BI_TRADE_VAULT_KEY) throw Error('Missing vault secret');
         const vault = new EncryptedVault(Buffer.from(this.env.BI_TRADE_VAULT_KEY, 'base64'));
-        const source = new GmgnHTTP(this.env.GMGN_API_KEY, { store: this.store }),
+        const source = new GmgnHTTP(
+            this.env.GMGN_RELAY_URL ? this.env.GMGN_RELAY_TOKEN : this.env.GMGN_API_KEY,
+            {
+              store: this.store,
+              fetchImpl: marketFetch(this.env),
+            },
+          ),
           rpc = new CloudRpc(this.env.BSC_RPC_URL),
           market = new CloudMarket(this.store, {
             rpc,
@@ -134,12 +141,16 @@ export class TradingPlatform extends DurableObject<any> {
           platform: 'cloudflare',
           liveEnabled: false,
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
-          marketConfigured: !!this.env.GMGN_API_KEY,
+          marketConfigured: !!(
+            this.env.GMGN_API_KEY ||
+            (this.env.GMGN_RELAY_URL && this.env.GMGN_RELAY_TOKEN)
+          ),
           market: this.market.statuses()[0],
           nativeUsd: this.market.fxValue?.usd ?? null,
           nativeFxAt: this.market.fxValue?.at ?? null,
           nativeFxSource: this.market.fxValue?.source ?? null,
           marketService: this.market.gmgn.status(),
+          marketTransport: this.env.GMGN_RELAY_URL ? 'private-relay' : 'cloudflare-fetch',
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
