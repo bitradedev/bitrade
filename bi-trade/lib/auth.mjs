@@ -1,6 +1,6 @@
 import {randomBytes} from 'node:crypto';
 import {viem} from './dependencies.mjs';
-import {digest,identifier,fail} from './database.mjs';
+import {digest,identifier,fail} from './database-core.mjs';
 export const COOKIE='bi_trade_session';
 export function address(value){if(typeof value!=='string'||!/^0x[0-9a-fA-F]{40}$/.test(value)||/^0x0{40}$/i.test(value))throw fail('BSC钱包地址无效');return value.toLowerCase();}
 export class OwnerAuth{

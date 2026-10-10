@@ -1,4 +1,4 @@
-import {digest,fail} from './database.mjs';
+import {digest,fail} from './database-core.mjs';
 
 export const AGENT_AVATARS=Object.freeze(['trend','rebound','rotation']);
 export function validateAvatar(value){if(!AGENT_AVATARS.includes(value))throw fail('请选择提供的三款Agent形象之一');return value;}

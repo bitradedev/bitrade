@@ -1,10 +1,10 @@
-import {identifier,fail,json} from './database.mjs';
+import {identifier,fail,json} from './database-core.mjs';
 import {address} from './auth.mjs';
 const UNIT=10n**18n,active=new Set(['preparing','queued','quoting']);
 const nativeUsd=(v,fx)=>Number(BigInt(v))/1e18*fx;
 const feeRaw=q=>BigInt(Math.ceil((q.fees.gasUsd+q.fees.approvalUsd)/q.nativeUsd*1e18));
 export class PaperDesk{
- constructor(store,gateway,{buyGuard}={}){this.store=store;this.gateway=gateway;this.buyGuard=buyGuard;this.busy=false;this.stopped=false;this.revision=0;this.locks=new Map();for(const o of this.orders().filter(x=>active.has(x.status))){o.status='cancelled';o.error='服务重启，未假定离线期间成交';this.store.put('paper-orders',o);}}
+ constructor(store,gateway,{buyGuard,preserveQueued=false}={}){this.store=store;this.gateway=gateway;this.buyGuard=buyGuard;this.busy=false;this.stopped=false;this.revision=0;this.locks=new Map();for(const o of this.orders().filter(x=>active.has(x.status))){if(preserveQueued&&o.status==='queued')continue;o.status='cancelled';o.error='服务重启，未假定离线期间成交';this.store.put('paper-orders',o);}}
  orders(id){return this.store.all('paper-orders').filter(o=>!id||o.agentId===id);}
  fills(id){return this.store.all('paper-fills').filter(o=>!id||o.agentId===id);}
  lots(id){return this.store.all('paper-lots').filter(o=>o.agentId===id&&BigInt(o.remainingRaw)>0n).sort((a,b)=>a.at-b.at);}

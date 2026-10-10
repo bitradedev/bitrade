@@ -6,6 +6,8 @@
 
 ## 安装
 
+线上部署可使用 Cloudflare Workers 与持久化 SQLite，运行方式见 [Cloudflare 部署说明](cloudflare/README.md)。网站页面和交互保持一致，云端实盘入口固定关闭。
+
 需要 Node.js 24 或更新版本、pnpm 11.25，以及可访问 BSC RPC 和 GMGN API 的网络环境。
 
 ```sh

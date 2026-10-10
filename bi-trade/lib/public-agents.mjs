@@ -1,4 +1,4 @@
-import {fail} from './database.mjs';
+import {fail} from './database-core.mjs';
 import {avatarFor} from './agent-avatars.mjs';
 
 export function strategyDto(agent){

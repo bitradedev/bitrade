@@ -2,7 +2,7 @@ import { encodeAbiParameters,keccak256, type Address } from 'viem';
 import type { Side } from '../../shared/domain.js';
 import { ERC20,FLAP_ABI,FOUR_ABI,PONS_V1_ABI,PONS_V2_ABI,V2_ABI,V3_ABI,V4_ABI } from './abi.js';
 import { CHAIN_CONFIG,FLAP,FOUR_HELPER,FOUR_MANAGER,PONS_V1,PONS_V2,ZERO,ORDINARY_RECIPIENT,RouteBlocked,address,type Route,type RouteQuote,type PoolKey,capMap } from './types.js';
-import { ReadRpc } from './rpc.js';
+import type { ReadRpc } from './rpc.js';
 import { BPS,WAD,flapReserve,flapSpent,flapVirtualSell,quotePons,units,v2Quote,feeExcludedImpact } from './math.js';
 
 export function poolId(key:PoolKey){return keccak256(encodeAbiParameters([{type:'address'},{type:'address'},{type:'uint24'},{type:'int24'},{type:'address'}],[key.currency0,key.currency1,key.fee,key.tickSpacing,key.hooks]));}

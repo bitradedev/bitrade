@@ -1,5 +1,5 @@
 import {viem,chains} from './dependencies.mjs';
-import {fail} from './database.mjs';
+import {fail} from './database-core.mjs';
 export const WBNB='0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c';
 export const ROUTER_V2='0x10ed43c718714eb63d5aa57b78b54704e256024e';
 export const FACTORY_V2='0xca143ce32fe78f1f7019d7d551a6402fc5350c73';

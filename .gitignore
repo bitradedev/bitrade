@@ -25,8 +25,14 @@ vault-key
 .codex/
 ui-backup-*/
 *-preview.*
+!bi-trade/web/bi-mark-preview.svg
 *-mobile.*
 *-results.txt
 test-results.txt
 Thumbs.db
 .DS_Store
+# Cloudflare local state, secrets and generated bundles
+.wrangler/
+.cloud-build/
+.cloud-test-build/
+.dev.vars*

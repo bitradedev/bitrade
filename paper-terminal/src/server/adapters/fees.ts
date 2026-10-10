@@ -1,5 +1,6 @@
 import { getEventSelector } from 'viem';
-import { ReadRpc,hexBlock } from './rpc.js';
+import type { ReadRpc } from './rpc.js';
+const hexBlock=(n:number)=>{if(!Number.isSafeInteger(n)||n<0)throw Error('Invalid block number');return '0x'+n.toString(16);};
 import { RouteBlocked,FLAP,FOUR_MANAGER,CHAIN_CONFIG,capMap,type Route,type GasContext } from './types.js';
 const trades=new Set([
  'Swap(address,uint256,uint256,uint256,uint256,address)',

@@ -1,0 +1,16 @@
+{
+ "$schema":"./node_modules/wrangler/config-schema.json",
+ "name":"bitrade",
+ "main":"cloudflare/worker.ts",
+ "account_id":"7a7413ab353c12dad14fe460c097d155",
+ "compatibility_date":"2026-10-09",
+ "compatibility_flags":["nodejs_compat"],
+ "workers_dev":false,
+ "preview_urls":false,
+ "routes":[{"pattern":"bitrade.site","custom_domain":true}],
+ "assets":{"directory":"./bi-trade/web","binding":"ASSETS","run_worker_first":true,"html_handling":"none","not_found_handling":"none"},
+ "durable_objects":{"bindings":[{"name":"PLATFORM","class_name":"TradingPlatform"}]},
+ "migrations":[{"tag":"v1","new_sqlite_classes":["TradingPlatform"]}],
+ "vars":{"SITE_ORIGIN":"https://bitrade.site","BSC_RPC_URL":"https://bsc-rpc.publicnode.com","BI_TRADE_AI_BASE_URL":"https://rivernexus.vip/v1","BI_TRADE_AI_MODEL":"gpt-6-luna","BI_TRADE_SHOWCASE_PAUSED":"false"},
+ "observability":{"enabled":false}
+}
