@@ -189,13 +189,24 @@ export class ShowcaseAgents {
     });
   }
   async exits(a) {
+    const failures = [];
+    this.status(a.id, { exitFailures: failures });
     for (const position of showcasePositions(this.store, this.paper.lots(a.id))) {
       const { token, amountRaw, costUsd, exitPlan } = position,
         rule = exitPlan.rule;
       if (!rule) continue;
-      const head = this.paper.head(),
+      const head = this.paper.head();
+      let q;
+      try {
         q = await this.paper.quote(a, 'sell', token, amountRaw, head.head);
-      if (q.spentInputRaw !== q.inputRaw) continue;
+        if (q.spentInputRaw !== q.inputRaw) throw fail('整仓退出报价尚未核实');
+      } catch {
+        failures.push({ token, at: this.now() });
+        this.status(a.id, { exitFailures: [...failures] });
+        // A token-specific route or quote failure must not block other tokens'
+        // automatic exits. Shared head, pause and execution failures still stop.
+        continue;
+      }
       const proceeds =
           (Number(BigInt(q.outputRaw)) / 1e18) * q.nativeUsd - q.fees.gasUsd - q.fees.approvalUsd,
         pct = (proceeds / costUsd - 1) * 100,
@@ -216,6 +227,8 @@ export class ShowcaseAgents {
         return true;
       }
     }
+    if (failures.length)
+      throw fail('部分持仓退出报价暂不可用；其他持仓已继续核对，稍后自动重试。', 503);
     return false;
   }
   tick() {

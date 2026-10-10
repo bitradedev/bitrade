@@ -1,4 +1,6 @@
 window.BI_UI_EN = {
+"退出报价待重试":"Exit quote awaiting retry",
+"部分持仓退出报价暂不可用；其他持仓已继续核对，稍后自动重试。":"Some positions have unavailable exit quotes. Other positions were still checked. Retrying automatically.",
 "当前生效的退出规则":"Active exit rules",
 "按整仓扣除退出费用后的美元收益触发，相对剩余持仓成本计算。持有决策不会修改这些规则；触发后仍需重新核价成交。":"Triggers use executable USD returns for the entire position after exit costs, relative to its remaining cost basis. Hold decisions do not change these rules. Triggered exits still need a fresh quote to fill.",
 "开仓时设定 · 整仓执行":"Set at entry · Entire position",

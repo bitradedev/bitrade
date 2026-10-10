@@ -104,6 +104,7 @@ export function publicAgent(store, paper, live, agent) {
           lastDecisionAt: runtime.lastDecisionAt ?? null,
           model: runtime.model ?? null,
           reason: runtime.reason ?? '',
+          exitFailures: (runtime.exitFailures ?? []).map((f) => ({ token: f.token, at: f.at })),
           decision: runtime.decision
             ? {
                 action: runtime.decision.action,

@@ -48,5 +48,8 @@ test('public strategy details render saved exit rules in both languages and keep
   agent.exitPlans=[{...plan,state:'missing',rule:null,deadlineAt:null}];const missing=context.exitPlanPanel(agent);
   assert.doesNotMatch(missing,/\+10%|−5%/);assert.ok(missing.includes(language==='en'?'Automatic exit rules unavailable':'未取得自动退出规则'));
   assert.equal(context.exitPlanPanel({...agent,source:'user'}),'');assert.equal(context.exitPlanPanel({...agent,exitPlans:[]}),'');
+  agent.runtime={state:'observing',reason:'等待退出报价',exitFailures:[{token:plan.token,at:Date.now()}]};await context.publicProfile(agent.id);
+  assert.match(shown,/exit-failures/);assert.ok(shown.includes(language==='en'?'Exit quote awaiting retry':'退出报价待重试'));
+  agent.runtime.exitFailures=[];await context.publicProfile(agent.id);assert.doesNotMatch(shown,/exit-failures/);assert.equal(context.exitFailurePanel({...agent,source:'user',runtime:{exitFailures:[{token:plan.token,at:Date.now()}]}}),'');
  }
 });
