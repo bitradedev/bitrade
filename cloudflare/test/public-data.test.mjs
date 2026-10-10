@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PublicBscData } from '../public-data.mjs';
+import { retryAfter } from '../retry-after.mjs';
 import { ESTABLISHED_ASSETS, evaluateEstablishedRisk } from '../../bi-trade/lib/established-risk.mjs';
 import { TokenRiskGuard } from '../../bi-trade/lib/token-risk-core.mjs';
 const A = ESTABLISHED_ASSETS[0], WBNB = '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c', NOW = 1791665000000;
@@ -36,6 +37,44 @@ test('Source rejects old cached responses, redirects and unexpected business err
  for(const response of [Response.json({}, {headers:{Age:'121'}}),new Response(null,{status:302,headers:{Location:'https://other.example'}}),Response.json({error:'temporarily unavailable'}),Response.json({code:4029})]){
   const p=new PublicBscData(store(),{}, {fetchImpl:async()=>response,now:()=>NOW});await assert.rejects(p.read('safety','/test'));assert.equal(p.status()[1].limited,true);
  }
+});
+test('Retry-After seconds cannot become a future calendar year and recovery retains the original failure',async()=>{
+ const s=store();let now=NOW,calls=0;
+ let p=new PublicBscData(s,{}, {fetchImpl:async()=>{calls++;return Response.json({}, {status:429,headers:{'Retry-After':'39'}});},now:()=>now});
+ await assert.rejects(p.read('dex','/test'),/429/);
+ const budget=p.status()[0];assert.equal(budget.retryAt,NOW+300000);
+ p=new PublicBscData(s,{}, {fetchImpl:async()=>{calls++;return Response.json({pairs:[]});},now:()=>now});
+ now=NOW+299999;await assert.rejects(p.read('dex','/test'),/冷却/);assert.equal(calls,1);
+ now=NOW+300000;assert.equal((await p.read('dex','/test')).at,now);assert.equal(calls,2);assert.equal(p.status()[0].limited,false);
+ assert.deepEqual(p.status()[0].lastFailure,{at:NOW,status:429,serverRetryAt:NOW+39000});
+});
+test('Retry-After parser separates numeric delays, HTTP dates and malformed values without clipping valid long waits',()=>{
+ for(const seconds of ['0','1','39','49','600','2039','100000',' 39 '])assert.deepEqual(retryAfter(seconds,NOW),{kind:'seconds',at:NOW+Number(seconds)*1000});
+ const future=Date.UTC(2039,0,1);assert.deepEqual(retryAfter(new Date(future).toUTCString(),NOW),{kind:'date',at:future});
+ for(const date of ['Sunday, 06-Nov-94 08:49:37 GMT','Sun Nov  6 08:49:37 1994'])assert.deepEqual(retryAfter(date,NOW),{kind:'date',at:Date.UTC(1994,10,6,8,49,37)});
+ for(const invalid of ['', '39.5','-1','Infinity','1e9','01/01/2039','2039-01-01','9'.repeat(40)])assert.deepEqual(retryAfter(invalid,NOW),{kind:'invalid',at:null});
+ assert.deepEqual(retryAfter(null,NOW),{kind:'missing',at:null});
+});
+test('Valid explicit HTTP dates are honored even if they match the known old parser failure',async()=>{
+ const s=store(),now=1791669862535,deadline=2177452805000;
+ let p=new PublicBscData(s,{}, {fetchImpl:async()=>Response.json({}, {status:429,headers:{'Retry-After':new Date(deadline-5000).toUTCString()}}),now:()=>now});
+ await assert.rejects(p.read('dex','/test'),/429/);assert.equal(p.status()[0].retryAt,deadline);assert.equal(p.status()[0].retryAfterKind,'date');
+ p=new PublicBscData(s,{}, {fetchImpl:async()=>{throw Error('Must honor explicit future deadline');},now:()=>now+600000});
+ await assert.rejects(p.read('dex','/test'),/冷却/);assert.equal(p.status()[0].retryAt,deadline);assert.equal(s.get('cloud-settings','public-retry-correction-20261011'),null);
+});
+test('Only the known untyped legacy cooldown is corrected once, preserves its record and waits conservatively before recovery',async()=>{
+ const s=store(),old={id:'public-budget-dex',lastAt:1791669862535,retryAt:2177452805000,lastError:'HTTP 429',lastSuccessAt:1791669830099};
+ s.put('cloud-settings',old);s.put('token-risk-reports',{id:'keep-risk',value:'unknown'});s.put('paper-ledger',{id:'keep-loss',value:-87});
+ let now=old.lastAt+300000,calls=0;const fetchImpl=async()=>{calls++;return Response.json({pairs:[]});};
+ let p=new PublicBscData(s,{}, {fetchImpl,now:()=>now});
+ const corrected=old.lastAt+2039*1000+5000;assert.equal(p.status()[0].retryAt,corrected);
+ const audit=s.get('cloud-settings','public-retry-correction-20261011');assert.deepEqual(audit.previous,old);assert.equal(audit.headerKnown,false);assert.equal(audit.delayUpperBoundSeconds,2039);
+ now=corrected-1;p=new PublicBscData(s,{}, {fetchImpl,now:()=>now});assert.equal(p.status()[0].retryAt,corrected);assert.deepEqual(s.get('cloud-settings',audit.id),audit);
+ await assert.rejects(p.read('dex','/test'),/冷却/);assert.equal(calls,0);
+ now=corrected;assert.equal((await p.read('dex','/test')).at,now);assert.equal(calls,1);assert.equal(p.status()[0].retryAt,0);
+ assert.equal(p.status()[0].cooldownCorrectionId,audit.id);assert.deepEqual(s.get('cloud-settings',audit.id),audit);assert.equal(s.get('token-risk-reports','keep-risk').value,'unknown');assert.equal(s.get('paper-ledger','keep-loss').value,-87);
+ for(const change of [o=>o.lastAt++,o=>o.retryAt++,o=>o.lastError='HTTP 503',o=>o.id='public-budget-safety',o=>o.retryAfterVersion=2]){const other=store(),row={...old};change(row);other.put('cloud-settings',row);new PublicBscData(other,{}, {now:()=>now});assert.deepEqual(other.get('cloud-settings',row.id),row);assert.equal(other.get('cloud-settings',audit.id),null);}
+ const late=store();late.put('cloud-settings',old);new PublicBscData(late,{}, {now:()=>corrected+1000});assert.equal(late.get('cloud-settings',old.id).retryAt,corrected+301000);
 });
 test('HTTP cache age is subtracted from evidence time instead of refreshing old upstream data',async()=>{
  const p=new PublicBscData(store(),{}, {fetchImpl:async()=>Response.json({pairs:[]},{headers:{Age:'30'}}),now:()=>NOW});

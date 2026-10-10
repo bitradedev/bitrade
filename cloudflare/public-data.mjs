@@ -1,4 +1,5 @@
 import { keccak256, parseAbi } from 'viem';
+import { correctKnownLegacyCooldown, retryAfter } from './retry-after.mjs';
 import {
   ESTABLISHED_ASSETS,
   establishedAsset,
@@ -16,6 +17,7 @@ const HOSTS = { dex: 'https://api.dexscreener.com', safety: 'https://api.honeypo
 export class PublicBscData {
   constructor(store, rpc, { fetchImpl = (...args) => fetch(...args), now = Date.now } = {}) {
     Object.assign(this, { store, rpc, fetch: fetchImpl, now });
+    correctKnownLegacyCooldown(store, now());
     this.pending = new Map();
     this.queues = new Map();
   }
@@ -54,17 +56,18 @@ export class PublicBscData {
             headers: { Accept: 'application/json' },
           });
           if (!response.ok) {
-            const retry = response.headers.get('Retry-After'),
-              seconds = retry && /^\d+$/.test(retry) ? Number(retry) : 0,
-              date = retry ? Date.parse(retry) : 0;
+            const retry = retryAfter(response.headers.get('Retry-After'), at);
             this.store.put('cloud-settings', {
+              ...budget,
               id: 'public-budget-' + service,
               lastAt: at,
               retryAt: Math.max(
                 at + (response.status === 429 ? 300000 : 60000),
-                at + seconds * 1000 + 5000,
-                Number.isFinite(date) ? date + 5000 : 0,
+                retry.at === null ? 0 : retry.at + 5000,
               ),
+              retryAfterVersion: 2,
+              retryAfterKind: retry.kind,
+              lastFailure: { at, status: response.status, serverRetryAt: retry.at },
               lastError: 'HTTP ' + response.status,
               lastSuccessAt: budget.lastSuccessAt ?? null,
             });
@@ -82,6 +85,7 @@ export class PublicBscData {
           const row = { id, at: at - (Number.isFinite(age) && age > 0 ? age * 1000 : 0), value };
           this.store.put('cloud-public-cache', row);
           this.store.put('cloud-settings', {
+            ...budget,
             id: 'public-budget-' + service,
             lastAt: at,
             lastSuccessAt: this.now(),
