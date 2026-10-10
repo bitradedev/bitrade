@@ -1,0 +1,32 @@
+# Local dependencies and builds
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+
+# Private accounts, encrypted credentials, wallets and runtime state
+data/
+runtime/
+logs/
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+vault-key
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+
+# Local tooling and previews
+.agents/
+.codex/
+ui-backup-*/
+*-preview.*
+*-mobile.*
+*-results.txt
+test-results.txt
+Thumbs.db
+.DS_Store

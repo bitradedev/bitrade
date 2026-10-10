@@ -1,0 +1,12 @@
+import test from 'node:test';import assert from 'node:assert/strict';import {mkdirSync,mkdtempSync} from 'node:fs';import {resolve} from 'node:path';
+import {Store} from '../src/server/store.js';import {Engine} from '../src/server/engine.js';import type {MarketGateway,Chain,Market,MarketEvent} from '../src/shared/domain.js';
+
+test('own-wallet control is observed on both chains without becoming a copy source or moving paper cash',async()=>{
+ const root=resolve('data/test-runs');mkdirSync(root,{recursive:true});const store=new Store(mkdtempSync(resolve(root,'control-wallet-'))),own='0x115d9f406cb33e67c19a7ccc4b1676197d9e295c',source='0x01135eb912e95499885a96e31f5cc5fa9172f562',token='0x1111111111111111111111111111111111111111';store.setMeta('wallets',[{address:source,name:'观察源'}]);
+ const market=(chain:Chain):Market=>({id:chain+':'+token,chain,address:token,name:'isolated-control',symbol:'TEST',platform:'fixture',stage:'curve',createdAt:Date.now()-120000,priceUsd:1,nativeUsd:1000,quoteAddress:'0x0000000000000000000000000000000000000000',decimals:18,liquidityUsd:10000,volumeUsd:1000,buyTaxPct:0,sellTaxPct:0,updatedAt:Date.now(),block:100,quality:'verified',reason:''});let quoteCalls=0;
+ const gateway={statuses:()=>['bsc','robinhood'].map(chain=>({chain,connected:true,head:100,headAt:Date.now()})),markets:()=>[market('bsc'),market('robinhood')],getMarket:(chain:Chain)=>market(chain),setWallets:()=>{},quote:async()=>{quoteCalls++;throw Error('control must not request an entry');}} as unknown as MarketGateway;
+ const engine=new Engine(store,gateway);
+ try{for(const chain of ['bsc','robinhood'] as Chain[]){assert.ok(engine.watchedWallets(chain).some(w=>w.address===own));assert.ok(engine.broker.strategies().filter(s=>s.chain===chain).every(s=>s.wallets.every(w=>w.address!==own)));const at=Date.now();const event:MarketEvent={id:'control:'+chain,chain,kind:'wallet',block:100,at,receivedAt:at,token,wallet:own,side:'buy',priceUsd:1,amountUsd:10,firstBuy:true,payload:{verified:true}};await engine.receive(event);}
+  const state=engine.state();assert.equal(state.controlWallets?.length,2);assert.equal(state.controlActivity?.length,2);assert.equal(quoteCalls,0);assert.equal(state.orders.length,0);assert.equal(state.positions.length,0);assert.ok(state.accounts.every(a=>a.cashUsd===100&&a.nativeBalanceRaw===null&&a.feesUsd===0));assert.equal(engine.broker.checks().passed,true);
+ }finally{store.close();}
+});

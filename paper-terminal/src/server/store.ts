@@ -1,0 +1,82 @@
+import {DatabaseSync,backup as sqliteBackup} from 'node:sqlite';
+import {mkdirSync,readFileSync,writeFileSync,renameSync,existsSync,openSync,readSync,closeSync,statSync,unlinkSync} from 'node:fs';
+import {resolve,join,sep} from 'node:path';
+import {createHash,randomUUID} from 'node:crypto';
+import type {AuditRow} from '../shared/domain.js';
+const serialize=(value:unknown)=>JSON.stringify(value,(_,v)=>typeof v==='bigint'?v.toString():v);
+const ENTITIES=['accounts','positions','orders','fills','strategies','research_runs'] as const;
+export type Table=typeof ENTITIES[number];
+export const MAX_BACKUP_BYTES=8*1024*1024*1024;
+export class Store {
+ db:DatabaseSync;readonly archive:DatabaseSync;readonly path:string;depth=0;
+ activeBackups=0;
+ archiveVersion=0;
+ constructor(readonly dataDir:string){mkdirSync(dataDir,{recursive:true});this.path=resolve(dataDir,'terminal.sqlite');this.db=new DatabaseSync(this.path);this.archive=new DatabaseSync(resolve(dataDir,'research-history.sqlite'));this.archive.exec('PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS evidence(id TEXT PRIMARY KEY,at INTEGER NOT NULL,kind TEXT NOT NULL,strategyId TEXT NOT NULL,hash TEXT NOT NULL,payload TEXT NOT NULL)');this.schema();}
+ schema(){this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
+ CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,kind TEXT NOT NULL,message TEXT NOT NULL,details TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS market_events(id TEXT PRIMARY KEY,chain TEXT NOT NULL,at INTEGER NOT NULL,block INTEGER NOT NULL,payload TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS events_time ON market_events(at);
+ CREATE INDEX IF NOT EXISTS wallet_events_lookup ON market_events(json_extract(payload,'$.kind'),lower(json_extract(payload,'$.wallet')),at DESC);
+ CREATE TABLE IF NOT EXISTS markets(id TEXT PRIMARY KEY,payload TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS quotes(id TEXT PRIMARY KEY,chain TEXT NOT NULL,token TEXT NOT NULL,at INTEGER NOT NULL,payload TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS quotes_token_time ON quotes(chain,token,at);
+ CREATE TABLE IF NOT EXISTS research_samples(id TEXT PRIMARY KEY,strategyId TEXT NOT NULL,start INTEGER NOT NULL,payload TEXT NOT NULL);
+ CREATE INDEX IF NOT EXISTS research_time ON research_samples(strategyId,start);
+ CREATE TABLE IF NOT EXISTS equity(id INTEGER PRIMARY KEY AUTOINCREMENT,accountId TEXT NOT NULL,at INTEGER NOT NULL,value REAL NOT NULL,conservative REAL NOT NULL);
+ CREATE TABLE IF NOT EXISTS ledger(id INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,accountId TEXT NOT NULL,orderId TEXT,asset TEXT NOT NULL,deltaRaw TEXT NOT NULL,nativeAfterRaw TEXT NOT NULL,description TEXT NOT NULL);`);
+ this.db.exec('CREATE TABLE IF NOT EXISTS fx(chain TEXT NOT NULL,at INTEGER NOT NULL,receivedAt INTEGER NOT NULL,nativeUsd REAL NOT NULL,quality TEXT NOT NULL,source TEXT NOT NULL,PRIMARY KEY(chain,at)); CREATE INDEX IF NOT EXISTS fx_time ON fx(chain,at)');
+ for(const name of ENTITIES)this.db.exec(`CREATE TABLE IF NOT EXISTS ${name}(id TEXT PRIMARY KEY,payload TEXT NOT NULL)`);
+ this.db.exec("CREATE UNIQUE INDEX IF NOT EXISTS order_client_id ON orders(json_extract(payload,'$.clientId'))");
+ if(!this.meta('mode')){this.setMeta('mode','paper');this.setMeta('schema',1);}
+ if(this.meta('mode')!=='paper'||this.meta('schema')!==1)throw Error('数据库版本不兼容');
+ }
+ transaction<T>(fn:()=>T):T {if(this.depth)return fn();this.db.exec('BEGIN IMMEDIATE');this.depth++;try{const result=fn();this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}finally{this.depth--;}}
+ get<T>(table:Table,id:string):T|undefined {const row=this.db.prepare(`SELECT payload FROM ${table} WHERE id=?`).get(id) as {payload:string}|undefined;return row?JSON.parse(row.payload):undefined;}
+ all<T>(table:Table):T[]{return (this.db.prepare(`SELECT payload FROM ${table} ORDER BY rowid`).all() as {payload:string}[]).map(r=>JSON.parse(r.payload));}
+ put<T extends {id:string}>(table:Table,row:T){this.db.prepare(`INSERT INTO ${table}(id,payload)VALUES(?,?)ON CONFLICT(id)DO UPDATE SET payload=excluded.payload`).run(row.id,serialize(row));}
+ meta<T=unknown>(key:string):T|undefined {const row=this.db.prepare('SELECT value FROM meta WHERE key=?').get(key) as {value:string}|undefined;return row?JSON.parse(row.value):undefined;}
+ setMeta(key:string,value:unknown){this.db.prepare('INSERT INTO meta(key,value)VALUES(?,?)ON CONFLICT(key)DO UPDATE SET value=excluded.value').run(key,serialize(value));}
+ audit(kind:string,message:string,details:unknown={}){this.db.prepare('INSERT INTO audit(at,kind,message,details)VALUES(?,?,?,?)').run(Date.now(),kind,message,serialize(details));}
+ auditRows(limit=100):AuditRow[]{return (this.db.prepare('SELECT * FROM audit ORDER BY id DESC LIMIT ?').all(limit) as unknown as (Omit<AuditRow,'details'>&{details:string})[]).map(x=>({...x,details:JSON.parse(x.details)}));}
+ event(row:{id:string;chain:string;at:number;block:number}){return this.db.prepare('INSERT OR IGNORE INTO market_events VALUES(?,?,?,?,?)').run(row.id,row.chain,row.at,row.block,serialize(row)).changes>0;}
+ events(after:number){return (this.db.prepare('SELECT payload FROM market_events WHERE at>=? ORDER BY at').all(after) as {payload:string}[]).map(r=>JSON.parse(r.payload));}
+ walletActivity(addresses:readonly string[],limit=40){if(!addresses.length)return [];return (this.db.prepare(`SELECT payload FROM market_events WHERE json_extract(payload,'$.kind')='wallet' AND lower(json_extract(payload,'$.wallet')) IN (${addresses.map(()=>'?').join(',')}) ORDER BY at DESC LIMIT ?`).all(...addresses.map(a=>a.toLowerCase()),limit) as {payload:string}[]).map(r=>JSON.parse(r.payload));}
+ market(row:{id:string}){this.db.prepare('INSERT INTO markets VALUES(?,?)ON CONFLICT(id)DO UPDATE SET payload=excluded.payload').run(row.id,serialize(row));}
+ marketRows(){return (this.db.prepare('SELECT payload FROM markets').all() as {payload:string}[]).map(r=>JSON.parse(r.payload));}
+ quote(row:{id:string;chain:string;token:string;at:number}){this.db.prepare('INSERT OR IGNORE INTO quotes VALUES(?,?,?,?,?)').run(row.id,row.chain,row.token,row.at,serialize(row));}
+ sample(row:{id:string;strategyId:string;start:number}){this.db.prepare('INSERT INTO research_samples VALUES(?,?,?,?)ON CONFLICT(id)DO UPDATE SET payload=excluded.payload').run(row.id,row.strategyId,row.start,serialize(row));}
+ samples(strategyId:string,from=0,to=Number.MAX_SAFE_INTEGER){return (this.db.prepare('SELECT payload FROM research_samples WHERE strategyId=? AND start>=? AND start<? ORDER BY start').all(strategyId,from,to) as {payload:string}[]).map(r=>JSON.parse(r.payload));}
+ fx(row:{chain:string;at:number;receivedAt:number;nativeUsd:number;quality:string;source:string}){this.db.prepare('INSERT OR IGNORE INTO fx VALUES(?,?,?,?,?,?)').run(row.chain,row.at,row.receivedAt,row.nativeUsd,row.quality,row.source);}
+ fxTrace(chain:string,from:number,to:number){const last=this.db.prepare('SELECT * FROM fx WHERE chain=? AND at<? ORDER BY at DESC LIMIT 1').all(chain,from);return [...last,...this.db.prepare('SELECT * FROM fx WHERE chain=? AND at>=? AND at<? ORDER BY at').all(chain,from,to)];}
+ ledger(accountId:string,orderId:string|null,asset:string,delta:bigint,after:bigint,description:string){this.db.prepare('INSERT INTO ledger(at,accountId,orderId,asset,deltaRaw,nativeAfterRaw,description)VALUES(?,?,?,?,?,?,?)').run(Date.now(),accountId,orderId,asset,delta.toString(),after.toString(),description);}
+ equity(accountId:string,value:number,conservative:number){this.db.prepare('INSERT INTO equity(accountId,at,value,conservative)VALUES(?,?,?,?)').run(accountId,Date.now(),value,conservative);}
+ curve(accountId:string,limit=3000){if(!Number.isSafeInteger(limit)||limit<1||limit>3000)throw Error('资金曲线读取数量无效');return this.db.prepare('SELECT at,value,conservative FROM equity WHERE accountId=? ORDER BY at DESC LIMIT ?').all(accountId,limit).reverse();}
+ archiveEvidence(id:string,kind:string,strategyId:string,value:unknown){const payload=serialize(value),hash=createHash('sha256').update(payload).digest('hex');const prior=this.archive.prepare('SELECT hash FROM evidence WHERE id=?').get(id) as {hash:string}|undefined;if(prior&&prior.hash!==hash)throw Error('研究档案标识重复，禁止覆盖旧结果');if(!prior){this.archive.prepare('INSERT INTO evidence VALUES(?,?,?,?,?,?)').run(id,Date.now(),kind,strategyId,hash,payload);this.archiveVersion++;}}
+ evidence(kind:string,strategyId?:string):any[]{const query=strategyId?'SELECT payload FROM evidence WHERE kind=? AND strategyId=? ORDER BY at':'SELECT payload FROM evidence WHERE kind=? ORDER BY at';const rows=(strategyId?this.archive.prepare(query).all(kind,strategyId):this.archive.prepare(query).all(kind)) as {payload:string}[];return rows.map(r=>JSON.parse(r.payload));}
+ sealedWindows(strategyId:string):any[]{const rows=[...(this.meta<any[]>('sealedTests:'+strategyId)??[]),...this.evidence('testWindow',strategyId)];return [...new Map(rows.map(r=>[r.runId,r])).values()];}
+ sealWindow(strategyId:string,window:{runId:string;from:number;to:number;dataHash:string}){this.archiveEvidence('testWindow:'+strategyId+':'+window.runId,'testWindow',strategyId,window);}
+ backup():Buffer {this.setMeta('immutableResearchEvidence',this.archive.prepare('SELECT id,at,kind,strategyId,hash,payload FROM evidence ORDER BY at').all());this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');return readFileSync(this.path);}
+ async backupFile(){this.activeBackups++;const path=join(this.dataDir,`backup-${randomUUID()}.sqlite`);try{this.setMeta('immutableResearchEvidence',this.archive.prepare('SELECT id,at,kind,strategyId,hash,payload FROM evidence ORDER BY at').all());await sqliteBackup(this.db,path,{rate:100});return path;}catch(error){if(existsSync(path))unlinkSync(path);throw error;}finally{this.activeBackups--;}}
+ restore(buffer:Buffer){if(buffer.length<100||buffer.length>MAX_BACKUP_BYTES||buffer.subarray(0,16).toString()!=='SQLite format 3\0')throw Error('备份文件无效或超过8GB');
+  const temporary=join(this.dataDir,`restore-${randomUUID()}.sqlite`);writeFileSync(temporary,buffer,{flag:'wx'});try{this.restoreFile(temporary,createHash('sha256').update(buffer).digest('hex'));}finally{if(existsSync(temporary))unlinkSync(temporary);}
+ }
+ restoreFile(inputPath:string,checksum:string){const temporary=resolve(inputPath);if(!temporary.startsWith(resolve(this.dataDir)+sep)||temporary===this.path||!/^restore-[a-f0-9-]+\.sqlite$/i.test(temporary.slice(temporary.lastIndexOf(sep)+1)))throw Error('恢复文件路径不允许');if(this.activeBackups)throw Error('正在备份，请稍后恢复');if(!/^[a-f0-9]{64}$/.test(checksum))throw Error('恢复文件校验标识无效');const size=statSync(temporary).size;if(size<100||size>MAX_BACKUP_BYTES)throw Error('备份文件无效或超过8GB');const header=Buffer.alloc(16),fd=openSync(temporary,'r');try{readSync(fd,header,0,16,0);}finally{closeSync(fd);}if(header.toString()!=='SQLite format 3\0')throw Error('备份文件格式无效');const candidate=new DatabaseSync(temporary,{readOnly:true});
+  try{const check=candidate.prepare('PRAGMA integrity_check').get() as Record<string,string>;if(Object.values(check)[0]!=='ok')throw Error('备份完整性检查失败');const mode=candidate.prepare("SELECT value FROM meta WHERE key='mode'").get() as {value:string}|undefined;const schema=candidate.prepare("SELECT value FROM meta WHERE key='schema'").get() as {value:string}|undefined;if(mode?.value!=='"paper"'||schema?.value!=='1')throw Error('只能恢复本工具的模拟备份');for(const name of ENTITIES)candidate.prepare(`SELECT payload FROM ${name} LIMIT 1`).get();validateBackupLedger(candidate);const archiveRow=candidate.prepare("SELECT value FROM meta WHERE key='immutableResearchEvidence'").get() as {value:string}|undefined;for(const row of archiveRow?JSON.parse(archiveRow.value):[]){if(typeof row.payload!=='string'||createHash('sha256').update(row.payload).digest('hex')!==row.hash)throw Error('研究档案校验失败');const prior=this.archive.prepare('SELECT hash FROM evidence WHERE id=?').get(row.id) as {hash:string}|undefined;if(prior&&prior.hash!==row.hash)throw Error('备份研究记录与不可覆盖档案冲突');}}finally{candidate.close();}
+  this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');this.db.close();renameSync(this.path,this.path+'.before-restore-'+Date.now());renameSync(temporary,this.path);this.db=new DatabaseSync(this.path);this.schema();for(const row of this.meta<any[]>('immutableResearchEvidence')??[]){if(typeof row.id==='string'&&typeof row.kind==='string'&&typeof row.strategyId==='string'&&typeof row.payload==='string'&&createHash('sha256').update(row.payload).digest('hex')===row.hash)this.archiveEvidence(row.id,row.kind,row.strategyId,JSON.parse(row.payload));}this.audit('restore','已恢复模拟备份；研究档案和已用检验窗口继续保留',{sha256:checksum});
+ }
+ close(){this.db.exec('PRAGMA wal_checkpoint(TRUNCATE)');this.db.close();this.archive.exec('PRAGMA wal_checkpoint(TRUNCATE)');this.archive.close();}
+}
+function validateBackupLedger(db:DatabaseSync){
+ for(const [table,column] of [['meta','value'],...ENTITIES.map(table=>[table,'payload']),['audit','details'],['market_events','payload'],['markets','payload'],['quotes','payload'],['research_samples','payload']])if(db.prepare(`SELECT 1 FROM ${table} WHERE NOT json_valid(${column}) LIMIT 1`).get())throw Error('备份包含损坏的记录，未覆盖当前账本');
+ const load=(table:string)=>(db.prepare(`SELECT payload FROM ${table}`).all() as {payload:string}[]).map(r=>JSON.parse(r.payload));
+ const accounts=load('accounts'),positions=load('positions'),orders=load('orders'),fills=load('fills'),ledger=db.prepare('SELECT * FROM ledger').all() as any[];
+ const raw=(value:unknown)=>{if(typeof value!=='string'||!/^\d{1,78}$/.test(value))throw Error('备份数量字段无效');return BigInt(value);};
+ const signed=(value:unknown)=>{if(typeof value!=='string'||! /^-?\d{1,78}$/.test(value))throw Error('备份账本数量字段无效');return BigInt(value);};
+ if(accounts.length<2||accounts.length>1000)throw Error('备份账户数量异常');const ids=new Set(accounts.map(a=>a.id));
+ const orderMap=new Map(orders.map(o=>[o.id,o]));const positionMap=new Map(positions.map(p=>[p.id,p]));
+ for(const f of fills){const order=orderMap.get(f.orderId),position=positionMap.get(f.positionId);if(!order||!position||order.accountId!==f.accountId||position.accountId!==f.accountId||order.token!==f.token||position.token!==f.token||order.side!==f.side||order.chain!==f.chain||position.chain!==f.chain)throw Error('备份成交与订单、持仓归属不一致');if([f.usd,f.costBasisUsd,f.netUsd,f.priceUsd,f.at,f.block].some(v=>typeof v!=='number'||!Number.isFinite(v))||f.costBasisUsd<0||f.priceUsd<=0||!f.fees||[f.fees.gasUsd,f.fees.approvalUsd,f.fees.protocolUsd,f.fees.taxUsd,f.fees.conversionUsd].some(v=>typeof v!=='number'||!Number.isFinite(v)||v<0))throw Error('备份成交金额、成本或费用无效');}
+ for(const a of accounts){if(!['bsc','robinhood'].includes(a.chain)||!['manual','bot','research'].includes(a.kind))throw Error('备份包含未知账户');const balance=a.nativeBalanceRaw===null?0n:raw(a.nativeBalanceRaw),reserved=raw(a.reservedNativeRaw);const total=ledger.filter(l=>l.accountId===a.id&&l.asset==='native').reduce((n,l)=>n+signed(l.deltaRaw),0n);const frozen=orders.filter(o=>o.accountId===a.id&&['waiting','queued','quoting'].includes(o.status)).reduce((n,o)=>n+raw(o.reservedNativeRaw),0n);if(balance!==total||reserved!==frozen||reserved>balance)throw Error('备份现金或冻结金额无法对账');}
+ for(const p of positions){if(!ids.has(p.accountId))throw Error('备份持仓没有所属账户');const original=raw(p.originalRaw),remaining=raw(p.remainingRaw),rows=fills.filter(f=>f.positionId===p.id);const buys=rows.filter(f=>f.side==='buy'),sells=rows.filter(f=>f.side==='sell');const buyRaw=buys.reduce<bigint>((n,f)=>n+raw(f.tokenRaw),0n),sellRaw=sells.reduce<bigint>((n,f)=>n+raw(f.tokenRaw),0n);if(original!==buyRaw||remaining!==buyRaw-sellRaw||remaining>original)throw Error('备份代币数量无法对账');const spent=buys.reduce((n,f)=>n+Number(f.usd),0),allocated=sells.reduce((n,f)=>n+Number(f.costBasisUsd),0);if(!Number.isFinite(p.costUsd)||!Number.isFinite(p.remainingCostUsd)||Math.abs(spent-p.costUsd)>1e-5||Math.abs(p.remainingCostUsd-(spent-allocated))>1e-5)throw Error('备份成本基础无法对账');}
+ for(const a of accounts){const tokens=new Set(positions.filter(p=>p.accountId===a.id).map(p=>p.token));for(const token of tokens){const tokensInLedger=ledger.filter(l=>l.accountId===a.id&&l.asset===token).reduce((n,l)=>n+signed(l.deltaRaw),0n),held=positions.filter(p=>p.accountId===a.id&&p.token===token).reduce((n,p)=>n+raw(p.remainingRaw),0n);if(tokensInLedger!==held)throw Error('备份代币账本无法对账');}}
+}

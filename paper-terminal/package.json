@@ -1,0 +1,6 @@
+{
+  "name": "paper-terminal", "version": "0.1.0", "private": true, "type": "module",
+  "scripts": {"build": "tsc -p tsconfig.server.json && tsc -p tsconfig.json && vite build", "start": "node dist/server/server.js", "test": "tsx --test --test-isolation=none test/*.test.ts", "dev": "vite --host 127.0.0.1"},
+  "dependencies": {"react": "^19.2.0", "react-dom": "^19.2.0", "lightweight-charts": "^5.0.9", "viem": "^2.37.9", "undici": "^7.24.1"},
+  "devDependencies": {"typescript": "^5.9.3", "vite": "^7.1.9", "tsx": "^4.20.6", "@types/node": "^24.0.0", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0"}
+}

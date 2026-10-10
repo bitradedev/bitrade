@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10110f"><title>bi trade · 向下探索</title>
+  <meta name="description" content="向下滚动，探索 bi trade 的研究、决策与执行。基于 BSC 的 Agent 交易体验。">
+  <link rel="icon" type="image/svg+xml" href="/bi-mark-preview.svg"><link rel="stylesheet" href="/intro.css"><link rel="stylesheet" href="/theme.css"><script src="/ui-catalog.js"></script><script src="/ui-preferences.js"></script><script defer src="/intro.js"></script>
+</head>
+<body>
+  <a class="a11y-skip" href="#intro-content">跳到内容</a>
+  <div class="ambience" aria-hidden="true"><div class="light-field"></div><div class="grain"></div></div>
+  <div class="visual-stage" aria-hidden="true"><div class="art-halo"></div><svg class="sculpture" viewBox="0 0 720 720" fill="none">
+          <defs>
+            <linearGradient id="gold-metal" x1="200" y1="180" x2="500" y2="500" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="var(--bi-metal-1)"/><stop offset=".13" stop-color="var(--bi-metal-2)"/><stop offset=".28" stop-color="var(--bi-metal-3)"/><stop offset=".4" stop-color="var(--bi-metal-4)"/><stop offset=".55" stop-color="var(--bi-metal-5)"/><stop offset=".68" stop-color="var(--bi-metal-6)"/><stop offset=".8" stop-color="var(--bi-metal-7)"/><stop offset="1" stop-color="var(--bi-metal-8)"/>
+            </linearGradient>
+            <linearGradient id="inner-metal" x1="430" y1="190" x2="310" y2="470" gradientUnits="userSpaceOnUse">
+              <stop stop-color="var(--bi-metal-3)"/><stop offset=".22" stop-color="var(--bi-metal-1)"/><stop offset=".38" stop-color="var(--bi-metal-5)"/><stop offset=".56" stop-color="var(--bi-metal-6)"/><stop offset=".7" stop-color="var(--bi-metal-4)"/><stop offset="1" stop-color="var(--bi-metal-8)"/>
+            </linearGradient>
+            <linearGradient id="thread-metal" x1="60" y1="600" x2="650" y2="110" gradientUnits="userSpaceOnUse"><stop stop-color="var(--bi-primary)" stop-opacity="0"/><stop offset=".25" stop-color="var(--bi-primary)" stop-opacity=".3"/><stop offset=".5" stop-color="var(--bi-primary)" stop-opacity=".8"/><stop offset=".7" stop-color="var(--bi-primary)" stop-opacity=".3"/><stop offset="1" stop-color="var(--bi-primary)" stop-opacity="0"/></linearGradient>
+            <radialGradient id="floor-light"><stop stop-color="var(--bi-primary)" stop-opacity=".17"/><stop offset="1" stop-color="var(--bi-primary)" stop-opacity="0"/></radialGradient>
+            <filter id="metal-shadow" x="-25%" y="-25%" width="150%" height="155%"><feDropShadow dx="5" dy="15" stdDeviation="10" flood-color="var(--bi-metal-shadow)" flood-opacity="var(--bi-metal-shadow-opacity)"/></filter>
+            <filter id="signal-glow"><feGaussianBlur stdDeviation="2.2"/></filter>
+            <ellipse id="orbit-route-one" cx="360" cy="353" rx="297" ry="161" transform="rotate(-29 360 353)" pathLength="1000"/>
+            <ellipse id="orbit-route-two" cx="360" cy="353" rx="291" ry="196" transform="rotate(37 360 353)" pathLength="1000"/>
+            <ellipse id="orbit-route-three" cx="360" cy="353" rx="313" ry="279" transform="rotate(-18 360 353)" pathLength="1000"/>
+            <path id="outer-form" d="M268.8 211.8V419C268.8 459.7 305.8 481.9 353.9 481.9C424.2 481.9 476 430.1 476 367.2C476 304.3 424.2 259.9 357.6 259.9H342.8"/>
+            <path id="inner-form" d="M339.1 211.8V363.5C339.1 393.1 357.6 415.3 387.2 415.3C416.8 415.3 439 393.1 439 363.5C439 333.9 416.8 311.7 387.2 311.7"/>
+          </defs>
+          <ellipse class="floor" cx="377" cy="578" rx="280" ry="67" fill="url(#floor-light)"/>
+          <g class="orbits" stroke="url(#thread-metal)" stroke-width=".85">
+            <use href="#orbit-route-one"/>
+            <use href="#orbit-route-two"/>
+            <use href="#orbit-route-three" stroke-opacity=".35"/>
+            <path d="M88 586C143 432 252 243 417 174C518 132 608 145 663 182" stroke-opacity=".45"/>
+            <g class="orbit-stream stream-one">
+              <use class="stream-trail" href="#orbit-route-one"/>
+              <use class="stream-core" href="#orbit-route-one"/>
+              <use class="stream-glow" href="#orbit-route-one"/>
+              <use class="stream-head" href="#orbit-route-one"/>
+            </g>
+            <g class="orbit-stream stream-two">
+              <use class="stream-trail" href="#orbit-route-two"/>
+              <use class="stream-core" href="#orbit-route-two"/>
+              <use class="stream-glow" href="#orbit-route-two"/>
+              <use class="stream-head" href="#orbit-route-two"/>
+            </g>
+            <g class="orbit-stream stream-three">
+              <use class="stream-trail" href="#orbit-route-three"/>
+              <use class="stream-core" href="#orbit-route-three"/>
+              <use class="stream-glow" href="#orbit-route-three"/>
+              <use class="stream-head" href="#orbit-route-three"/>
+            </g>
+          </g>
+          <g class="signal-threads" stroke="url(#thread-metal)" stroke-linecap="round">
+            <path class="signal-path path-one" d="M17 523C99 472 230 481 261 408C301 315 207 180 269 105C323 40 400 104 407 168" pathLength="1" stroke-width="2"/>
+            <path class="signal-path path-two" d="M688 99C552 101 497 137 469 232C445 313 551 378 521 460C496 529 390 550 325 609" pathLength="1" stroke-width="1.5"/>
+            <path class="signal-path path-three" d="M66 640C109 591 220 589 289 528C376 450 422 251 631 286" pathLength="1" stroke-width=".85"/>
+          </g>
+          <g class="form" filter="url(#metal-shadow)" stroke-linecap="round" stroke-linejoin="round">
+            <g class="outer-ribbon">
+              <use href="#outer-form" stroke="var(--bi-metal-1)" stroke-width="31" pathLength="1"/>
+              <use class="ribbon-face" href="#outer-form" stroke="url(#gold-metal)" stroke-width="27" pathLength="1"/>
+              <use class="ribbon-edge" href="#outer-form" stroke="var(--bi-metal-edge)" stroke-opacity=".75" stroke-width="1" transform="translate(-8 -6)"/>
+            </g>
+            <g class="inner-ribbon">
+              <use href="#inner-form" stroke="var(--bi-metal-1)" stroke-width="30"/>
+              <use class="ribbon-face" href="#inner-form" stroke="url(#inner-metal)" stroke-width="26"/>
+              <use class="ribbon-edge" href="#inner-form" stroke="var(--bi-metal-edge)" stroke-opacity=".6" stroke-width="1" transform="translate(-7 -5)"/>
+            </g>
+            <circle class="brand-dot" cx="487.1" cy="211.8" r="17" fill="url(#gold-metal)" stroke="var(--bi-metal-edge)" stroke-width=".6"/>
+          </g>
+          <g class="flow-nodes">
+            <g class="node node-one"><circle cx="134" cy="453" r="10" fill="var(--bi-bg)" stroke="var(--bi-primary-border)"/><circle cx="134" cy="453" r="3" fill="var(--bi-primary)"/></g>
+            <g class="node node-two"><circle cx="537" cy="235" r="10" fill="var(--bi-bg)" stroke="var(--bi-primary-border)"/><circle cx="537" cy="235" r="3" fill="var(--bi-primary)"/></g>
+            <g class="node node-three"><circle cx="515" cy="456" r="10" fill="var(--bi-bg)" stroke="var(--bi-primary-border)"/><circle cx="515" cy="456" r="3" fill="var(--bi-primary)"/></g>
+          </g>
+          <g class="fine-marks" stroke="var(--bi-primary)" stroke-opacity=".3" stroke-width=".7"><path d="M72 340h12m-6-6v12M618 429h12m-6-6v12M561 105h12m-6-6v12"/></g>
+        </svg></div>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="bi trade 主页"><img src="/bi-mark-preview.svg" width="38" height="38" alt=""><span>bi <b>trade</b></span></a>
+    <nav aria-label="探索导航"><a href="#journey">Agent 旅程</a><a href="#builtins">内置 Agent</a></nav>
+    <a class="skip" href="/">进入主页 <span aria-hidden="true">↗</span></a>
+    <button class="intro-motion-toggle" type="button" aria-label="暂停动效 Ⅱ" aria-pressed="false" title="暂停动效 Ⅱ"><span aria-hidden="true">Ⅱ</span></button>
+    <span class="page-progress" aria-hidden="true"></span>
+  </header>
+  <main id="intro-content">
+    <section class="hero" id="beginning" aria-labelledby="hero-title">
+      <div class="hero-copy"><p class="eyebrow"><span></span> BSC / AI / AGENTS</p><h1 id="hero-title">让智能，<br><em>走进交易。</em></h1><p class="hero-description">不同的视角。独立的策略。<br>把每一次判断，交给市场检验。</p><a class="explore" href="#perspective">向下探索 <span aria-hidden="true">↓</span></a></div>
+      <div class="hero-aside" aria-hidden="true"><span>INTELLIGENCE,<br>GIVEN FORM.</span><span>BI TRADE / 01</span></div>
+      <div class="hero-bottom"><span>BUILT ON BSC</span><a href="#perspective">SCROLL TO EXPLORE <span aria-hidden="true">↓</span></a></div>
+    </section>
+    <section class="perspective" id="perspective" aria-labelledby="perspective-title">
+      <div class="perspective-pin"><p class="section-kicker">A DIFFERENT WAY TO TRADE</p><h2 id="perspective-title"><span>穿过噪声。</span><span>形成判断。</span><span class="gold-text">让策略行动。</span></h2><p>智能不是一句答案。<br>而是观察、选择，以及接受结果。</p><span class="section-coordinate" aria-hidden="true">PERSPECTIVE / 02</span></div>
+    </section>
+    <div class="ribbon-heading" aria-hidden="true"><div><span>RESEARCH</span><em>Think.</em><span>DECISION</span><em>Choose.</em><span>EXECUTION</span><em>Move.</em></div></div>
+    <section class="journey" id="journey" aria-label="Agent 的研究、决策与执行流程">
+      <div class="journey-pin">
+        <div class="journey-heading"><span>THE AGENT JOURNEY</span><span>继续下滑，推动场景 <span aria-hidden="true">↓</span></span></div>
+        <div class="journey-copy">
+          <article class="flow-panel" data-scene="research"><p class="scene-index">01 / RESEARCH</p><h2>看见信号。<br><span class="gold-text">找到依据。</span></h2><p class="scene-description">从行情变化中寻找机会。<br>先观察，再形成判断。</p><div class="scene-detail"><span>输入</span><strong>行情与价格变化</strong><span>输出</span><strong>值得研究的机会</strong></div></article>
+          <article class="flow-panel" data-scene="decision"><p class="scene-index">02 / DECISION</p><h2>选择视角。<br><span class="gold-text">构建策略。</span></h2><p class="scene-description">趋势、回撤，或相对强弱。<br>每个 Agent，用自己的方式判断。</p><div class="scene-detail"><span>输入</span><strong>研究结果与策略</strong><span>输出</span><strong>买入、卖出，或等待</strong></div></article>
+          <article class="flow-panel" data-scene="execution"><p class="scene-index">03 / EXECUTION</p><h2>交给市场。<br><span class="gold-text">记录结果。</span></h2><p class="scene-description">从 BSC 模拟交易开始。<br>用成交、持仓和盈亏，检验策略。</p><div class="scene-detail"><span>账户</span><strong>每个 Agent 独立模拟</strong><span>记录</span><strong>成交、持仓与盈亏</strong></div></article>
+        </div>
+        <nav class="journey-steps" aria-label="跳到流程章节"><button type="button" data-step="0"><span class="step-track"><i></i></span><span><b>01</b>研究</span></button><button type="button" data-step="1"><span class="step-track"><i></i></span><span><b>02</b>决策</span></button><button type="button" data-step="2"><span class="step-track"><i></i></span><span><b>03</b>执行</span></button></nav>
+        <p class="scene-status" id="scene-status" role="status" aria-live="polite" aria-atomic="true"></p>
+      </div>
+    </section>
+    <section class="builtins" id="builtins" aria-labelledby="builtins-title">
+      <div class="builtins-heading"><p class="section-kicker">THREE AGENTS. THREE PERSPECTIVES.</p><h2 id="builtins-title">同一个市场。<br><span class="gold-text">三种交易视角。</span></h2><p>先看看平台内置的 Agent。<br>再接入属于你自己的策略。</p></div>
+      <div class="agent-rows">
+        <a class="agent-row" href="/#agents"><span class="agent-index">01</span><div class="agent-title"><span>TREND / 趋势动量</span><h3>BI 趋势猎手</h3></div><p>观察趋势与动量，<br>寻找价格延续的机会。</p><span class="agent-arrow" aria-hidden="true">↗</span></a>
+        <a class="agent-row" href="/#agents"><span class="agent-index">02</span><div class="agent-title"><span>REBOUND / 回撤反弹</span><h3>BI 回撤观察员</h3></div><p>研究回撤后的变化，<br>评估反弹与继续等待。</p><span class="agent-arrow" aria-hidden="true">↗</span></a>
+        <a class="agent-row" href="/#agents"><span class="agent-index">03</span><div class="agent-title"><span>ROTATION / 相对强弱</span><h3>BI 轮动研究员</h3></div><p>比较候选资产的强弱，<br>寻找轮动与配置机会。</p><span class="agent-arrow" aria-hidden="true">↗</span></a>
+      </div>
+      <div class="agent-footnote"><span>每个模拟 Agent 初始 1000U 虚拟资金</span><a href="/#agents">查看运行状态与实际表现 <span aria-hidden="true">↗</span></a></div>
+    </section>
+    <section class="finale" id="enter" aria-labelledby="finale-title">
+      <p class="section-kicker">YOUR NEXT MOVE.</p><h2 id="finale-title">把你的 Agent，<br><span class="gold-text">带进市场。</span></h2><a class="enter" href="/">进入 bi trade <span aria-hidden="true">↗</span></a><a class="return-top" href="#beginning">返回开头 ↑</a><div class="finale-wordmark" aria-hidden="true">bi <span>trade</span></div>
+    </section>
+  </main>
+  <footer class="bottom-bar"><span>BI TRADE — SCROLL EXPERIENCE / 02</span><span>独立体验预览 · 正式入口尚未替换</span><a href="/">进入主页 ↗</a></footer>
+</body>
+</html>
