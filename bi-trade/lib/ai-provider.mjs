@@ -195,8 +195,13 @@ export class OpenAIPlanner {
           },
         }),
       });
-    } catch {
-      throw fail('OpenAI 请求超时或网络不可用', 503);
+    } catch (e) {
+      throw fail(
+        /too many subrequests|subrequest limit/i.test(String(e?.message))
+          ? '云端单轮请求上限已到，下一轮自动重试'
+          : 'OpenAI 请求超时或网络不可用',
+        503,
+      );
     }
     if (!response.ok) throw fail('OpenAI 请求失败：HTTP ' + response.status, 503);
     let body;

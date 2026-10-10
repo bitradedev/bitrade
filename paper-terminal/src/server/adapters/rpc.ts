@@ -26,6 +26,7 @@ const nativeHttpFetch=(async(url:any,options:any)=>new Promise<Response>((resolv
  });req.on('error',reject);req.end(options.body);
 })) as typeof fetch;
 export class ReadRpc {
+ receipts?: (hashes:string[])=>Promise<(PublicReceipt|null)[]>;
  endpoint:string;private dispatcher?:ProxyAgent;private directTransport=false;private id=0;private verified=false;private verification?:Promise<void>;private closed=false;private calls=new Map<string,Promise<any>>();private blocks=new Map<number,any>();private alternate=false;private cacheRevision=0;
  private priorityContext=new AsyncLocalStorage<Context>();private logReader?:((filter:Record<string,unknown>)=>Promise<any[]>);private blockReceiptReader?:((block:string)=>Promise<any[]>);
  private lastBackoffAudit=-Infinity;

@@ -1,4 +1,5 @@
 window.BI_UI_EN = {
+"云端单轮请求上限已到，下一轮自动重试":"The cloud request budget was reached. Retrying in the next round.",
 "内置 Agent 可评估 BTCB、ETH、CAKE 成熟外盘，按真实链上报价模拟。捆绑与同源钱包仍可能未知；新发币需通过完整风险筛查。":"Built-in Agents can evaluate mature BTCB, ETH and CAKE pools using real on-chain paper quotes. Bundling and linked wallets may remain unknown; new tokens require full risk screening.",
 "成熟外盘 · 有限检测":"Mature pool · Limited checks",
 "观测最大持仓占可交易筹码":"Largest observed holding / circulating float",

@@ -41,6 +41,12 @@ test('Independent receipt RPC verifies BSC chain, transaction identity and ident
  rpc.cache.clear();rpc.receiptRpc.cache.clear();bad=true;await assert.rejects(rpc.receipt(hash),/不一致/);
  rpc.cache.clear();rpc.receiptRpc.cache.clear();rpc.receiptRpc.verified=false;bad=false;wrongChain=true;await assert.rejects(rpc.receipt(hash),/主网/);
 });
+test('Receipt batches use one network call, match IDs independent of response order and reject duplicates or substituted receipts',async()=>{
+ const hashes=['0x'+'11'.repeat(32),'0x'+'22'.repeat(32)],blockHash='0x'+'33'.repeat(32);let batches=0,bad=false;
+ const rpc=new CloudRpc('https://price.example',{receiptUrl:'https://receipts.example',fetchImpl:async(_url,opts)=>{const q=JSON.parse(opts.body);if(Array.isArray(q)){batches++;return Response.json(q.map((v,i)=>({id:bad?q[0].id:v.id,result:{transactionHash:v.params[0],blockNumber:'0x64',blockHash,status:'0x1',gasUsed:'0x100',logs:[]}})).reverse());}return Response.json({result:q.method==='eth_chainId'?'0x38':{number:'0x64',hash:blockHash,timestamp:'0x'+Math.floor(Date.now()/1000).toString(16),transactions:hashes}});}});
+ const rows=await rpc.receipts(hashes);assert.equal(batches,1);assert.deepEqual(rows.map(r=>r.transactionHash),hashes);
+ bad=true;await assert.rejects(rpc.receipts(hashes),/身份/);await assert.rejects(rpc.receipts([...hashes,...hashes]),/无效/);
+});
 test('GMGN HTTP uses the existing read-only API schema and never sends private signing credentials',async()=>{const calls=[],g=new GmgnHTTP('dummy-api',{now:()=>Date.now()+10000* calls.length,fetchImpl:async(url,opts)=>{calls.push({url:String(url),opts});return Response.json({code:0,data:{}});}});await g.info('bsc',TOKEN);await g.holders('bsc',TOKEN);await g.trenches();assert.ok(calls.every(c=>c.opts.headers['X-APIKEY']==='dummy-api'&&!c.opts.headers['X-Signature']));assert.equal(new URL(calls[1].url).pathname,'/v1/market/token_top_holders');const body=JSON.parse(calls[2].opts.body);assert.equal(body.version,'v2');assert.equal(body.completed.limit,8);assert.ok(body.completed.quote_address_type.includes(6));});
 test('Repeated GMGN bans persist increasing backoff, honor both server deadlines and block all consumers',async t=>{
  const {store}=fixture(t);let now=1000000,calls=0;

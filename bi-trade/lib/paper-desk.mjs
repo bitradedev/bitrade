@@ -6,10 +6,15 @@ const nativeUsd = (v, fx) => (Number(BigInt(v)) / 1e18) * fx;
 const feeRaw = (q) =>
   BigInt(Math.ceil(((q.fees.gasUsd + q.fees.approvalUsd) / q.nativeUsd) * 1e18));
 export class PaperDesk {
-  constructor(store, gateway, { buyGuard, preserveQueued = false } = {}) {
+  constructor(
+    store,
+    gateway,
+    { buyGuard, preserveQueued = false, maxOrdersPerTick = Infinity } = {},
+  ) {
     this.store = store;
     this.gateway = gateway;
     this.buyGuard = buyGuard;
+    this.maxOrdersPerTick = maxOrdersPerTick;
     this.busy = false;
     this.stopped = false;
     this.revision = 0;
@@ -276,7 +281,9 @@ export class PaperDesk {
     if (this.busy || this.stopped) return;
     this.busy = true;
     try {
-      for (const o of this.orders().filter((o) => o.status === 'queued')) {
+      for (const o of this.orders()
+        .filter((o) => o.status === 'queued')
+        .slice(0, this.maxOrdersPerTick)) {
         let q;
         try {
           const h = this.head();

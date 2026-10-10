@@ -230,6 +230,12 @@ test('unlimited AI quota retains usage above previous caps while one-minute sche
  for(const p of SHOWCASE_PROFILES){const status=f.app.store.get('showcase-status',p.id);assert.equal(status.state,'observing');assert.ok(status.nextDecisionAt>=before+60000);assert.ok(status.nextDecisionAt<=Date.now()+60000);}
  await f.app.showcase.run();assert.equal(calls,3);assert.equal(f.app.store.get('ai-usage',day).calls,5003);assert.equal(f.app.paper.orders().length,0);assert.equal(f.app.live.orders().length,0);
 });
+test('Cloud scheduling advances one Agent at a time, preserves its cursor on restart and retains per-Agent cooldowns',async t=>{
+ const calls=[],f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(_c,strategy){calls.push(strategy.name);return {action:'hold',token:null,sizeUsd:null,reason:'分轮验证',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
+ await f.app.showcase.run();assert.deepEqual(calls,[SHOWCASE_PROFILES[0].strategy.name]);assert.equal(f.app.store.get('showcase-cursor','platform').next,1);
+ await f.app.showcase.run();await f.app.showcase.run();assert.deepEqual(calls,SHOWCASE_PROFILES.map(p=>p.strategy.name));await f.app.showcase.run();assert.equal(calls.length,3);
+ assert.equal(f.app.store.get('showcase-cursor','platform').next,1);assert.equal(f.app.paper.orders().length,0);
+});
 test('unknown holder risk keeps empty builtins observing without spending AI calls or requesting quotes',async t=>{
  let calls=0;const riskGuard={snapshot:token=>({token,state:'unknown',buyAllowed:false,reasons:['持仓标签缺失']}),tick(){},async assertBuy(){throw Error('Should never submit');},async close(){}};
  const f=await fixture(t,{showcase:true,showcaseOptions:{riskGuard,configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;throw Error('Should not call');}}}});

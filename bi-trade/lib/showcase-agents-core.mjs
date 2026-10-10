@@ -45,6 +45,7 @@ export class ShowcaseAgents {
     planner = new OpenAIPlanner(),
     riskGuard,
     configReader,
+    maxAgentsPerRun = SHOWCASE_PROFILES.length,
     now = () => Date.now(),
   }) {
     Object.assign(this, { store, vault, paper, gateway, execute, planner, riskGuard, now });
@@ -52,6 +53,7 @@ export class ShowcaseAgents {
     this.stopped = false;
     this.task = null;
     this.controller = null;
+    this.maxAgentsPerRun = Math.max(1, Math.min(SHOWCASE_PROFILES.length, maxAgentsPerRun));
     this.sampleAt = 0;
     this.tickAt = 0;
     this.exitChecks = new Map();
@@ -246,7 +248,17 @@ export class ShowcaseAgents {
         this.status(p.id, { state: 'error', reason: 'AI 配置无法读取，请在本机重新配置。' });
       return;
     }
-    for (const p of SHOWCASE_PROFILES) {
+    const cursor = this.store.get('showcase-cursor', 'platform')?.next ?? 0;
+    const profiles = Array.from(
+      { length: this.maxAgentsPerRun },
+      (_, i) => SHOWCASE_PROFILES[(cursor + i) % SHOWCASE_PROFILES.length],
+    );
+    if (this.maxAgentsPerRun < SHOWCASE_PROFILES.length)
+      this.store.put('showcase-cursor', {
+        id: 'platform',
+        next: (cursor + this.maxAgentsPerRun) % SHOWCASE_PROFILES.length,
+      });
+    for (const p of profiles) {
       if (this.stopped) return;
       const a = this.store.get('agents', p.id);
       if (a.mode !== 'paper') {

@@ -274,6 +274,12 @@ test('gas reorg rejects an inflight context and does not reuse an orphaned froze
  const pending=gas.context(route,100),rejected=assert.rejects(pending,/重组/);gas.invalidate(100);release('0x1');await rejected;
  const fresh=await gas.context(route,100);assert.equal(fresh.gasPriceRaw,'2');assert.equal(reads,2);
 });
+test('Cloud fee warming consumes validated receipt batches without re-reading individual transactions',async()=>{
+ const tx='0x'+'77'.repeat(32),pool='0x'+'88'.repeat(20);let batches=0;
+ const rpc={chain:'bsc',block:async()=>({number:100,transactions:[tx]}),receipts:async()=>{batches++;return [{status:'0x1',blockNumber:'0x64',gasUsed:'0x186a0',transactionHash:tx,logs:[{address:pool,topics:[getEventSelector('Swap(address,uint256,uint256,uint256,uint256,address)')]}]}];},receipt:async()=>{throw Error('No duplicate receipt reads');},request:async()=> '0x3b9aca00',promote:()=>{},linkPending:(p:any)=>p} as unknown as ReadRpc;
+ const gas=new ReceiptGas(rpc),result=await gas.context({kind:'v2',token,quote:ZERO,pool:pool as any},100);
+ assert.equal(result.gasUsedRaw,'100000');assert.equal(result.sampleTransaction,tx);assert.equal(batches,1);
+});
 
 test('known WS head ahead of HTTP and previously observed block ages need no latest RPC',async()=>{
  const g=new LiveGateway({proxy:''}) as any,at=Date.now();g.running=true;g.head('bsc',100,at-2000);g.head('bsc',101,at);g.rawHeads.bsc={number:100,time:at-2000};

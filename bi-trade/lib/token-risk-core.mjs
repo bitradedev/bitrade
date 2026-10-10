@@ -154,9 +154,9 @@ export function evaluateTokenRisk(token, { info, holders, security }, fetchedAt 
 }
 
 export class TokenRiskGuard {
-  constructor(store, { source, now = () => Date.now() } = {}) {
+  constructor(store, { source, now = () => Date.now(), maxTokensPerTick = 4 } = {}) {
     if (!source) throw Error('A read-only risk source is required');
-    Object.assign(this, { store, source, now });
+    Object.assign(this, { store, source, now, maxTokensPerTick });
     this.pending = new Map();
     this.stopped = false;
     this.refreshAt = 0;
@@ -266,7 +266,7 @@ export class TokenRiskGuard {
           !this.store.get('token-risk-reports', t) ||
           this.now() - this.store.get('token-risk-reports', t).fetchedAt >= RISK_POLICY.maxAgeMs,
       )
-      .slice(0, 4);
+      .slice(0, this.maxTokensPerTick);
     this.task = (async () => {
       for (const token of todo) {
         if (this.stopped) break;

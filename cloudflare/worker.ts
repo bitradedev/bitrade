@@ -10,6 +10,7 @@ import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
 import { marketFetch } from './market-source.mjs';
 import { PublicBscData } from './public-data.mjs';
+import { IOBudget } from './io-budget.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
 
@@ -43,6 +44,7 @@ const ASSET_ROUTES: any = {
 
 export class TradingPlatform extends DurableObject<any> {
   store: any;
+  io: any;
   app: any = null;
   market: any = null;
   risk: any = null;
@@ -52,6 +54,7 @@ export class TradingPlatform extends DurableObject<any> {
   constructor(ctx: any, env: any) {
     super(ctx, env);
     this.store = new CloudStore(ctx.storage);
+    this.io = new IOBudget(45);
   }
   initialize() {
     if (this.app) return Promise.resolve(this.app);
@@ -64,12 +67,17 @@ export class TradingPlatform extends DurableObject<any> {
             this.env.GMGN_RELAY_URL ? this.env.GMGN_RELAY_TOKEN : this.env.GMGN_API_KEY,
             {
               store: this.store,
-              fetchImpl: marketFetch(this.env),
+              fetchImpl: marketFetch(this.env, this.io.fetch),
             },
           ),
-          rpc = new CloudRpc(this.env.BSC_RPC_URL, { receiptUrl: this.env.BSC_RECEIPT_RPC_URL }),
+          rpc = new CloudRpc(this.env.BSC_RPC_URL, {
+            receiptUrl: this.env.BSC_RECEIPT_RPC_URL,
+            fetchImpl: this.io.fetch,
+          }),
           publicData =
-            this.env.BI_TRADE_PUBLIC_MARKET === 'true' ? new PublicBscData(this.store, rpc) : null,
+            this.env.BI_TRADE_PUBLIC_MARKET === 'true'
+              ? new PublicBscData(this.store, rpc, { fetchImpl: this.io.fetch })
+              : null,
           market = new CloudMarket(this.store, {
             rpc,
             gmgn: source,
@@ -77,6 +85,7 @@ export class TradingPlatform extends DurableObject<any> {
             onGap: () => this.app?.paper.gap(),
           });
         const risk = new TokenRiskGuard(this.store, {
+            maxTokensPerTick: 1,
             source: {
               riskReport: (token: string) =>
                 publicData?.supports(token) ? publicData.riskReport(token) : null,
@@ -86,12 +95,15 @@ export class TradingPlatform extends DurableObject<any> {
               close: () => source.close(),
             },
           }),
-          planner = new OpenAIPlanner({ timeoutMs: 90000 });
+          planner = new OpenAIPlanner({ timeoutMs: 90000, fetchImpl: this.io.fetch });
         // Refresh exact market evidence after the remote model returns; it may take over a minute.
         const freshPlanner = {
           decide: async (...args: any[]) => {
             const decision = await planner.decide(...args);
-            await market.refresh(decision.token ? [decision.token] : []);
+            await market.refresh(decision.token ? [decision.token] : [], {
+              limit: 1,
+              onlyRequested: true,
+            });
             return decision;
           },
         };
@@ -117,7 +129,7 @@ export class TradingPlatform extends DurableObject<any> {
           liveEnabled: false,
           rpc: { balance: async () => 0n },
           rateLimit: (...args: any[]) => this.store.rateLimit(...args),
-          showcaseOptions: { configReader, planner: freshPlanner },
+          showcaseOptions: { configReader, planner: freshPlanner, maxAgentsPerRun: 1 },
           assetReader: async (name: string) =>
             Buffer.from(
               await (
@@ -125,6 +137,7 @@ export class TradingPlatform extends DurableObject<any> {
               ).arrayBuffer(),
             ),
         });
+        this.app.paper.maxOrdersPerTick = 1;
         for (const a of this.store.all('agents').filter((a: any) => a.source === 'builtin')) {
           const paused = this.env.BI_TRADE_SHOWCASE_PAUSED === 'true';
           if (a.paused !== paused) this.store.put('agents', { ...a, paused });
@@ -142,6 +155,9 @@ export class TradingPlatform extends DurableObject<any> {
       await this.ctx.storage.setAlarm(Date.now() + delay);
   }
   async fetch(request: Request) {
+    return this.io.run('http', () => this.handleRequest(request));
+  }
+  async handleRequest(request: Request) {
     try {
       const url = new URL(request.url);
       if (url.pathname === '/__admin/import') return await this.importLedger(request);
@@ -167,6 +183,7 @@ export class TradingPlatform extends DurableObject<any> {
           marketTransport: this.env.GMGN_RELAY_URL ? 'private-relay' : 'cloudflare-fetch',
           publicMarketEnabled: Boolean(this.market.publicData),
           publicMarketSources: this.market.publicData?.status() ?? [],
+          networkBudget: this.io.lastAlarm,
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
@@ -193,38 +210,29 @@ export class TradingPlatform extends DurableObject<any> {
     }
   }
   async alarm() {
+    return this.io.run('alarm', () => this.scheduledRound());
+  }
+  async scheduledRound() {
     // Save the following alarm first. Failures or isolate eviction cannot stop scheduling.
     await this.ctx.storage.setAlarm(Date.now() + 10000);
     if (this.importing) return;
     if (this.working) return this.working;
     this.working = (async () => {
-      let heartbeat: any = null,
-        pending: any = null;
       try {
         const app = await this.initialize();
-        const pulse = () => {
-          if (pending) return;
-          pending = (async () => {
-            await this.market.pulse();
-            await app.paper.tick();
-            for (const a of this.store
-              .all('agents')
-              .filter((a: any) => a.source === 'builtin' && !a.paused)) {
-              if (
-                app.paper.view(a.id).pending ||
-                Date.now() - (app.showcase.exitChecks.get(a.id) ?? 0) < 30000
-              )
-                continue;
-              app.showcase.exitChecks.set(a.id, Date.now());
-              await app.showcase.exits(a);
-            }
-          })()
-            .catch(() => {})
-            .finally(() => {
-              pending = null;
-            });
-        };
-        heartbeat = setInterval(pulse, 3000);
+        if (app.paper.orders().some((o: any) => o.status === 'queued')) {
+          // Matching gets its own invocation budget instead of sharing model I/O.
+          await this.market.updateHead();
+          await this.market.fx();
+          await app.paper.tick();
+          this.store.put('cloud-settings', {
+            id: 'scheduler',
+            at: Date.now(),
+            ok: true,
+            phase: 'matching',
+          });
+          return;
+        }
         const tokens = [
           ...new Set(
             this.store
@@ -233,18 +241,16 @@ export class TradingPlatform extends DurableObject<any> {
               .map((l: any) => l.token),
           ),
         ] as string[];
-        await this.market.refresh(tokens);
+        await this.market.refresh(tokens, { limit: 1 });
         await app.paper.tick();
         await this.risk.tick([
           ...tokens,
           ...app.showcase.freshMarkets().map((m: any) => m.address),
         ]);
-        await this.market.refresh(tokens);
+        await this.market.pulse(1);
         await app.showcase.tick();
         await this.risk.task;
-        // Model I/O can outlive the next alarm. Poll the head before matching pending orders.
-        await this.market.updateHead();
-        await app.paper.tick();
+        // New orders are matched on the next alarm, with a fresh I/O budget.
         this.store.prune();
         this.store.put('cloud-settings', { id: 'scheduler', at: Date.now(), ok: true });
       } catch {
@@ -255,10 +261,10 @@ export class TradingPlatform extends DurableObject<any> {
           reason: '本轮行情或模拟调度未完成，将自动重试',
         });
       } finally {
-        if (heartbeat) clearInterval(heartbeat);
-        await pending;
         this.working = null;
-        await this.arm();
+        await this.arm(
+          this.app?.paper.orders().some((o: any) => o.status === 'queued') ? 1000 : 10000,
+        );
       }
     })();
     return this.working;

@@ -90,6 +90,7 @@ export class PublicBscData {
           });
           return row;
         } catch (e) {
+          if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
           const current = this.store.get('cloud-settings', 'public-budget-' + service);
           if (!(current.retryAt > at))
             this.store.put('cloud-settings', {

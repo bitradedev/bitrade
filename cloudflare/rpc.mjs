@@ -60,8 +60,12 @@ export class CloudRpc {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: ++this.id, method, params }),
         });
-      } catch {
-        throw Error('BSC RPC 网络不可用');
+      } catch (e) {
+        throw Error(
+          /too many subrequests|subrequest limit/i.test(String(e?.message))
+            ? '云端单轮请求上限已到，下一轮自动重试'
+            : 'BSC RPC 网络不可用',
+        );
       }
       if (!r.ok) throw Error('BSC RPC 请求失败：HTTP ' + r.status);
       const data = await r.json();
@@ -121,6 +125,9 @@ export class CloudRpc {
     // Use BNB Chain's explicitly configured public receipt endpoint, while
     // binding every sample back to the exact primary chain's canonical block.
     const raw = await this.receiptRpc.request('eth_getTransactionReceipt', [hash]);
+    return this.confirmReceipt(hash, raw);
+  }
+  async confirmReceipt(hash, raw) {
     if (!raw) return null;
     if (
       typeof raw.transactionHash !== 'string' ||
@@ -134,6 +141,56 @@ export class CloudRpc {
     if (primary.hash !== secondary.hash || raw.blockHash !== primary.hash)
       throw Error('BSC 回执节点与报价节点的区块不一致');
     return raw;
+  }
+  async receipts(hashes) {
+    if (
+      !Array.isArray(hashes) ||
+      !hashes.length ||
+      hashes.length > 12 ||
+      hashes.some((h) => typeof h !== 'string' || !/^0x[0-9a-f]{64}$/i.test(h)) ||
+      new Set(hashes).size !== hashes.length
+    )
+      throw Error('BSC 回执批次无效');
+    if (!this.receiptRpc) return Promise.all(hashes.map((h) => this.receipt(h)));
+    const client = this.receiptRpc,
+      requests = hashes.map((hash) => ({
+        jsonrpc: '2.0',
+        id: ++client.id,
+        method: 'eth_getTransactionReceipt',
+        params: [hash],
+      }));
+    let response;
+    try {
+      response = await client.fetch(client.url, {
+        method: 'POST',
+        redirect: 'manual',
+        signal: AbortSignal.timeout(8000),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requests),
+      });
+    } catch (e) {
+      throw Error(
+        /too many subrequests|subrequest limit/i.test(String(e?.message))
+          ? '云端单轮请求上限已到，下一轮自动重试'
+          : 'BSC 回执批次网络不可用',
+      );
+    }
+    if (!response.ok) throw Error('BSC 回执批次读取失败：HTTP ' + response.status);
+    const rows = await response.json();
+    if (
+      !Array.isArray(rows) ||
+      rows.length !== requests.length ||
+      new Set(rows.map((r) => r.id)).size !== rows.length
+    )
+      throw Error('BSC 回执批次身份未核实');
+    const results = [];
+    for (let i = 0; i < requests.length; i++) {
+      const row = rows.find((r) => r.id === requests[i].id);
+      if (!row || row.error || !Object.hasOwn(row, 'result'))
+        throw Error('BSC 回执批次未返回有效数据');
+      results.push(await this.confirmReceipt(hashes[i], row.result));
+    }
+    return results;
   }
   logs(filter) {
     return this.request('eth_getLogs', [filter]);

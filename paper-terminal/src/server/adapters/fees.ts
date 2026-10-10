@@ -23,6 +23,21 @@ export class ReceiptGas {
  }
  private async warm(block:number,route:Route){
   if(this.rpc.chain==='bsc'){
+   if(this.rpc.receipts){
+    const revision=this.revision;
+    for(let delta=0;delta<4;delta++){
+     const b=await this.rpc.block(block-delta),txs=b.transactions.slice(-12);if(!txs.length)continue;
+     const receipts=await this.rpc.receipts(txs);if(this.revision!==revision)throw new RouteBlocked('GAS_REORG','读取 Gas 批次期间发生重组');
+     for(let i=0;i<receipts.length;i++){
+      const receipt=receipts[i];if(!receipt||receipt.status!=='0x1'||!receipt.logs.some(l=>trades.has(l.topics[0])))continue;
+      const contracts=receipt.logs.map(l=>l.address.toLowerCase()),matching=route.kind==='flap'?contracts.includes(FLAP):route.kind==='four'?contracts.includes(FOUR_MANAGER):route.pool?contracts.includes(route.pool):false;
+      if(!this.samples.some(s=>s.tx===txs[i]))this.samples.push({block:Number(BigInt(receipt.blockNumber)),gas:BigInt(receipt.gasUsed),tx:txs[i],venue:matching?route.kind:'market'});
+      this.samples=this.samples.slice(-30);if(this.samples.length>=3||matching)return;
+     }
+     if(this.samples.length)return;
+    }
+    return;
+   }
    for(let delta=0;delta<4;delta++){const b=await this.rpc.block(block-delta);for(const tx of b.transactions.slice(-12)){const receipt=await this.rpc.receipt(tx);if(!receipt||receipt.status!=='0x1'||!receipt.logs.some(l=>trades.has(l.topics[0])))continue;const contracts=receipt.logs.map(l=>l.address.toLowerCase());const matching=route.kind==='flap'?contracts.includes(FLAP):route.kind==='four'?contracts.includes(FOUR_MANAGER):route.pool?contracts.includes(route.pool):false;await this.capture(tx,matching?route.kind:'market');if(this.samples.length>=3||matching)return;}if(this.samples.length)return;}return;
   }
   const specific=[route.pool,route.curve,route.kind==='flap'?FLAP:route.kind==='four'?FOUR_MANAGER:route.kind==='v4'?CHAIN_CONFIG.robinhood.v4Manager:undefined].filter(Boolean);

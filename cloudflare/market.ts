@@ -344,7 +344,7 @@ export class CloudMarket {
       }
     }
   }
-  refresh(tokens: string[] = []) {
+  refresh(tokens: string[] = [], { limit = 2, onlyRequested = false }: any = {}) {
     if (this.refreshTask) return this.refreshTask;
     this.refreshTask = (async () => {
       try {
@@ -368,10 +368,17 @@ export class CloudMarket {
       if (this.gmgn.status?.().limited && !this.publicData) return;
       try {
         const candidates = [...this.catalog.keys()],
+          pool = [...new Set([...tokens, ...candidates])],
           selected = [
-            ...new Set([...tokens, ...candidates.slice(this.cursor, this.cursor + 2)]),
+            ...new Set(
+              onlyRequested
+                ? tokens
+                : limit === 1
+                  ? [pool[this.cursor % pool.length]].filter(Boolean)
+                  : [...tokens, ...candidates.slice(this.cursor, this.cursor + limit)],
+            ),
           ].slice(0, 8);
-        this.cursor = candidates.length ? (this.cursor + 2) % candidates.length : 0;
+        this.cursor = pool.length ? (this.cursor + limit) % pool.length : 0;
         for (const token of selected) await this.refreshMarket(token);
         await this.updateHead();
       } catch (e: any) {
@@ -399,19 +406,20 @@ export class CloudMarket {
     const status = this.gmgn.status?.();
     return status?.limited ? { retryAt: status.retryAt } : null;
   }
-  async pulse() {
+  async pulse(limit = 2) {
     const b = await this.updateHead(),
       fx = this.fxValue;
     if (!fx || Date.now() - fx.at < 0 || Date.now() - fx.at >= 90000) return;
     // No GMGN I/O here: keep the chain and already collected markets fresh while
     // risk collection or model inference is waiting on a slower remote service.
     const entries = this.markets().filter((m: any) => this.metadata.has(m.address));
-    const selected = entries.slice(this.pulseCursor, this.pulseCursor + 2);
-    this.pulseCursor = entries.length ? (this.pulseCursor + 2) % entries.length : 0;
+    const selected = entries.slice(this.pulseCursor, this.pulseCursor + limit);
+    this.pulseCursor = entries.length ? (this.pulseCursor + limit) % entries.length : 0;
     for (const m of selected) {
       try {
         const md = this.metadata.get(m.address);
         if (Date.now() - md.at >= 120000) continue;
+        if (md.source === 'public-bsc' && !this.routes.has(m.address)) continue;
         const v = this.venues.bsc,
           cached = this.routes.get(m.address),
           r =
