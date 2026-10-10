@@ -55,6 +55,12 @@ test('Retry-After parser separates numeric delays, HTTP dates and malformed valu
  for(const invalid of ['', '39.5','-1','Infinity','1e9','01/01/2039','2039-01-01','9'.repeat(40)])assert.deepEqual(retryAfter(invalid,NOW),{kind:'invalid',at:null});
  assert.deepEqual(retryAfter(null,NOW),{kind:'missing',at:null});
 });
+test('Slow error responses start Retry-After waiting when the response arrives, not when the request began',async()=>{
+ for(const [header,wait]of [['600',605000],[null,300000]]){
+  let now=NOW;const p=new PublicBscData(store(),{}, {fetchImpl:async()=>{now+=12000;return Response.json({}, {status:429,headers:header?{'Retry-After':header}:{}});},now:()=>now});
+  await assert.rejects(p.read('dex','/test'),/429/);assert.equal(p.status()[0].lastAt,NOW);assert.equal(p.status()[0].retryAt,NOW+12000+wait);assert.equal(p.status()[0].lastFailure.at,NOW+12000);
+ }
+});
 test('Valid explicit HTTP dates are honored even if they match the known old parser failure',async()=>{
  const s=store(),now=1791669862535,deadline=2177452805000;
  let p=new PublicBscData(s,{}, {fetchImpl:async()=>Response.json({}, {status:429,headers:{'Retry-After':new Date(deadline-5000).toUTCString()}}),now:()=>now});
