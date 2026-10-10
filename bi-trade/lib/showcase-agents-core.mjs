@@ -2,6 +2,7 @@ import { identifier, fail } from './database-core.mjs';
 import { readAIConfig, OpenAIPlanner, validateDecision, reserveAICall } from './ai-provider.mjs';
 import { viem } from './dependencies.mjs';
 import { v2Abi, ROUTER_V2, WBNB } from './bsc-rpc.mjs';
+import { showcasePositions } from './showcase-exits.mjs';
 
 export const SHOWCASE_PROFILES = [
   {
@@ -133,12 +134,19 @@ export class ShowcaseAgents {
         initialUsd: v.initialUsd,
         balanceUsd: v.balanceUsd,
         realizedUsd: v.realizedUsd,
-        positions: v.positions.map((p) => ({
+        positions: showcasePositions(this.store, v.positions).map((p) => ({
           token: p.token,
           symbol: p.symbol,
-          amountRaw: p.remainingRaw,
-          costUsd: p.usdCost,
-          estimatedValueUsd: p.estimatedValueUsd,
+          amountRaw: p.amountRaw,
+          costUsd: p.costUsd,
+          estimatedValueUsd: v.positions
+            .filter((lot) => lot.token === p.token)
+            .every((lot) => Number.isFinite(lot.estimatedValueUsd))
+            ? v.positions
+                .filter((lot) => lot.token === p.token)
+                .reduce((n, lot) => n + lot.estimatedValueUsd, 0)
+            : null,
+          exitPlan: p.exitPlan,
           risk: this.riskGuard.snapshot(p.token, this.gateway.getMarket('bsc', p.token)?.priceUsd),
         })),
       },
@@ -181,22 +189,17 @@ export class ShowcaseAgents {
     });
   }
   async exits(a) {
-    const lots = this.paper.lots(a.id);
-    for (const token of new Set(lots.map((p) => p.token))) {
-      const held = lots.filter((p) => p.token === token),
-        rule =
-          this.store.get('showcase-exits', held[0].orderId) ??
-          this.store.get('showcase-exits', a.id + ':' + token);
+    for (const position of showcasePositions(this.store, this.paper.lots(a.id))) {
+      const { token, amountRaw, costUsd, exitPlan } = position,
+        rule = exitPlan.rule;
       if (!rule) continue;
       const head = this.paper.head(),
-        amount = held.reduce((n, p) => n + BigInt(p.remainingRaw), 0n),
-        q = await this.paper.quote(a, 'sell', token, String(amount), head.head);
+        q = await this.paper.quote(a, 'sell', token, amountRaw, head.head);
       if (q.spentInputRaw !== q.inputRaw) continue;
       const proceeds =
           (Number(BigInt(q.outputRaw)) / 1e18) * q.nativeUsd - q.fees.gasUsd - q.fees.approvalUsd,
-        basis = held.reduce((n, p) => n + p.usdCost, 0),
-        pct = (proceeds / basis - 1) * 100,
-        age = (this.now() - Math.min(...held.map((p) => p.at))) / 60000;
+        pct = (proceeds / costUsd - 1) * 100,
+        age = (this.now() - exitPlan.openedAt) / 60000;
       const trigger =
         pct >= rule.takeProfitPct
           ? '止盈'

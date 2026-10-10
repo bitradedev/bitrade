@@ -31,6 +31,7 @@ test('configured compatible endpoint gets strict decisions without redirects, se
 test('OpenAI Responses uses strict structured decisions, does not send the key as context, and permits sizes above 40U',async()=>{
  let payload;const planner=new OpenAIPlanner({fetchImpl:async(url,options)=>{assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(options.redirect,'manual');assert.equal(options.headers.Authorization,'Bearer '+config.apiKey);payload=JSON.parse(options.body);return {ok:true,json:async()=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(buy())}]}]})};}});
  const result=await planner.decide(config,{description:'测试真实采样'},context);assert.equal(result.sizeUsd,150);assert.equal(payload.text.format.strict,true);assert.equal(payload.text.format.schema.additionalProperties,false);assert.equal(payload.store,false);assert.doesNotMatch(JSON.stringify(payload.input),/test-secret-key/);assert.equal(payload.model,DEFAULT_MODEL);
+ assert.match(payload.input[0].content,/exitPlan 是当前实际生效/);assert.match(payload.input[0].content,/hold 和 sell 的 exit 字段不更新已有规则/);assert.match(payload.input[0].content,/state=missing/);
 });
 test('invalid, unaffordable, non-candidate and unowned AI decisions do not become trades',()=>{
  assert.throws(()=>validateDecision({...buy(),sizeUsd:1000},context),/余额不足/);

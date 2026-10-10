@@ -223,6 +223,25 @@ test('AI proposals execute through paper quotes above 40U and stop/TP checks; no
  f.g.fx=1200;f.app.showcase.tickAt=0;f.app.showcase.exitChecks.clear();await f.app.showcase.tick();const sale=f.app.paper.orders().find(x=>x.side==='sell');assert.ok(sale);assert.match(sale.reason,/止盈/);sale.dueAt=Date.now()-1;f.app.store.put('paper-orders',sale);f.g.advance();await f.app.paper.tick();assert.equal(f.app.paper.fills().length,2);assert.ok(f.app.paper.fills()[1].netUsd>0);assert.equal(f.app.paper.check(o.agentId),true);assert.equal(f.app.live.orders().length,0);
  const rank=(await f.call('/api/leaderboard')).value;assert.equal(rank.entries[0].id,o.agentId);assert.equal(rank.entries[0].rank,1);assert.ok(rank.entries[0].returnPct>0);assert.equal(calls,1);
 });
+test('hold proposals cannot replace active entry rules; model context, public details and actual stop execution agree',async t=>{
+ let calls=0,heldContext;const entry={takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60};
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(_c,_s,context){calls++;if(calls===1)return {action:'buy',token:TOKEN,sizeUsd:150,reason:'测试入场',exit:entry};heldContext=context;return {action:'hold',token:null,sizeUsd:null,reason:'持有，不修改入场规则',exit:{takeProfitPct:30,stopLossPct:15,maxHoldMinutes:1440}};}}}});
+ const a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+ for(const p of SHOWCASE_PROFILES.slice(1))f.app.store.put('agents',{...f.app.store.get('agents',p.id),paused:true});
+ await f.app.showcase.run();const buy=f.app.paper.orders(a.id)[0];buy.dueAt=Date.now()-1;f.app.store.put('paper-orders',buy);f.g.advance();await f.app.paper.tick();
+ const saved=f.app.store.get('showcase-exits',buy.id);assert.equal(f.app.paper.lots(a.id).length,1);
+ f.app.showcase.status(a.id,{nextDecisionAt:0});f.app.showcase.exitChecks.clear();await f.app.showcase.run();
+ assert.equal(calls,2);assert.deepEqual(heldContext.account.positions[0].exitPlan.rule,entry);
+ assert.equal(heldContext.account.positions[0].exitPlan.entryOrderId,buy.id);assert.equal(heldContext.account.positions[0].costUsd,150.01);
+ assert.deepEqual(f.app.store.get('showcase-exits',buy.id),saved);
+ const detail=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(detail.exitPlans.length,1);assert.deepEqual(detail.exitPlans[0].rule,entry);assert.equal(detail.exitPlans[0].state,'active');
+ assert.equal(detail.exitPlans[0].deadlineAt,heldContext.account.positions[0].exitPlan.deadlineAt);assert.doesNotMatch(JSON.stringify(detail),/encryptedKey|ownerId|agentToken|apiKey/);
+ f.g.fx=940;f.g.advance();f.app.showcase.exitChecks.clear();await f.app.showcase.run();
+ const sell=f.app.paper.orders(a.id).find(o=>o.side==='sell');assert.ok(sell);assert.match(sell.reason,/止损/);assert.equal(calls,2);
+ sell.dueAt=Date.now()-1;f.app.store.put('paper-orders',sell);f.g.advance();await f.app.paper.tick();
+ assert.equal(f.app.paper.lots(a.id).length,0);assert.equal(f.app.paper.check(a.id),true);assert.deepEqual((await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans,[]);assert.equal(f.app.live.orders().length,0);
+});
+
 test('unlimited AI quota retains usage above previous caps while one-minute scheduling prevents repeated immediate calls',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'测试行情不足，保持观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
  const day=new Date().toISOString().slice(0,10),before=Date.now();f.app.store.put('ai-usage',{id:day,calls:5000});

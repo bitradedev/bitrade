@@ -1,5 +1,6 @@
 import { fail } from './database-core.mjs';
 import { avatarFor } from './agent-avatars.mjs';
+import { showcasePositions } from './showcase-exits.mjs';
 
 export function strategyDto(agent) {
   const s = agent.strategy ?? {};
@@ -84,6 +85,15 @@ export function publicAgent(store, paper, live, agent) {
     createdAt: agent.createdAt,
     strategy: strategyDto(agent),
     riskReviews,
+    exitPlans:
+      simulated && agent.source === 'builtin'
+        ? showcasePositions(store, view.positions).map((p) => ({
+            token: p.token,
+            symbol: p.symbol,
+            costUsd: p.costUsd,
+            ...p.exitPlan,
+          }))
+        : [],
     runtime: runtime
       ? {
           state: runtime.state,
