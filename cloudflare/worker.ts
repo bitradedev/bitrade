@@ -73,6 +73,7 @@ export class TradingPlatform extends DurableObject<any> {
           rpc = new CloudRpc(this.env.BSC_RPC_URL, {
             receiptUrl: this.env.BSC_RECEIPT_RPC_URL,
             fetchImpl: this.io.fetch,
+            store: this.store,
           }),
           publicData =
             this.env.BI_TRADE_PUBLIC_MARKET === 'true'
@@ -185,6 +186,12 @@ export class TradingPlatform extends DurableObject<any> {
           marketTransport: this.env.GMGN_RELAY_URL ? 'private-relay' : 'cloudflare-fetch',
           publicMarketEnabled: Boolean(this.market.publicData),
           publicMarketSources: this.market.publicData?.status() ?? [],
+          rpcSources: [
+            { source: 'BSC price RPC', ...this.market.rpc.status() },
+            ...(this.market.rpc.receiptRpc
+              ? [{ source: 'BSC receipt RPC', ...this.market.rpc.receiptRpc.status() }]
+              : []),
+          ],
           networkBudget: this.io.lastAlarm,
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,

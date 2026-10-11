@@ -404,6 +404,8 @@ export class CloudMarket {
       : '等待取得合格候选市场';
   }
   marketWait() {
+    const rpc = this.rpc.status?.();
+    if (rpc?.limited) return { retryAt: rpc.retryAt };
     if (this.publicData) {
       const waits = this.publicData
         .status()

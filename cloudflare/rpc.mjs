@@ -1,4 +1,6 @@
 import { encodeFunctionData, decodeFunctionResult } from 'viem';
+import { createHash } from 'node:crypto';
+import { retryAfter } from './retry-after.mjs';
 const ALLOWED = new Set([
   'eth_chainId',
   'eth_blockNumber',
@@ -34,7 +36,12 @@ export function publicEndpoint(value) {
 export class CloudRpc {
   constructor(
     url = 'https://bsc-rpc.publicnode.com',
-    { fetchImpl = (...args) => fetch(...args), receiptUrl = null } = {},
+    {
+      fetchImpl = (...args) => fetch(...args),
+      receiptUrl = null,
+      store = null,
+      now = Date.now,
+    } = {},
   ) {
     this.url = publicEndpoint(url);
     this.fetch = fetchImpl;
@@ -43,10 +50,54 @@ export class CloudRpc {
     this.pending = new Map();
     this.id = 0;
     this.tail = Promise.resolve();
+    this.store = store;
+    this.now = now;
+    this.budgetId = 'rpc-budget-' + createHash('sha256').update(this.url).digest('hex');
+    this.cooldown = store?.get('cloud-settings', this.budgetId) ?? { retryAt: 0 };
     this.receiptRpc =
       receiptUrl && publicEndpoint(receiptUrl) !== this.url
-        ? new CloudRpc(receiptUrl, { fetchImpl })
+        ? new CloudRpc(receiptUrl, { fetchImpl, store, now })
         : null;
+  }
+  status() {
+    return {
+      retryAt: this.cooldown.retryAt ?? 0,
+      limited: this.now() < (this.cooldown.retryAt ?? 0),
+      lastError: this.cooldown.lastError ?? null,
+      lastFailure: this.cooldown.lastFailure ?? null,
+      lastSuccessAt: this.cooldown.lastSuccessAt ?? null,
+    };
+  }
+  #save(state) {
+    this.cooldown = { ...state, id: this.budgetId };
+    this.store?.put('cloud-settings', this.cooldown);
+  }
+  #failed(response, message) {
+    if (response.status === 429) {
+      const at = this.now(),
+        retry = retryAfter(response.headers.get('Retry-After'), at);
+      this.#save({
+        ...this.cooldown,
+        retryAt: Math.max(at + 15000, retry.at === null ? 0 : retry.at + 5000),
+        lastError: 'HTTP 429',
+        lastFailure: { at, status: 429, serverRetryAt: retry.at },
+      });
+    }
+    return Error(message + '：HTTP ' + response.status);
+  }
+  #recovered() {
+    if (this.cooldown.retryAt > 0)
+      this.#save({ ...this.cooldown, retryAt: 0, lastError: null, lastSuccessAt: this.now() });
+  }
+  #queued(execute) {
+    const task = this.tail
+      .catch(() => {})
+      .then(() => {
+        if (this.status().limited) throw Error('BSC RPC 限频冷却中，稍后自动重试');
+        return execute();
+      });
+    this.tail = task;
+    return task;
   }
   async request(method, params = []) {
     if (!ALLOWED.has(method)) throw Error('Cloud RPC is read-only');
@@ -67,15 +118,14 @@ export class CloudRpc {
             : 'BSC RPC 网络不可用',
         );
       }
-      if (!r.ok) throw Error('BSC RPC 请求失败：HTTP ' + r.status);
+      if (!r.ok) throw this.#failed(r, 'BSC RPC 请求失败');
       const data = await r.json();
       if (data.error || !Object.hasOwn(data, 'result')) throw Error('BSC RPC 未返回有效读取结果');
+      this.#recovered();
       return data.result;
     };
     // Shared bounded concurrency avoids public RPC bursts from route discovery.
-    const task = this.tail.catch(() => {}).then(execute);
-    this.tail = task;
-    return task;
+    return this.#queued(execute);
   }
   async read(token, abi, fn, args = [], block, from) {
     const params = [
@@ -159,30 +209,39 @@ export class CloudRpc {
         method: 'eth_getTransactionReceipt',
         params: [hash],
       }));
-    let response;
-    try {
-      response = await client.fetch(client.url, {
-        method: 'POST',
-        redirect: 'manual',
-        signal: AbortSignal.timeout(8000),
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requests),
-      });
-    } catch (e) {
-      throw Error(
-        /too many subrequests|subrequest limit/i.test(String(e?.message))
-          ? '云端单轮请求上限已到，下一轮自动重试'
-          : 'BSC 回执批次网络不可用',
-      );
-    }
-    if (!response.ok) throw Error('BSC 回执批次读取失败：HTTP ' + response.status);
-    const rows = await response.json();
-    if (
-      !Array.isArray(rows) ||
-      rows.length !== requests.length ||
-      new Set(rows.map((r) => r.id)).size !== rows.length
-    )
-      throw Error('BSC 回执批次身份未核实');
+    const rows = await client.#queued(async () => {
+      let response;
+      try {
+        response = await client.fetch(client.url, {
+          method: 'POST',
+          redirect: 'manual',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requests),
+        });
+      } catch (e) {
+        throw Error(
+          /too many subrequests|subrequest limit/i.test(String(e?.message))
+            ? '云端单轮请求上限已到，下一轮自动重试'
+            : 'BSC 回执批次网络不可用',
+        );
+      }
+      if (!response.ok) throw client.#failed(response, 'BSC 回执批次读取失败');
+      const rows = await response.json();
+      if (
+        !Array.isArray(rows) ||
+        rows.length !== requests.length ||
+        new Set(rows.map((r) => r.id)).size !== rows.length
+      )
+        throw Error('BSC 回执批次身份未核实');
+      for (const request of requests) {
+        const row = rows.find((r) => r.id === request.id);
+        if (!row || row.error || !Object.hasOwn(row, 'result'))
+          throw Error('BSC 回执批次未返回有效数据');
+      }
+      client.#recovered();
+      return rows;
+    });
     const results = [];
     for (let i = 0; i < requests.length; i++) {
       const row = rows.find((r) => r.id === requests[i].id);
