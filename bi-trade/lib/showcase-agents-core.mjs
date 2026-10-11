@@ -220,7 +220,7 @@ export class ShowcaseAgents {
       this.checkingExits.delete(a.id);
     }
   }
-  watchExits() {
+  watchExits({ onlyFailures = false } = {}) {
     if (this.watching || this.stopped) return this.watching;
     this.watching = (async () => {
       const eligible = SHOWCASE_PROFILES.map((p) => this.store.get('agents', p.id)).filter(
@@ -231,6 +231,7 @@ export class ShowcaseAgents {
           a.mode === 'paper' &&
           !this.paper.view(a.id).pending &&
           this.paper.lots(a.id).length &&
+          (!onlyFailures || this.store.get('showcase-status', a.id)?.exitFailures?.length) &&
           !this.checkingExits.has(a.id) &&
           this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000,
       );

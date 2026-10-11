@@ -74,6 +74,10 @@ test('Discovery mixes recent and volume memes, preserves held routes and deactiv
  data.read=async(_service,path,body)=>{requests.push(body.type);return {at:now,value:{code:0,data:Array.from({length:20},(_,i)=>fourRow('0x'+((body.type==='VOL'?1000:2000)+i).toString(16).padStart(40,'0')))}};};
  const rows=await data.discover();assert.equal(rows.length,12);assert.deepEqual(requests,['VOL','NEW']);assert.equal(rows[1].address,'0x'+(2000).toString(16).padStart(40,'0'));assert.equal(data.supports(OTHER),true);assert.equal(store.get('cloud-meme-candidates',OTHER).active,false);assert.equal(store.get('paper-fills','history').netUsd,-5);await data.discover();assert.equal(requests.length,2);
 });
+test('Fallback pool hints cannot discard already discovered memes before launch identity checks',async t=>{
+ const {store,data}=sourceFixture(t);data.read=async service=>{if(service==='four')throw Error('Unavailable');return {at:Date.now(),value:{data:[{relationships:{base_token:{data:{id:'bsc_'+OTHER}},dex:{data:{id:'pancakeswap_v2'}}}}],included:[]}};};
+ const rows=await data.discover();assert.ok(rows.some(c=>c.address===TOKEN));assert.ok(rows.some(c=>c.address===OTHER));assert.ok(rows.length<=12);assert.equal(store.get('cloud-meme-candidates',TOKEN).active,true);
+});
 test('Meme origin, official pool and runtime code must match even with valid-looking chart data',async t=>{
  for(const fault of ['origin','factory','pair','code']){
   const {rpc,data}=sourceFixture(t),read=rpc.read;rpc.read=async(...args)=>{if(fault==='origin'&&args[2]==='getTokenInfo')return Array(12).fill(0);if(fault==='factory'&&args[2]==='factory')return OTHER;if(fault==='pair'&&args[2]==='getPair')return OTHER;return read(...args);};if(fault==='code')rpc.request=async()=> '0x';

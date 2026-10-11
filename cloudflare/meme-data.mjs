@@ -363,6 +363,13 @@ export class MemeBscData extends PublicBscData {
             };
           })
           .filter((c) => c.address && !establishedAsset(c.address));
+        // Pool lists are unverified launchpad hints, not replacements for
+        // previously discovered memes. Preserve their ongoing evaluation.
+        rows = [
+          ...rows.slice(0, 4),
+          ...this.candidates(),
+          ...MEME_BOOTSTRAP.map((c) => ({ ...c, at: this.now() })),
+        ];
       } catch {}
     }
     const migrations = await this.scanMigrations();

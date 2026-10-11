@@ -17,6 +17,21 @@ export async function runScheduledRound(host) {
         });
         return;
       }
+      const failedExits = host.store.all('showcase-status').some((s) => s.exitFailures?.length),
+        retry = host.store.get?.('cloud-settings', 'exit-priority-round');
+      if (failedExits && Date.now() - (retry?.at ?? 0) >= 30000) {
+        host.store.put('cloud-settings', { id: 'exit-priority-round', at: Date.now() });
+        await host.market.updateHead();
+        await host.market.fx();
+        await app.showcase.watchExits({ onlyFailures: true });
+        host.store.put('cloud-settings', {
+          id: 'scheduler',
+          at: Date.now(),
+          ok: true,
+          phase: 'exits',
+        });
+        return;
+      }
       const tokens = [
         ...new Set(
           host.store

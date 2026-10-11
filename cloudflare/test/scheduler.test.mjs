@@ -2,6 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
+test('failed held exits get their own bounded retry round before heavy collection, while queued matching stays first',async()=>{
+ const calls=[],rows=new Map(),io=new IOBudget(4,async url=>{calls.push(url);return Response.json({});});let queued=false,watched=0;
+ const host={io,ctx:{storage:{setAlarm:async()=>{}},waitUntil(){}},store:{all:kind=>kind==='showcase-status'?[{id:'showcase-trend',exitFailures:[{token:'held'}]}]:[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,v),prune(){}},arm:async()=>{}};
+ const app={paper:{orders:()=>queued?[{status:'queued'}]:[],tick:async()=>{queued=false;}},showcase:{watchExits:async options=>{assert.equal(options.onlyFailures,true);watched++;await io.fetch('https://exit.example');},freshMarkets:()=>[],tick:()=>{throw Error('Do not run a model in an exit retry round');}}};host.initialize=async()=>app;host.market={updateHead:async()=>{await io.fetch('https://head.example');},fx:async()=>{await io.fetch('https://fx.example');},refresh:async()=>{throw Error('Do not consume the exit budget on discovery');}};host.risk={tick:()=>{throw Error('Do not collect holders in an exit retry round');}};
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(watched,1);assert.equal(rows.get('cloud-settingsscheduler').phase,'exits');assert.equal(io.lastAlarm.used,3);assert.deepEqual(calls,['https://head.example','https://fx.example','https://exit.example']);
+ queued=true;await io.run('alarm',()=>runScheduledRound(host));assert.equal(queued,false);assert.equal(watched,1);assert.equal(rows.get('cloud-settingsscheduler').phase,'matching');assert.equal(io.lastAlarm.used,2);
+});
 
 test('a delayed model cannot hold the next market, exit or matching alarm; background I/O stays in its original budget',async()=>{
  let release,started,quotes=0,watched=0,modelCalls=0,queued=false;
