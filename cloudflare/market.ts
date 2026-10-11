@@ -295,7 +295,9 @@ export class CloudMarket {
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
         dataSource:
           md.source === 'meme-bsc'
-            ? 'BSC RPC · Four.meme · GeckoTerminal / DEX Screener · Honeypot.is'
+            ? 'BSC RPC · Four.meme / Flap · ' +
+              (md.info.chartSource ?? 'independent pool data') +
+              ' · Honeypot.is'
             : md.source === 'public-bsc'
               ? statsFresh
                 ? 'BSC RPC · DEX Screener · Honeypot.is'
@@ -304,6 +306,7 @@ export class CloudMarket {
         marketDataAt: statsFresh ? statsAt : null,
         priceChange: statsFresh ? (md.info.priceChange ?? null) : null,
         transactions: statsFresh ? (md.info.txns ?? null) : null,
+        volumeWindow: statsFresh ? (md.info.volumeWindow ?? null) : null,
         updatedAt: Date.now(),
         block: b.number,
         quality: 'verified',
@@ -551,6 +554,7 @@ export class CloudMarket {
                 priceChange: null,
                 transactions: null,
                 marketDataAt: null,
+                volumeWindow: null,
                 dataSource: 'BSC RPC · Honeypot.is',
               }
             : {}),

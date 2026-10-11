@@ -161,6 +161,11 @@ export function evaluateMemeRisk(token, d, at = Date.now()) {
     warnings: [
       'Meme 模拟采用已观测风险筛查；完整捆绑、老鼠仓、同源资金和黑名单能力仍可能未知，不能视为安全保证。',
       '关联检查仅覆盖标明区块范围内的代币转账样本；不同交易或较早的关联钱包可能未被检出。',
+      ...(p?.volumeWindow
+        ? [
+            '换手额仅为标明区块范围内的真实池成交，按当前美元参考换算，是近24小时的部分样本下界；不是全天总成交额，涨跌窗口未取得。',
+          ]
+        : []),
     ],
     metrics: {
       poolSupplyShare: supply && pool !== null ? Number(pool) / Number(supply) : null,
@@ -180,6 +185,7 @@ export function evaluateMemeRisk(token, d, at = Date.now()) {
       sellTaxPct: num(c?.simulationResult?.sellTax),
       liquidityUsd: liquidity,
       volumeUsd: volume,
+      volumeWindow: p?.volumeWindow ?? null,
       referencePriceUsd: price,
       holderCount,
       transferSample: d?.transferSample ?? null,

@@ -1,4 +1,4 @@
-import { keccak256, parseAbi } from 'viem';
+import { keccak256, parseAbi, decodeEventLog, getEventSelector } from 'viem';
 import { PublicBscData } from './public-data.mjs';
 import { evaluateMemeRisk } from '../bi-trade/lib/meme-risk.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
@@ -21,9 +21,111 @@ const ABI = parseAbi([
   'function getPair(address,address) view returns (address)',
   'function getPool(address,address,uint24) view returns (address)',
   'function fee() view returns (uint24)',
+  'function decimals() view returns (uint8)',
+  'function getReserves() view returns (uint112 reserve0,uint112 reserve1,uint32 blockTimestampLast)',
 ]);
 const addr = (v) => (typeof v === 'string' && /^0x[0-9a-f]{40}$/i.test(v) ? v.toLowerCase() : null);
 const TRANSFER = keccak256(new TextEncoder().encode('Transfer(address,address,uint256)'));
+export const MIGRATIONS = parseAbi([
+  'event LiquidityAdded(address base,uint256 offers,address quote,uint256 funds)',
+  'event LaunchedToDEX(address token,address pool,uint256 amount,uint256 eth)',
+]);
+export const POOL_SWAP = parseAbi([
+  'event Swap(address indexed sender,uint256 amount0In,uint256 amount1In,uint256 amount0Out,uint256 amount1Out,address indexed to)',
+]);
+export function swapTurnover(logs, pool, fromBlock, toBlock, quote0) {
+  if (!Array.isArray(logs) || logs.length > 4000) throw Error('池换手样本无效或过大');
+  let quoteRaw = 0n,
+    buys = 0,
+    sells = 0;
+  const seen = new Set();
+  for (const l of logs) {
+    if (l.removed) continue;
+    if (
+      addr(l.address) !== pool ||
+      !/^0x[0-9a-f]{1,12}$/i.test(l.blockNumber ?? '') ||
+      Number(BigInt(l.blockNumber)) < fromBlock ||
+      Number(BigInt(l.blockNumber)) > toBlock ||
+      !/^0x[0-9a-f]{64}$/i.test(l.blockHash ?? '') ||
+      !/^0x[0-9a-f]{64}$/i.test(l.transactionHash ?? '') ||
+      !/^0x[0-9a-f]{1,12}$/i.test(l.logIndex ?? '')
+    )
+      throw Error('池换手事件身份或范围未核实');
+    const key = l.blockHash + ':' + l.transactionHash + ':' + l.logIndex;
+    if (seen.has(key)) throw Error('池换手样本重复');
+    seen.add(key);
+    const { args } = decodeEventLog({
+        abi: POOL_SWAP,
+        data: l.data,
+        topics: l.topics,
+        strict: true,
+      }),
+      incoming = quote0 ? args.amount0In : args.amount1In,
+      outgoing = quote0 ? args.amount0Out : args.amount1Out;
+    quoteRaw += incoming + outgoing;
+    if (incoming > 0n) buys++;
+    if (outgoing > 0n) sells++;
+  }
+  return { quoteRaw, buys, sells };
+}
+// Bootstrap discovery only. Every entry still needs current launchpad, official
+// pool, sell simulation and risk proofs; no price or clean labels are seeded.
+export const MEME_BOOTSTRAP = [
+  ['0x6bdcce4a559076e37755a78ce0c06214e59e4444', 'B'],
+  ['0x924fa68a0fc644485b8df8abfa0a41c2e7744444', '币安人生'],
+  ['0xeccbb861c0dda7efd964010085488b69317e4444', '龙虾'],
+  ['0x82ec31d69b3c289e541b50e30681fd1acad24444', '哈基米'],
+  ['0x6d5ad1592ed9d6d1df9b93c793ab759573ed6714', 'Broccoli'],
+  ['0xe747e54783ba3f77a8e5251a3cba19ebe9c0e197', 'TAKE'],
+].map(([address, symbol]) => ({
+  id: address,
+  address,
+  symbol,
+  name: symbol,
+  category: 'meme',
+  label: 'Meme',
+  discoverySource: 'Known launchpad contract · current identity pending',
+}));
+export function migrationCandidates(logs, fromBlock, toBlock, at) {
+  if (!Array.isArray(logs) || logs.length > 2000) throw Error('毕业事件样本无效');
+  const rows = [];
+  for (const l of logs) {
+    if (l.removed) continue;
+    if (
+      ![FOUR_MANAGER, FLAP].includes(addr(l.address)) ||
+      !/^0x[0-9a-f]{1,12}$/i.test(l.blockNumber ?? '') ||
+      Number(BigInt(l.blockNumber)) < fromBlock ||
+      Number(BigInt(l.blockNumber)) > toBlock ||
+      !/^0x[0-9a-f]{64}$/i.test(l.blockHash ?? '') ||
+      !/^0x[0-9a-f]{64}$/i.test(l.transactionHash ?? '')
+    )
+      throw Error('毕业事件身份与范围未核实');
+    const d = decodeEventLog({ abi: MIGRATIONS, data: l.data, topics: l.topics, strict: true });
+    if ((d.eventName === 'LiquidityAdded') !== (addr(l.address) === FOUR_MANAGER))
+      throw Error('毕业事件与发行平台不一致');
+    const token = addr(d.args.base ?? d.args.token);
+    if (!token || establishedAsset(token)) continue;
+    if (d.eventName === 'LiquidityAdded' && ![ZERO, WBNB].includes(addr(d.args.quote))) continue;
+    rows.push({
+      id: token,
+      address: token,
+      symbol: token.slice(0, 10),
+      name: token,
+      category: 'meme',
+      label: 'launchpad-origin',
+      discoverySource: 'BSC launchpad migration event',
+      discoveryBlock: Number(BigInt(l.blockNumber)),
+      discoveryHash: l.blockHash,
+      discoveryTx: l.transactionHash,
+      at,
+    });
+  }
+  return [
+    ...new Map(
+      rows.sort((a, b) => b.discoveryBlock - a.discoveryBlock).map((c) => [c.address, c]),
+    ).values(),
+  ];
+}
 export function fourCandidates(value, at, preserveOrder = false) {
   const rows = Array.isArray(value?.data) ? value.data : [],
     seen = new Set();
@@ -140,6 +242,56 @@ export function transferClusters(logs, holders, token, fromBlock, toBlock) {
     .map(([transactionHash, v]) => ({ transactionHash, addresses: [...v] }));
 }
 export class MemeBscData extends PublicBscData {
+  status() {
+    const s = this.store.get('cloud-settings', 'meme-chain-index') ?? {},
+      rpc = this.rpc.status?.() ?? {};
+    return [
+      ...super.status(),
+      {
+        source: 'BSC launchpad events',
+        ...s,
+        limited: rpc.limited ?? false,
+        retryAt: rpc.retryAt ?? 0,
+      },
+    ];
+  }
+  async scanMigrations() {
+    const previous = this.store.get('cloud-settings', 'meme-chain-index');
+    if (previous && this.now() - previous.at >= 0 && this.now() - previous.at < 300000) return [];
+    try {
+      const b = await this.rpc.block(),
+        toBlock = Math.max(0, b.number - 4),
+        fromBlock = Math.max(0, toBlock - 1999);
+      const logs = await this.rpc.request('eth_getLogs', [
+        {
+          address: [FOUR_MANAGER, FLAP],
+          fromBlock: '0x' + fromBlock.toString(16),
+          toBlock: '0x' + toBlock.toString(16),
+          topics: [MIGRATIONS.map(getEventSelector)],
+        },
+      ]);
+      const rows = migrationCandidates(logs, fromBlock, toBlock, this.now());
+      this.store.put('cloud-settings', {
+        id: 'meme-chain-index',
+        at: this.now(),
+        fromBlock,
+        toBlock,
+        lastSuccessAt: this.now(),
+        lastError: null,
+        count: rows.length,
+      });
+      return rows;
+    } catch (e) {
+      if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+      this.store.put('cloud-settings', {
+        ...previous,
+        id: 'meme-chain-index',
+        at: this.now(),
+        lastError: '毕业事件暂未取得',
+      });
+      return [];
+    }
+  }
   supports(token) {
     return (
       !establishedAsset(token) &&
@@ -183,35 +335,46 @@ export class MemeBscData extends PublicBscData {
     let rows = [];
     for (let i = 0; i < 8; i++) for (const list of lists) if (list[i]) rows.push(list[i]);
     if (!rows.length) {
-      const d = await this.read(
-        'gecko',
-        '/networks/bsc/trending_pools?include=base_token,quote_token,dex',
-      );
-      const included = new Map((d.value?.included ?? []).map((t) => [t.id, t.attributes]));
-      rows = (d.value?.data ?? [])
-        .filter((p) =>
-          ['four-meme', 'flap', 'pancakeswap_v2', 'pancakeswap_v3'].includes(
-            p.relationships?.dex?.data?.id,
-          ),
-        )
-        .map((p) => {
-          const id = p.relationships?.base_token?.data?.id,
-            a = addr(id?.replace(/^bsc_/, '')),
-            t = included.get(id) ?? {};
-          return {
-            id: a,
-            address: a,
-            symbol: String(t.symbol ?? 'Meme').slice(0, 60),
-            name: String(t.name ?? 'Meme').slice(0, 100),
-            category: 'meme',
-            discoverySource: 'GeckoTerminal · launchpad identity pending',
-            label: 'launchpad-origin',
-            at: d.at,
-          };
-        })
-        .filter((c) => c.address && !establishedAsset(c.address));
+      try {
+        const d = await this.read(
+          'gecko',
+          '/networks/bsc/trending_pools?include=base_token,quote_token,dex',
+        );
+        const included = new Map((d.value?.included ?? []).map((t) => [t.id, t.attributes]));
+        rows = (d.value?.data ?? [])
+          .filter((p) =>
+            ['four-meme', 'flap', 'pancakeswap_v2', 'pancakeswap_v3'].includes(
+              p.relationships?.dex?.data?.id,
+            ),
+          )
+          .map((p) => {
+            const id = p.relationships?.base_token?.data?.id,
+              a = addr(id?.replace(/^bsc_/, '')),
+              t = included.get(id) ?? {};
+            return {
+              id: a,
+              address: a,
+              symbol: String(t.symbol ?? 'Meme').slice(0, 60),
+              name: String(t.name ?? 'Meme').slice(0, 100),
+              category: 'meme',
+              discoverySource: 'GeckoTerminal · launchpad identity pending',
+              label: 'launchpad-origin',
+              at: d.at,
+            };
+          })
+          .filter((c) => c.address && !establishedAsset(c.address));
+      } catch {}
     }
-    rows = [...new Map(rows.map((c) => [c.address, c])).values()].slice(0, 12);
+    const migrations = await this.scanMigrations();
+    if (!rows.length)
+      rows = [
+        ...migrations,
+        ...this.candidates(),
+        ...MEME_BOOTSTRAP.map((c) => ({ ...c, at: this.now() })),
+      ];
+    else rows = [...migrations.slice(0, 4), ...rows];
+    const seen = new Set();
+    rows = rows.filter((c) => !seen.has(c.address) && seen.add(c.address)).slice(0, 12);
     if (!rows.length) throw Error('独立 Meme 发现暂未返回候选');
     const active = new Set(rows.map((c) => c.address));
     for (const old of this.store.all('cloud-meme-candidates'))
@@ -239,14 +402,100 @@ export class MemeBscData extends PublicBscData {
       pair = selectDexPair(row.value, token);
     } catch {}
     if (!pair) {
-      row = await this.read(
-        'gecko',
-        '/networks/bsc/tokens/' + token + '/pools?include=base_token,quote_token,dex',
-      );
-      pair = geckoPair(row.value, token);
+      try {
+        row = await this.read(
+          'gecko',
+          '/networks/bsc/tokens/' + token + '/pools?include=base_token,quote_token,dex',
+        );
+        pair = geckoPair(row.value, token);
+      } catch {}
     }
-    if (!pair) throw Error('尚未核实该 Meme 的 Pancake V2/V3 WBNB 池');
+    if (!pair) return this.chainChart(token);
     return { pair, at: row.at };
+  }
+  async chainChart(token) {
+    const b = await this.rpc.block(),
+      fx = this.store.get('cloud-settings', 'native-fx');
+    if (
+      !fx ||
+      fx.source !== 'Chainlink BNB/USD · BSC' ||
+      !Number.isFinite(fx.usd) ||
+      fx.usd <= 0 ||
+      this.now() < fx.at ||
+      this.now() - fx.at >= 90000 ||
+      this.now() - b.time > 15000
+    )
+      throw Error('链上 Meme 行情所需的链头或美元参考过期');
+    const factory = CHAIN_CONFIG.bsc.v2Factory,
+      pool = addr(await this.rpc.read(factory, ABI, 'getPair', [token, WBNB], b.number));
+    if (!pool || pool === ZERO) throw Error('尚未核实该 Meme 的 Pancake V2/V3 WBNB 池');
+    const [t0, t1, pf, reserves, decimals] = await Promise.all([
+      this.rpc.read(pool, ABI, 'token0', [], b.number),
+      this.rpc.read(pool, ABI, 'token1', [], b.number),
+      this.rpc.read(pool, ABI, 'factory', [], b.number),
+      this.rpc.read(pool, ABI, 'getReserves', [], b.number),
+      this.rpc.read(token, ABI, 'decimals', [], b.number),
+    ]);
+    if (
+      addr(pf) !== factory ||
+      ![addr(t0), addr(t1)].includes(token) ||
+      ![addr(t0), addr(t1)].includes(WBNB) ||
+      !Number.isInteger(decimals) ||
+      decimals < 0 ||
+      decimals > 36
+    )
+      throw Error('链上 Meme 池身份或精度未核实');
+    const quote0 = addr(t0) === WBNB,
+      qr = BigInt(reserves[quote0 ? 0 : 1]),
+      tr = BigInt(reserves[quote0 ? 1 : 0]);
+    if (qr <= 0n || tr <= 0n) throw Error('链上 Meme 池没有可核实的储备');
+    const toBlock = Math.max(0, b.number - 4),
+      fromBlock = Math.max(0, toBlock - 999),
+      start = await this.rpc.block(fromBlock);
+    if (
+      !Number.isFinite(start.time) ||
+      this.now() < start.time ||
+      this.now() - start.time >= 86400000
+    )
+      throw Error('换手样本不在近24小时范围');
+    const logs = await this.rpc.request('eth_getLogs', [
+        {
+          address: pool,
+          fromBlock: '0x' + fromBlock.toString(16),
+          toBlock: '0x' + toBlock.toString(16),
+          topics: [getEventSelector(POOL_SWAP[0])],
+        },
+      ]),
+      v = swapTurnover(logs, pool, fromBlock, toBlock, quote0),
+      priceUsd = (Number(qr) / 1e18 / (Number(tr) / 10 ** decimals)) * fx.usd;
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) throw Error('链上 Meme 价格未核实');
+    return {
+      at: this.now(),
+      pair: {
+        chainId: 'bsc',
+        dexId: 'pancakeswap',
+        pairAddress: pool,
+        baseToken: { address: token },
+        quoteToken: { address: WBNB },
+        labels: ['v2'],
+        priceUsd: String(priceUsd),
+        liquidity: { usd: (Number(qr) / 1e18) * fx.usd * 2 },
+        volume: { h24: (Number(v.quoteRaw) / 1e18) * fx.usd },
+        priceChange: null,
+        txns: null,
+        chartSource: 'BSC RPC',
+        volumeWindow: {
+          kind: 'recent-swap-lower-bound',
+          fromBlock,
+          toBlock,
+          fromTime: start.time,
+          quoteRaw: String(v.quoteRaw),
+          buys: v.buys,
+          sells: v.sells,
+          usdReferenceAt: fx.at,
+        },
+      },
+    };
   }
   async tradingEvidence(token) {
     if (!this.supports(token)) throw Error('Meme 候选来源尚未核实');
@@ -385,6 +634,8 @@ export class MemeBscData extends PublicBscData {
         price: { price: p.priceUsd, volume_24h: p.volume?.h24 },
         priceChange: p.priceChange,
         txns: p.txns,
+        chartSource: p.chartSource ?? 'DEX Screener',
+        volumeWindow: p.volumeWindow ?? null,
       },
       security: {
         address: token,

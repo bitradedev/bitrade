@@ -1,4 +1,5 @@
 window.BI_UI_EN = {
+"换手额仅为标明区块范围内的真实池成交，按当前美元参考换算，是近24小时的部分样本下界；不是全天总成交额，涨跌窗口未取得。":"Turnover covers actual pool trades in the stated block range, converted using the current USD reference. It is a partial lower bound within 24 hours, not the full daily volume. Change windows are unavailable.",
 "未知":"Unknown",
 "Meme 模拟 · 有限检测":"Meme paper trading · Limited checks",
 "近期关联转账样本：":"Recent linked-transfer sample: ",

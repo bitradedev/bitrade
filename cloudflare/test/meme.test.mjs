@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {realpathSync,mkdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
-import {keccak256} from 'viem';
+import {keccak256,encodeAbiParameters,parseAbiParameters} from 'viem';
 import {CloudStore} from '../store.mjs';
 import {PublicBscData} from '../public-data.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
@@ -12,7 +12,7 @@ import {runScheduledRound} from '../scheduler.mjs';
 const require=createRequire(realpathSync('node_modules/wrangler/package.json')),{build}=require('esbuild');
 mkdirSync('.cloud-test-build',{recursive:true});
 await build({entryPoints:['cloudflare/meme-data.mjs','cloudflare/market.ts'],bundle:true,platform:'node',format:'esm',outdir:'.cloud-test-build/meme-tests',outExtension:{'.js':'.mjs'}});
-const {MemeBscData,fourCandidates,geckoPair,selectDexPair,transferClusters}=await import('../../.cloud-test-build/meme-tests/meme-data.mjs');
+const {MemeBscData,fourCandidates,geckoPair,selectDexPair,transferClusters,migrationCandidates,MEME_BOOTSTRAP,swapTurnover}=await import('../../.cloud-test-build/meme-tests/meme-data.mjs');
 const {CloudMarket}=await import('../../.cloud-test-build/meme-tests/market.mjs');
 const TOKEN='0x'+'11'.repeat(20),POOL='0x'+'22'.repeat(20),OTHER='0x'+'33'.repeat(20),OWNER='0x'+'44'.repeat(20),WBNB='0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',FACTORY='0xca143ce32fe78f1f7019d7d551a6402fc5350c73',MANAGER='0x5c952063c7fc8610ffdb798152d69f0b9550762b';
 function fixture(t){const db=new DatabaseSync(':memory:');t.after(()=>db.close());const sql={exec(query,...args){if(!args.length&&query.split(';').filter(x=>x.trim()).length>1){db.exec(query);return {toArray:()=>[],rowsWritten:0};}const s=db.prepare(query);if(/^(?:CREATE|DELETE|INSERT|UPDATE)/i.test(query.trim())){const r=s.run(...args);return {toArray:()=>[],rowsWritten:r.changes};}return {toArray:()=>s.all(...args),rowsWritten:0};}};return new CloudStore({sql,transactionSync(fn){db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}});}
@@ -27,6 +27,22 @@ test('Four public candidates use explicit BSC and Meme evidence, not quote ticke
  const rows=[fourRow(),fourRow(),...['chain','tag','status','quote','tax','address'].map(k=>{const r=fourRow(OTHER);if(k==='chain')r.networkCode=1;if(k==='tag')r.tag='DeFi';if(k==='status')r.status='CREATE';if(k==='quote')r.symbol='USD1';if(k==='tax')r.taxFee='.01';if(k==='address')r.tokenAddress='invalid';return r;}),fourRow('0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82')];
  const r=fourCandidates({data:rows},100);assert.equal(r.length,1);assert.equal(r[0].symbol,'Meme');assert.equal(r[0].category,'meme');assert.equal(r[0].at,100);
  assert.equal(fourCandidates({data:[{...fourRow(OTHER),day1Vol:1},fourRow()]},100,true)[0].address,OTHER);
+});
+test('Direct launchpad migration candidates verify emitter, ABI and range, never accepting unrelated events',()=>{
+ const topic=keccak256(new TextEncoder().encode('LiquidityAdded(address,uint256,address,uint256)')),log={address:MANAGER,blockNumber:'0x64',blockHash:'0x'+'ac'.repeat(32),transactionHash:'0x'+'bc'.repeat(32),topics:[topic],data:encodeAbiParameters(parseAbiParameters('address,uint256,address,uint256'),[TOKEN,10n,WBNB,1n])};
+ const c=migrationCandidates([log],90,110,123)[0];assert.equal(c.address,TOKEN);assert.equal(c.discoveryBlock,100);assert.equal(c.at,123);assert.equal(c.category,'meme');assert.equal(migrationCandidates([{...log,removed:true}],90,110,123).length,0);
+ for(const mutate of [l=>l.address=OWNER,l=>l.blockNumber='0x10',l=>l.data='0x',l=>l.address='0xe2ce6ab80874fa9fa2aae65d277dd6b8e65c9de0']){const wrong=structuredClone(log);mutate(wrong);assert.throws(()=>migrationCandidates([wrong],90,110,123));}
+});
+test('Public API denial preserves cooldown and falls back to on-chain discovery and only Meme bootstrap identities',async t=>{
+ const store=fixture(t),rpc=rpcFixture(),now=Date.now(),data=new MemeBscData(store,rpc,{now:()=>now}),deadline=now+300000;store.put('cloud-settings',{id:'public-budget-four',retryAt:deadline,lastError:'HTTP 403'});store.put('cloud-settings',{id:'public-budget-gecko',retryAt:deadline,lastError:'HTTP 429'});let sent=0;data.fetch=async()=>{sent++;throw Error('Do not bypass cooldown');};
+ const rows=await data.discover();assert.equal(rows.length,MEME_BOOTSTRAP.length);assert.ok(rows.some(c=>c.symbol==='B'));assert.ok(rows.every(c=>c.category==='meme'));assert.equal(store.get('cloud-settings','public-budget-four').retryAt,deadline);assert.equal(store.get('cloud-settings','public-budget-gecko').retryAt,deadline);assert.equal(sent,0);assert.ok(data.status().find(s=>s.source==='BSC launchpad events').lastSuccessAt);assert.ok(rpc.calls.includes('eth_getLogs'));assert.ok(rows.every(c=>c.priceUsd===undefined));
+});
+test('Chain pool turnover validates events and duplicates, keeping USD turnover a disclosed partial lower bound',async t=>{
+ const topic=keccak256(new TextEncoder().encode('Swap(address,uint256,uint256,uint256,uint256,address)')),pad=a=>'0x'+'0'.repeat(24)+a.slice(2),log={address:POOL,blockNumber:'0x5a',blockHash:'0x'+'ac'.repeat(32),transactionHash:'0x'+'bc'.repeat(32),logIndex:'0x1',topics:[topic,pad(OWNER),pad(OWNER)],data:encodeAbiParameters(parseAbiParameters('uint256,uint256,uint256,uint256'),[0n,5n*10n**18n,100n,0n])};
+ assert.equal(swapTurnover([log],POOL,0,96,false).quoteRaw,5n*10n**18n);assert.throws(()=>swapTurnover([log,log],POOL,0,96,false),/重复/);assert.throws(()=>swapTurnover([{...log,address:OWNER}],POOL,0,96,false),/身份/);
+ const {store,rpc,data}=sourceFixture(t);store.put('cloud-settings',{id:'native-fx',source:'Chainlink BNB/USD · BSC',usd:750,at:Date.now()});const request=rpc.request;rpc.request=async(method,args)=>method==='eth_getLogs'?[log]:request(method,args);
+ const c=await data.chainChart(TOKEN);assert.equal(c.pair.priceUsd,'0.75');assert.equal(c.pair.liquidity.usd,1500000);assert.equal(c.pair.volume.h24,3750);assert.equal(c.pair.priceChange,null);assert.equal(c.pair.txns,null);assert.equal(c.pair.volumeWindow.kind,'recent-swap-lower-bound');assert.equal(c.pair.volumeWindow.toBlock,96);
+ store.put('cloud-settings',{id:'native-fx',source:'Chainlink BNB/USD · BSC',usd:750,at:Date.now()-90001});await assert.rejects(data.chainChart(TOKEN),/过期/);
 });
 test('Pair parsers reject wrong chains, quotes, DEXes and token identities',()=>{
  const p=pair();assert.equal(selectDexPair([p],TOKEN),p);
