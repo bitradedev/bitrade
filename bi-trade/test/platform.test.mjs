@@ -280,6 +280,57 @@ test('hold proposals cannot replace active entry rules; model context, public de
  assert.equal(f.app.paper.lots(a.id).length,0);assert.equal(f.app.paper.check(a.id),true);assert.deepEqual((await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans,[]);assert.equal(f.app.live.orders().length,0);
 });
 
+test('a pending model cannot block other exits or buy back a position already closed by the exit watcher',async t=>{
+ let release,started,calls=0;const ready=new Promise(r=>release=r),begin=new Promise(r=>started=r);
+ const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;started();await ready;return {action:'buy',token:TOKEN,sizeUsd:100,reason:'过期提案不得买回',exit:{takeProfitPct:20,stopLossPct:10,maxHoldMinutes:60}};}}}});
+ const agents=SHOWCASE_PROFILES.slice(0,2).map(p=>f.app.store.get('agents',p.id));
+ for(const [i,a] of agents.entries()){
+  const id='watch-entry-'+i,o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+  f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ }
+ const pending=f.app.showcase.tick();await begin;assert.equal(f.app.showcase.tick(),pending);
+ try{
+  f.g.fx=940;f.g.advance();f.app.showcase.exitChecks.clear();
+  await f.app.showcase.watchExits();assert.equal(f.app.paper.orders().filter(o=>o.side==='sell').length,1);
+  await f.app.showcase.watchExits();assert.equal(f.app.paper.orders().filter(o=>o.side==='sell').length,2);
+  for(const o of f.app.paper.orders().filter(o=>o.side==='sell')){assert.match(o.reason,/止损/);o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);}
+  f.g.advance();await f.app.paper.tick();assert.ok(agents.every(a=>f.app.paper.lots(a.id).length===0));
+ }finally{release();await pending;}
+ assert.equal(calls,1);assert.equal(f.app.paper.fills().length,4);assert.equal(f.app.paper.orders().filter(o=>o.side==='buy').length,2);
+ assert.match(f.app.store.get('showcase-status',agents[0].id).reason,/旧提案已取消/);
+ for(const a of agents){assert.equal(f.app.paper.check(a.id),true);assert.ok(f.app.paper.fills(a.id).find(f=>f.side==='sell').netUsd<0);}
+ assert.equal(f.app.live.orders().length,0);
+});
+
+test('an account change during an exit quote discards the entire old position snapshot',async t=>{
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
+ for(const [id,token] of [['snapshot-first',TOKEN],['snapshot-second',other]]){
+  const o=await f.app.paper.submit(a,{id,token,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+  f.app.store.put('showcase-exits',{id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ }
+ let release,started;const ready=new Promise(r=>release=r),begin=new Promise(r=>started=r),quote=f.g.quote.bind(f.g),attempts=[];
+ f.g.fx=940;f.g.advance();f.g.quote=async p=>{if(p.side==='sell'){attempts.push(p.token);if(p.token===TOKEN){started();await ready;}}return quote(p);};
+ const watching=f.app.showcase.watchExits();await begin;
+ try{
+  const amount=f.app.paper.lots(a.id).find(l=>l.token===other).remainingRaw,o=await f.app.paper.submit(a,{id:'concurrent-snapshot-sale',token:other,side:'sell',amount});
+  o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+ }finally{release();await watching;}
+ assert.deepEqual(attempts,[TOKEN,other,other]);assert.deepEqual(f.app.paper.lots(a.id).map(l=>l.token),[TOKEN]);
+ assert.equal(f.app.paper.fills(a.id).length,3);assert.equal(f.app.paper.orders(a.id).filter(o=>o.side==='sell').length,1);assert.equal(f.app.paper.check(a.id),true);
+ assert.equal(f.app.live.orders().length,0);
+});
+
+test('the exit watcher respects pause, quote failures and stale heads without changing inventory',async t=>{
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='watch-unavailable',o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});
+ o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ const lots=f.app.paper.lots(a.id),balance=f.app.paper.account(a.id),quotes=f.g.calls;
+ f.app.store.put('agents',{...a,paused:true});await f.app.showcase.watchExits();assert.equal(f.g.calls,quotes);
+ f.app.store.put('agents',a);f.g.headAt=0;await f.app.showcase.watchExits();assert.equal(f.g.calls,quotes);
+ f.g.advance();f.app.showcase.exitChecks.clear();f.g.failure=Error('private fixture diagnostic');await f.app.showcase.watchExits();assert.equal(f.app.store.get('showcase-status',a.id).exitFailures.length,1);
+ assert.doesNotMatch(JSON.stringify((await f.call('/api/public/agent?id='+a.id)).value),/private fixture diagnostic/);
+ assert.deepEqual(f.app.paper.lots(a.id),lots);assert.deepEqual(f.app.paper.account(a.id),balance);assert.equal(f.app.paper.orders(a.id).length,1);assert.equal(f.app.live.orders().length,0);
+});
+
 for(const [trigger,fx,maxHoldMinutes] of [['止盈',1200,60],['止损',940,60],['持有时间到期',1000,1]])test('one unavailable token does not block another held token from '+trigger,async t=>{
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
  for(const [id,token] of [['unavailable-entry',TOKEN],['working-entry',other]]){

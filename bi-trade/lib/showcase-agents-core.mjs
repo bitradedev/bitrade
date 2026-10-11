@@ -58,6 +58,9 @@ export class ShowcaseAgents {
     this.sampleAt = 0;
     this.tickAt = 0;
     this.exitChecks = new Map();
+    this.checkingExits = new Set();
+    this.watching = null;
+    this.watchCursor = 0;
     store.transaction(() => {
       for (const p of SHOWCASE_PROFILES) {
         let a = store.get('agents', p.id);
@@ -188,10 +191,66 @@ export class ShowcaseAgents {
       reason,
     });
   }
+  accountBasis(id) {
+    const a = this.paper.account(id);
+    return JSON.stringify([
+      this.paper.revision,
+      a.nativeRaw,
+      a.realizedNativeRaw,
+      this.paper.lots(id).map((lot) => [lot.id, lot.remainingRaw, lot.usdCost]),
+      this.paper
+        .orders(id)
+        .filter((o) => ['preparing', 'queued', 'quoting'].includes(o.status))
+        .map((o) => [o.id, o.status]),
+    ]);
+  }
+  async checkExits(a) {
+    if (this.checkingExits.has(a.id)) return null;
+    if (this.now() - (this.exitChecks.get(a.id) ?? 0) < 30000) return false;
+    this.exitChecks.set(a.id, this.now());
+    this.checkingExits.add(a.id);
+    try {
+      return await this.exits(a);
+    } finally {
+      this.checkingExits.delete(a.id);
+    }
+  }
+  watchExits() {
+    if (this.watching || this.stopped) return this.watching;
+    this.watching = (async () => {
+      const eligible = SHOWCASE_PROFILES.map((p) => this.store.get('agents', p.id)).filter(
+        (a) =>
+          a &&
+          !a.closedAt &&
+          !a.paused &&
+          a.mode === 'paper' &&
+          !this.paper.view(a.id).pending &&
+          this.paper.lots(a.id).length &&
+          !this.checkingExits.has(a.id) &&
+          this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000,
+      );
+      if (!eligible.length) return;
+      const a = eligible[this.watchCursor++ % eligible.length];
+      try {
+        await this.checkExits(a);
+      } catch (e) {
+        this.status(a.id, {
+          state: 'observing',
+          reason: e.status ? e.message : '暂无法核对持仓退出报价',
+        });
+      }
+    })().finally(() => {
+      this.watching = null;
+    });
+    return this.watching;
+  }
   async exits(a) {
-    const failures = [];
+    const failures = [],
+      basis = this.accountBasis(a.id),
+      positions = showcasePositions(this.store, this.paper.lots(a.id));
     this.status(a.id, { exitFailures: failures });
-    for (const position of showcasePositions(this.store, this.paper.lots(a.id))) {
+    for (const position of positions) {
+      if (this.accountBasis(a.id) !== basis) throw fail('持仓在核价期间改变，稍后重新检查');
       const { token, amountRaw, costUsd, exitPlan } = position,
         rule = exitPlan.rule;
       if (!rule) continue;
@@ -200,6 +259,7 @@ export class ShowcaseAgents {
       try {
         q = await this.paper.quote(a, 'sell', token, amountRaw, head.head);
         if (q.spentInputRaw !== q.inputRaw) throw fail('整仓退出报价尚未核实');
+        if (this.accountBasis(a.id) !== basis) throw fail('持仓在核价期间改变，稍后重新检查');
       } catch {
         failures.push({ token, at: this.now() });
         this.status(a.id, { exitFailures: [...failures] });
@@ -303,10 +363,8 @@ export class ShowcaseAgents {
             : last.error || '最近订单未成交',
         });
       try {
-        if (this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000) {
-          this.exitChecks.set(a.id, this.now());
-          if (await this.exits(a)) continue;
-        }
+        const checked = await this.checkExits(a);
+        if (checked === null || checked) continue;
       } catch (e) {
         this.status(a.id, {
           state: 'observing',
@@ -378,6 +436,7 @@ export class ShowcaseAgents {
         reason: 'AI 正在评估真实行情和当前模拟持仓',
       });
       this.controller = new AbortController();
+      const basis = this.accountBasis(a.id);
       try {
         const decision = validateDecision(
           await this.planner.decide(config, a.strategy, context, this.controller.signal),
@@ -387,6 +446,11 @@ export class ShowcaseAgents {
         const current = this.store.get('agents', a.id);
         if (current.paused || current.mode !== 'paper')
           throw fail('决策期间 Agent 已暂停或模式变化');
+        if (this.accountBasis(a.id) !== basis)
+          throw Object.assign(
+            fail('AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。', 409),
+            { code: 'STALE_AI_ACCOUNT' },
+          );
         this.status(a.id, {
           lastDecisionAt: this.now(),
           decision,
@@ -418,7 +482,12 @@ export class ShowcaseAgents {
       } catch (e) {
         if (!this.stopped)
           this.status(a.id, {
-            state: 'error',
+            state:
+              e.code === 'STALE_AI_ACCOUNT'
+                ? this.paper.view(a.id).pending
+                  ? 'queued'
+                  : 'observing'
+                : 'error',
             reason: e.status ? e.message : 'AI 决策本轮未执行，请检查本机服务。',
           });
       } finally {
@@ -431,5 +500,6 @@ export class ShowcaseAgents {
     this.controller?.abort();
     await this.riskGuard.close();
     await this.task;
+    await this.watching;
   }
 }

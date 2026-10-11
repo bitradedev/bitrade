@@ -188,3 +188,17 @@ test('Actual Workerd SQLite isolates owners, survives eviction, locks money and 
  assert.equal((await mf.dispatchFetch('https://wrong.example/api/health')).status,403);
  const probe=await mf.getDurableObjectNamespace('PROBE'),result=await probe.get(probe.idFromName('probe')).fetch('https://test.example/probe');assert.equal(result.status,200);const native=await result.json();assert.equal(native.chain,'0x38');assert.equal(native.decision.action,'hold');assert.equal(outboundCalls,3);
 });
+
+test('Actual Workerd retains a model task after an alarm returns while later rounds keep their own budgets and exit checks',async t=>{
+ let release,started;const ready=new Promise(r=>release=r),begin=new Promise(r=>started=r),calls=[];
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'scheduler-runtime-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PLATFORM:{className:'TradingPlatform',useSQLite:true},PROBE:{className:'NetworkProbe',useSQLite:true},SCHEDULER:{className:'SchedulerProbe',useSQLite:true}},bindings:{SITE_ORIGIN:'https://bitrade.site'},outboundService:async req=>{const host=new URL(req.url).host;calls.push(host);if(host==='slow-ai.example.com'){started();await ready;}return Response.json({});},serviceBindings:{ASSETS:async()=>new Response('unused')}}));
+ t.after(async()=>{release();await mf.dispose();});await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('SCHEDULER'),stub=ns.get(ns.idFromName('budget-probe'));
+ const first=stub.fetch('https://probe.example/round');await begin;let timer;
+ const completed=await Promise.race([first.then(async r=>r.json()),new Promise(r=>timer=setTimeout(()=>r(null),1000))]);clearTimeout(timer);
+ try{
+  assert.ok(completed,'the model must not hold the alarm response');assert.equal(completed.active,true);assert.equal(completed.decisionBudget.used,2);
+  const second=await (await stub.fetch('https://probe.example/round')).json();assert.equal(second.active,true);assert.equal(second.refreshes,2);assert.equal(second.watches,1);assert.equal(second.matches,2);assert.equal(second.modelCalls,1);assert.equal(second.budget.used,1);
+ }finally{release();await first;}
+ const done=await (await stub.fetch('https://probe.example/finish')).json();assert.equal(done.active,false);assert.equal(done.decisionBudget.used,3);assert.ok(done.decisionBudget.completedAt>=done.decisionBudget.startedAt);assert.equal(done.budget.used,1);assert.deepEqual(calls,['price.example.com','slow-ai.example.com','price.example.com','after-ai.example.com']);
+});

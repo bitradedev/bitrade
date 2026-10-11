@@ -4,6 +4,7 @@ export class IOBudget {
     this.limit = limit;
     this.context = new AsyncLocalStorage();
     this.lastAlarm = null;
+    this.decision = null;
     this.fetch = (...args) => {
       const round = this.context.getStore();
       if (round) {
@@ -22,8 +23,28 @@ export class IOBudget {
       try {
         return await task();
       } finally {
-        if (kind === 'alarm') this.lastAlarm = { ...round, at: Date.now() };
+        if (kind === 'alarm') this.lastAlarm = Object.assign(round, { at: Date.now() });
       }
     });
+  }
+  trackDecision(task) {
+    const round = this.context.getStore();
+    if (!round) throw Error('Decision work requires an invocation budget');
+    const record = { round, startedAt: Date.now(), completedAt: null };
+    this.decision = record;
+    return Promise.resolve(task).finally(() => {
+      record.completedAt = Date.now();
+    });
+  }
+  get lastDecision() {
+    const d = this.decision;
+    return d
+      ? {
+          used: d.round.used,
+          limit: d.round.limit,
+          startedAt: d.startedAt,
+          completedAt: d.completedAt,
+        }
+      : null;
   }
 }

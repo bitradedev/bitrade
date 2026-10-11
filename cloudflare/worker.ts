@@ -11,6 +11,7 @@ import { GmgnHTTP } from './gmgn.mjs';
 import { marketFetch } from './market-source.mjs';
 import { PublicBscData } from './public-data.mjs';
 import { IOBudget } from './io-budget.mjs';
+import { runScheduledRound } from './scheduler.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
 
@@ -50,6 +51,7 @@ export class TradingPlatform extends DurableObject<any> {
   risk: any = null;
   initializing: any = null;
   working: any = null;
+  decisionTask: any = null;
   importing = false;
   constructor(ctx: any, env: any) {
     super(ctx, env);
@@ -193,6 +195,8 @@ export class TradingPlatform extends DurableObject<any> {
               : []),
           ],
           networkBudget: this.io.lastAlarm,
+          decisionBudget: this.io.lastDecision,
+          decisionInFlight: Boolean(this.decisionTask),
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
@@ -222,61 +226,7 @@ export class TradingPlatform extends DurableObject<any> {
     return this.io.run('alarm', () => this.scheduledRound());
   }
   async scheduledRound() {
-    // Save the following alarm first. Failures or isolate eviction cannot stop scheduling.
-    await this.ctx.storage.setAlarm(Date.now() + 10000);
-    if (this.importing) return;
-    if (this.working) return this.working;
-    this.working = (async () => {
-      try {
-        const app = await this.initialize();
-        if (app.paper.orders().some((o: any) => o.status === 'queued')) {
-          // Matching gets its own invocation budget instead of sharing model I/O.
-          await this.market.updateHead();
-          await this.market.fx();
-          await app.paper.tick();
-          this.store.put('cloud-settings', {
-            id: 'scheduler',
-            at: Date.now(),
-            ok: true,
-            phase: 'matching',
-          });
-          return;
-        }
-        const tokens = [
-          ...new Set(
-            this.store
-              .all('paper-lots')
-              .filter((l: any) => BigInt(l.remainingRaw) > 0n)
-              .map((l: any) => l.token),
-          ),
-        ] as string[];
-        await this.market.refresh(tokens, { limit: 1 });
-        await app.paper.tick();
-        await this.risk.tick([
-          ...tokens,
-          ...app.showcase.freshMarkets().map((m: any) => m.address),
-        ]);
-        await this.market.pulse(1);
-        await app.showcase.tick();
-        await this.risk.task;
-        // New orders are matched on the next alarm, with a fresh I/O budget.
-        this.store.prune();
-        this.store.put('cloud-settings', { id: 'scheduler', at: Date.now(), ok: true });
-      } catch {
-        this.store.put('cloud-settings', {
-          id: 'scheduler',
-          at: Date.now(),
-          ok: false,
-          reason: '本轮行情或模拟调度未完成，将自动重试',
-        });
-      } finally {
-        this.working = null;
-        await this.arm(
-          this.app?.paper.orders().some((o: any) => o.status === 'queued') ? 1000 : 10000,
-        );
-      }
-    })();
-    return this.working;
+    return runScheduledRound(this);
   }
   async importLedger(request: Request) {
     if (
@@ -309,6 +259,7 @@ export class TradingPlatform extends DurableObject<any> {
     this.importing = true;
     try {
       await this.working;
+      await this.decisionTask;
       const result = mergeLedger(this.store, vault, input, digest);
       this.app = null;
       this.market = null;
