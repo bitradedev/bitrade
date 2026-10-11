@@ -152,3 +152,10 @@ test('Isolated Meme paper orders use a later block, sell with FIFO fees, and rej
  const mature='0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82',quote=market.quote.bind(market);market.quote=async request=>request.token===mature?{...buy.reference,token:mature,block:request.block,at:Date.now()}:quote(request);
  store.put('paper-orders',{...buy,id:'old-queued-mature',token:mature,dueAt:Date.now()-1,afterBlock:102,status:'queued'});rpc.setHead(103);await market.updateHead();await paper.tick();assert.equal(store.get('paper-orders','old-queued-mature').status,'failed');assert.match(store.get('paper-orders','old-queued-mature').error,/仅允许.*Meme/);assert.equal(paper.fills().length,2);assert.equal(paper.account(agent.id).realizedUsd,loss);
 });
+
+
+test('A local budget error during required Meme identity proof stays local and never becomes a fresh unknown-origin report',async(t)=>{
+ const {data,rpc,store}=sourceFixture(t);let fallback=0;const original=rpc.read;
+ rpc.read=async(to,abi,name,...args)=>{if(name==='getTokenInfo')throw Object.assign(Error('local budget'),{code:'CF_SUBREQUEST_BUDGET'});if(name==='getTokenV8Safe')fallback++;return original(to,abi,name,...args);};
+ await assert.rejects(data.tradingEvidence(TOKEN),{code:'CF_SUBREQUEST_BUDGET'});assert.equal(fallback,0);assert.equal(store.get('cloud-public-cache','meme-trading:'+TOKEN),null);
+});

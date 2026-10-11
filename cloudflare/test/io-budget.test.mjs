@@ -4,7 +4,7 @@ import {IOBudget} from '../io-budget.mjs';
 import {PublicBscData} from '../public-data.mjs';
 test('Per-invocation network budget counts actual requests, isolates concurrent events and renews on the next round',async()=>{
  let calls=0;const io=new IOBudget(2,async()=>{calls++;return Response.json({});});
- await Promise.all([io.run('alarm',async()=>{await io.fetch('https://a.example');await Promise.resolve();await io.fetch('https://a.example');assert.throws(()=>io.fetch('https://a.example'),e=>e.code==='CF_SUBREQUEST_BUDGET');}),io.run('http',()=>io.fetch('https://a.example'))]);
+ await Promise.all([io.run('alarm',async()=>{assert.equal(io.remaining,2);await io.fetch('https://a.example');assert.equal(io.remaining,1);await Promise.resolve();await io.fetch('https://a.example');assert.equal(io.exhausted,false);assert.throws(()=>io.fetch('https://a.example'),e=>e.code==='CF_SUBREQUEST_BUDGET');assert.equal(io.exhausted,true);assert.equal(io.remaining,0);}),io.run('http',()=>io.fetch('https://a.example'))]);
  assert.equal(calls,3);assert.equal(io.lastAlarm.used,2);await io.run('alarm',()=>io.fetch('https://a.example'));assert.equal(calls,4);assert.equal(io.lastAlarm.used,1);
 });
 test('Local invocation exhaustion does not ban or cool down a healthy public provider',async()=>{

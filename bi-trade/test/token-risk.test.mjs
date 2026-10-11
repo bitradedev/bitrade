@@ -10,6 +10,14 @@ const wallet=i=>'0x'+String(i+100).padStart(40,'0');
 function evidence(){return {info:{address:TOKEN,price:{price:'1'},liquidity:'100000',stat:{top_bundler_trader_percentage:'0'},dev:{creator_address:CREATOR}},holders:{list:[{address:POOL,amount_percentage:.5,addr_type:2,maker_token_tags:[]},...Array.from({length:25},(_,i)=>({address:wallet(i),amount_percentage:.02,addr_type:0,maker_token_tags:[],native_transfer:null}))]},security:{address:TOKEN,is_honeypot:false,is_blacklist:false,can_not_sell:0}};}
 function fixture(t,options={}){const root=resolve('bi-trade/data/test-runs');mkdirSync(root,{recursive:true});const dir=mkdtempSync(resolve(root,'risk-')),store=new PlatformStore(dir),guard=new TokenRiskGuard(store,options);t.after(async()=>{await guard.close();store.close();assert.ok(dir.startsWith(root+'\\')||dir.startsWith(root+'/'));rmSync(dir,{recursive:true,force:true});});return {store,guard};}
 
+test('Local invocation exhaustion preserves expired risk evidence and retries next round without making it fresh or safe',async t=>{
+ let now=Date.now(),exhausted=true,attempts=0;
+ const {guard,store}=fixture(t,{now:()=>now,source:{riskReport:async()=>{attempts++;if(exhausted)throw Object.assign(Error('CF_SUBREQUEST_BUDGET: subrequest limit'),{code:'CF_SUBREQUEST_BUDGET'});return evaluateTokenRisk(TOKEN,evidence(),now);}}});
+ const previous={...evaluateTokenRisk(TOKEN,evidence(),now-121000),buyAllowed:false,state:'blocked',reasons:['Known risk']};store.put('token-risk-reports',previous);
+ await guard.refresh(TOKEN);assert.deepEqual(store.get('token-risk-reports',TOKEN),previous);assert.equal(guard.snapshot(TOKEN).buyAllowed,false);assert.equal(guard.snapshot(TOKEN).fetchedAt,previous.fetchedAt);
+ exhausted=false;now+=1000;const recovered=await guard.refresh(TOKEN);assert.equal(attempts,2);assert.equal(recovered.fetchedAt,now);assert.equal(recovered.buyAllowed,true);
+});
+
 test('holder risk screening keeps missing/partial fields unknown rather than treating them as zeros',()=>{
  assert.equal(evaluateTokenRisk(TOKEN,evidence()).state,'screened');
  for(const mutate of [d=>{delete d.info.stat.top_bundler_trader_percentage;},d=>{d.holders.list=[];},d=>{d.holders.list=d.holders.list.slice(0,8);},d=>{d.holders.list[1].amount_percentage=true;},d=>{delete d.holders.list[1].maker_token_tags;},d=>{delete d.security.is_honeypot;},d=>{d.security.address=POOL;}]){const d=evidence();mutate(d);const r=evaluateTokenRisk(TOKEN,d);assert.equal(r.buyAllowed,false);assert.equal(r.state,'unknown');assert.ok(r.reasons.length);}

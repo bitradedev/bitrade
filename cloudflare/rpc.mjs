@@ -157,7 +157,7 @@ export class CloudRpc {
           /too many subrequests|subrequest limit/i.test(String(e?.message));
         throw Object.assign(
           Error(local ? '云端单轮请求上限已到，下一轮自动重试' : 'BSC RPC 网络不可用'),
-          { rpcUnavailable: !local },
+          { rpcUnavailable: !local, ...(local ? { code: 'CF_SUBREQUEST_BUDGET' } : {}) },
         );
       }
       if (!r.ok) throw this.#failed(r, 'BSC RPC 请求失败');
@@ -313,10 +313,12 @@ export class CloudRpc {
           body: JSON.stringify(requests),
         });
       } catch (e) {
-        throw Error(
-          /too many subrequests|subrequest limit/i.test(String(e?.message))
-            ? '云端单轮请求上限已到，下一轮自动重试'
-            : 'BSC 回执批次网络不可用',
+        const local =
+          e?.code === 'CF_SUBREQUEST_BUDGET' ||
+          /too many subrequests|subrequest limit/i.test(String(e?.message));
+        throw Object.assign(
+          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : 'BSC 回执批次网络不可用'),
+          local ? { code: 'CF_SUBREQUEST_BUDGET' } : {},
         );
       }
       if (!response.ok) throw client.#failed(response, 'BSC 回执批次读取失败');

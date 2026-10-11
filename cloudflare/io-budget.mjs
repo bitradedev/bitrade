@@ -8,10 +8,12 @@ export class IOBudget {
     this.fetch = (...args) => {
       const round = this.context.getStore();
       if (round) {
-        if (round.used >= this.limit)
+        if (round.used >= this.limit) {
+          round.exhausted = true;
           throw Object.assign(Error('CF_SUBREQUEST_BUDGET: subrequest limit'), {
             code: 'CF_SUBREQUEST_BUDGET',
           });
+        }
         round.used++;
       }
       return fetchImpl(...args);
@@ -26,6 +28,12 @@ export class IOBudget {
         if (kind === 'alarm') this.lastAlarm = Object.assign(round, { at: Date.now() });
       }
     });
+  }
+  get remaining() {
+    return Math.max(0, this.limit - (this.context.getStore()?.used ?? 0));
+  }
+  get exhausted() {
+    return this.context.getStore()?.exhausted === true;
   }
   trackDecision(task) {
     const round = this.context.getStore();

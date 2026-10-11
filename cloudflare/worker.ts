@@ -54,6 +54,7 @@ export class TradingPlatform extends DurableObject<any> {
   initializing: any = null;
   working: any = null;
   decisionTask: any = null;
+  riskRequestReserve = 32;
   importing = false;
   constructor(ctx: any, env: any) {
     super(ctx, env);

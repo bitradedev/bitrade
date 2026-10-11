@@ -238,7 +238,11 @@ export class TokenRiskGuard {
           const report = evaluateTokenRisk(token, { info, holders, security }, capturedAt);
           report.source = this.source.label?.(token) ?? report.source;
           if (!this.stopped) this.store.put('token-risk-reports', report);
-        } catch {
+        } catch (error) {
+          // A local round has no new evidence when its request budget runs out.
+          // Keep the prior report and its original age, so the next round can
+          // retry instead of caching this scheduling failure for two minutes.
+          if (error?.code === 'CF_SUBREQUEST_BUDGET') return this.snapshot(token);
           if (!this.stopped)
             this.store.put('token-risk-reports', {
               id: token,

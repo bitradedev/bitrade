@@ -4,6 +4,25 @@ import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 
+test('A costly Meme refresh defers risk to its own persisted round without poisoning evidence; queued matching still comes first',async()=>{
+ const token='0x'+'11'.repeat(20),at=Date.now(),rows=new Map();let collected=0,refreshes=0,decisions=0,queued=false,matched=0,heavy=true;
+ let io=new IOBudget(45,async()=>Response.json({}));
+ const store={all:()=>[],get:(kind,id)=>rows.get(kind+id),put:(kind,v)=>{rows.set(kind+v.id,structuredClone(v));return v;},prune(){}};
+ const previous={id:token,token,chain:'bsc',fetchedAt:at-121000,policy:'bsc-meme-paper-v1',state:'blocked',buyAllowed:false,reasons:['Known concentration'],metrics:{largestObservedFloatShare:50}};
+ store.put('token-risk-reports',previous);
+ const risk=new TokenRiskGuard(store,{now:()=>at,maxTokensPerTick:1,source:{async riskReport(t){collected++;for(let i=0;i<20;i++)await io.fetch('https://risk.example/'+i);return {...previous,token:t,fetchedAt:at,reasons:['New verified concentration']};}}});
+ const app={paper:{orders:()=>queued?[{status:'queued'}]:[],async tick(){if(queued){matched++;queued=false;}}},showcase:{freshMarkets:()=>[{address:token,updatedAt:at}],tick(){decisions++;return null;}}};
+ const market={marketScope:()=>({kind:'meme'}),isEntryCandidate:t=>t===token,async refresh(){refreshes++;for(let i=0;i<(heavy?36:3);i++)await io.fetch('https://market.example/'+i);},async updateHead(){await io.fetch('https://head.example');},async fx(){await io.fetch('https://fx.example');},async pulse(){await io.fetch('https://pulse.example');}};
+ let host={io,riskRequestReserve:32,store,risk,app,market,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}}};
+ const round=()=>io.run('alarm',()=>runScheduledRound(host));
+ await round();assert.equal(collected,0);assert.equal(decisions,0);assert.deepEqual(store.get('token-risk-reports',token),previous);assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[token]);assert.equal(io.lastAlarm.used,36);
+ // Reconstruction retains the queue, but an already queued order is matched first.
+ io=new IOBudget(45,async()=>Response.json({}));host={...host,io,working:null,decisionTask:null};queued=true;
+ await round();assert.equal(matched,1);assert.equal(collected,0);assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[token]);
+ await round();assert.equal(collected,1);assert.equal(refreshes,1);assert.equal(io.lastAlarm.used,22);assert.equal(store.get('cloud-settings','scheduler').phase,'risk');assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[]);assert.equal(store.get('token-risk-reports',token).fetchedAt,at);assert.equal(risk.snapshot(token).buyAllowed,false);
+ heavy=false;await round();assert.equal(refreshes,2);assert.equal(decisions,1);assert.equal(collected,1);assert.ok(io.lastAlarm.used<45);await risk.close();
+});
+
 test('a stale held Meme gets risk collection even when no market is fresh, without adding legacy fallback entries', async () => {
   const meme = '0x6bdcce4a559076e37755a78ce0c06214e59e4444';
   const cake = '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82';
@@ -101,4 +120,16 @@ test('a completed alarm cannot renew the remaining budget of its waiting decisio
  release();await rejected;
  assert.deepEqual(calls,['https://original.example/1','https://original.example/2','https://new.example/1','https://original.example/3']);
  assert.equal(io.lastDecision.used,3);assert.equal(io.lastAlarm.used,1);assert.ok(io.lastDecision.completedAt);
+});
+
+
+test('A completed priority risk check with old chart evidence cannot pin all later discovery to that token',async()=>{
+ const token='0x'+'11'.repeat(20),at=Date.now(),rows=new Map(),io=new IOBudget(45,async()=>Response.json({}));let refreshes=0;
+ const store={all:()=>[],get:(kind,id)=>rows.get(kind+id),put:(kind,v)=>rows.set(kind+v.id,structuredClone(v)),prune(){}};
+ store.put('cloud-settings',{id:'risk-priority-round',tokens:[token]});
+ const risk=new TokenRiskGuard(store,{now:()=>at,source:{async riskReport(){await io.fetch('https://risk.example');return {id:token,token,chain:'bsc',fetchedAt:at-121000,state:'unknown',buyAllowed:false,reasons:['Old chart evidence'],metrics:null};}}});
+ const app={paper:{orders:()=>[],async tick(){}},showcase:{freshMarkets:()=>[],tick(){return null;}}};
+ const host={io,riskRequestReserve:32,store,risk,app,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},market:{marketScope:()=>({kind:'meme'}),isEntryCandidate:()=>true,async updateHead(){await io.fetch('https://head.example');},async fx(){},async refresh(){refreshes++;},async pulse(){}}};
+ await io.run('alarm',()=>runScheduledRound(host));assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[]);assert.equal(risk.snapshot(token).buyAllowed,false);assert.equal(risk.snapshot(token).fetchedAt,at-121000);
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(refreshes,1);await risk.close();
 });

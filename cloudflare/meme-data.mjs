@@ -328,7 +328,9 @@ export class MemeBscData extends PublicBscData {
           tag: ['Meme'],
         });
         lists.push(fourCandidates(d.value, d.at, type === 'NEW').slice(0, type === 'VOL' ? 8 : 4));
-      } catch {}
+      } catch (e) {
+        if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+      }
     }
     // Mix established memes with recent graduated launches. Do not pin the
     // universe to a few blocked leaders or broaden it to unrelated assets.
@@ -370,7 +372,9 @@ export class MemeBscData extends PublicBscData {
           ...this.candidates(),
           ...MEME_BOOTSTRAP.map((c) => ({ ...c, at: this.now() })),
         ];
-      } catch {}
+      } catch (e) {
+        if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+      }
     }
     const migrations = await this.scanMigrations();
     if (!rows.length)
@@ -407,7 +411,9 @@ export class MemeBscData extends PublicBscData {
     try {
       row = await this.read('dex', '/token-pairs/v1/bsc/' + token);
       pair = selectDexPair(row.value, token);
-    } catch {}
+    } catch (e) {
+      if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+    }
     if (!pair) {
       try {
         row = await this.read(
@@ -415,7 +421,9 @@ export class MemeBscData extends PublicBscData {
           '/networks/bsc/tokens/' + token + '/pools?include=base_token,quote_token,dex',
         );
         pair = geckoPair(row.value, token);
-      } catch {}
+      } catch (e) {
+        if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+      }
     }
     if (!pair) return this.chainChart(token);
     return { pair, at: row.at };
@@ -558,6 +566,7 @@ export class MemeBscData extends PublicBscData {
       try {
         chart = await this.chart(token);
       } catch (e) {
+        if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
         const binding = this.store.get('cloud-meme-pools', token);
         if (!binding) throw e;
         // Historical identity is only a route hint; validate it again on-chain
@@ -574,7 +583,9 @@ export class MemeBscData extends PublicBscData {
           addr(f[1]) === FOUR_MANAGER &&
           [ZERO, WBNB].includes(addr(f[2])) &&
           f[11] === true;
-      } catch {}
+      } catch (e) {
+        if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+      }
       if (!origin) {
         try {
           const f = await this.rpc.read(FLAP, FLAP_ABI, 'getTokenV8Safe', [token], b.number);
@@ -582,7 +593,9 @@ export class MemeBscData extends PublicBscData {
             Number(f.status) === 4 &&
             addr(f.pool) === pool &&
             [ZERO, WBNB].includes(addr(f.quoteTokenAddress));
-        } catch {}
+        } catch (e) {
+          if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+        }
       }
       if (!origin) throw Error('该候选未通过 Four.meme / Flap 链上发行身份核验');
       const v3 = chart.pair.labels.includes('v3'),
