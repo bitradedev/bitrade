@@ -2,6 +2,68 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
+import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
+
+test('a stale held Meme gets risk collection even when no market is fresh, without adding legacy fallback entries', async () => {
+  const meme = '0x6bdcce4a559076e37755a78ce0c06214e59e4444';
+  const cake = '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82';
+  const candidate = '0xeccbb861c0dda7efd964010085488b69317e4444';
+  const at = Date.now(), rows = new Map(), collected = [], calls = [];
+  const io = new IOBudget(4, async url => { calls.push(url); return Response.json({}); });
+  const store = {
+    all: kind => kind === 'paper-lots' ? [
+      { token: cake, remainingRaw: '1' },
+      { token: meme, remainingRaw: '1' },
+    ] : [],
+    get: (kind, id) => rows.get(kind + id),
+    put: (kind, value) => rows.set(kind + value.id, value),
+    prune() {},
+  };
+  store.put('token-risk-reports', { id: meme, token: meme, chain: 'bsc', fetchedAt: at - 121000,
+    policy: 'bsc-meme-paper-v1', state: 'screened-limited', buyAllowed: true, reasons: [], metrics: {} });
+  const risk = new TokenRiskGuard(store, { maxTokensPerTick: 1, now: () => at, source: {
+    async riskReport(token) {
+      collected.push(token);
+      await io.fetch('https://risk.example/' + token);
+      // Missing safety evidence stays blocked: collection is not permission to buy.
+      return { id: token, token, chain: 'bsc', fetchedAt: at, policy: 'bsc-meme-paper-v1',
+        state: 'unknown', buyAllowed: false, reasons: ['Safety evidence missing'], metrics: null };
+    },
+  } });
+  let fresh = [];
+  const app = {
+    paper: { orders: () => [], async tick() {} },
+    showcase: {
+      freshMarkets: () => fresh,
+      tick() { risk.tick([meme, cake]); return null; },
+    },
+  };
+  const host = { io, store, risk, app, initialize: async () => app, arm: async () => {},
+    ctx: { storage: { async setAlarm() {} }, waitUntil() {} },
+    market: {
+      marketScope: () => ({ kind: 'meme' }),
+      isEntryCandidate: token => [meme, candidate].includes(token),
+      async refresh() { await io.fetch('https://market.example'); },
+      async pulse() { await io.fetch('https://pulse.example'); },
+    },
+  };
+  assert.equal(risk.snapshot(meme).buyAllowed, false);
+  await io.run('alarm', () => runScheduledRound(host));
+  assert.deepEqual(collected, [meme], 'An empty fresh list must not starve the held Meme report');
+  assert.equal(store.get('token-risk-reports', meme).fetchedAt, at);
+  assert.equal(risk.snapshot(meme).buyAllowed, false);
+  assert.equal(io.lastAlarm.used, 3);
+  assert.equal(store.get('token-risk-reports', cake), undefined);
+
+  // A still-current held report consumes no collection slot; a new candidate can proceed.
+  risk.refreshAt = at - 15000;
+  fresh = [{ address: candidate, updatedAt: at }];
+  await io.run('alarm', () => runScheduledRound(host));
+  assert.deepEqual(collected, [meme, candidate]);
+  assert.equal(io.lastAlarm.used, 3);
+  assert.equal(store.get('token-risk-reports', cake), undefined);
+  await risk.close();
+});
 test('failed held exits get their own bounded retry round before heavy collection, while queued matching stays first',async()=>{
  const calls=[],rows=new Map(),io=new IOBudget(4,async url=>{calls.push(url);return Response.json({});});let queued=false,watched=0;
  const host={io,ctx:{storage:{setAlarm:async()=>{}},waitUntil(){}},store:{all:kind=>kind==='showcase-status'?[{id:'showcase-trend',exitFailures:[{token:'held'}]}]:[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,v),prune(){}},arm:async()=>{}};

@@ -46,7 +46,10 @@ export async function runScheduledRound(host) {
         const fresh = app.showcase.freshMarkets();
         const riskTokens =
           host.market.marketScope?.()?.kind === 'meme'
-            ? fresh.sort((a, b) => b.updatedAt - a.updatedAt).map((m) => m.address)
+            ? [
+                ...fresh.sort((a, b) => b.updatedAt - a.updatedAt).map((m) => m.address),
+                ...tokens.filter((token) => host.market.isEntryCandidate(token)),
+              ]
             : [...tokens, ...fresh.map((m) => m.address)];
         await host.risk.tick(riskTokens);
       }
