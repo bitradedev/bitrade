@@ -157,6 +157,44 @@ test('wallet login validates domain, chain, exact signer, purpose, expiration an
 });
 test('Owner sessions, pairing and Agent credentials are isolated; private keys never enter normal API output',async t=>{const f=await fixture(t),one=await f.owner(),two=await f.owner(),a=await f.register(one),b=await f.register(two),state1=await f.call('/api/state',undefined,one),state2=await f.call('/api/state',undefined,two);assert.equal(state1.value.agents.length,1);assert.equal(state1.value.agents[0].id,a.agentId);assert.equal(state2.value.agents[0].id,b.agentId);assert.doesNotMatch(JSON.stringify(state1.value),/encryptedKey|privateKey|agentToken|signed-tx/);assert.equal((await f.call('/api/control',{agentId:a.agentId,paused:true},two)).status,404);assert.equal((await f.call('/api/control',{agentId:a.agentId,paused:true},one,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await f.call('/api/pair',{},one,{Origin:'https://evil.invalid'})).status,403);assert.equal((await f.call('/api/agent',{action:'get_account',arguments:{}},null,{Authorization:'Bearer '+a.agentToken})).value.result.id,a.agentId);assert.equal((await f.agentCall(b,'get_trade',{id:'other-order'})).status,404);const hostStatus=await new Promise((ok,no)=>{const r=request(f.url+'/api/state',{headers:{Host:'evil.invalid'}},res=>{res.resume();res.on('end',()=>ok(res.statusCode));});r.on('error',no);r.end();});assert.equal(hostStatus,403);
 });
+
+test('concurrent wallet logins cannot bind two signers to the same demo portfolio',async t=>{
+ const f=await fixture(t),s=await f.owner(),agent=await f.register(s),original=f.app.store.get('agents',agent.agentId),balance=f.app.paper.account(agent.agentId);
+ const signers=[OWNER,OTHER],challenges=await Promise.all(signers.map(signer=>f.call('/api/login/challenge',{address:signer.address}))),signatures=await Promise.all(challenges.map((c,i)=>signers[i].signMessage({message:c.value.message})));
+ const verify=f.app.auth.verify.bind(f.app.auth);let arrived=0,release;const ready=new Promise(r=>release=r);
+ f.app.auth.verify=async(...args)=>{const result=await verify(...args);if(++arrived===2)release();await ready;return result;};
+ const logins=await Promise.all(challenges.map((c,i)=>f.call('/api/login',{id:c.value.id,signature:signatures[i]},s)));
+ assert.ok(logins.every(r=>r.status===200));assert.notEqual(logins[0].value.owner.id,logins[1].value.owner.id);
+ const sessions=logins.map(r=>({cookie:r.cookie,state:r.value})),states=await Promise.all(sessions.map(session=>f.call('/api/state',undefined,session)));
+ for(let i=0;i<states.length;i++)assert.equal(states[i].value.owner.address,signers[i].address.toLowerCase());
+ const claimant=states.findIndex(r=>r.value.owner.id===s.state.owner.id);assert.ok(claimant>=0);
+ assert.deepEqual(states[claimant].value.agents.map(a=>a.id),[agent.agentId]);assert.deepEqual(states[1-claimant].value.agents,[]);
+ assert.equal((await f.call('/api/control',{agentId:agent.agentId,paused:true},sessions[1-claimant])).status,404);
+ assert.equal((await f.call('/api/state',undefined,s)).value.owner,null);assert.deepEqual(f.app.store.get('agents',agent.agentId),original);assert.deepEqual(f.app.paper.account(agent.agentId),balance);
+ assert.equal((await f.agentCall(agent,'get_account')).status,200);
+});
+
+test('logout while a wallet signature is being verified prevents the stale session from claiming its demo portfolio',async t=>{
+ const f=await fixture(t),s=await f.owner(),agent=await f.register(s),challenge=await f.call('/api/login/challenge',{address:OWNER.address}),signature=await OWNER.signMessage({message:challenge.value.message});
+ const verify=f.app.auth.verify.bind(f.app.auth);let reached,release;const verifying=new Promise(r=>reached=r),ready=new Promise(r=>release=r);
+ f.app.auth.verify=async(...args)=>{const result=await verify(...args);reached();await ready;return result;};
+ const pending=f.call('/api/login',{id:challenge.value.id,signature},s);await verifying;
+ assert.equal((await f.call('/api/logout',{},s)).status,200);release();const login=await pending;
+ assert.equal(login.status,200);assert.equal(login.value.owner.address,OWNER.address.toLowerCase());assert.notEqual(login.value.owner.id,s.state.owner.id);assert.deepEqual(login.value.agents,[]);
+ const old=f.app.store.get('owners',s.state.owner.id);assert.equal(old.kind,'demo');assert.equal(old.address,null);assert.equal(f.app.store.get('agents',agent.agentId).ownerId,old.id);
+ assert.equal((await f.call('/api/state',undefined,s)).value.owner,null);assert.equal((await f.agentCall(agent,'get_account')).status,200);
+});
+
+test('wallet login without a browser session restores the same owner while an expired demo remains unclaimed',async t=>{
+ const f=await fixture(t);
+ async function login(signer,session){const c=await f.call('/api/login/challenge',{address:signer.address});return f.call('/api/login',{id:c.value.id,signature:await signer.signMessage({message:c.value.message})},session);}
+ const first=await login(OWNER);assert.equal(first.status,200);const signedIn={cookie:first.cookie,state:first.value},agent=await f.register(signedIn),account=f.app.paper.account(agent.agentId);
+ const again=await login(OWNER);assert.equal(again.status,200);assert.equal(again.value.owner.id,first.value.owner.id);assert.deepEqual(again.value.agents.map(a=>a.id),[agent.agentId]);assert.deepEqual(f.app.paper.account(agent.agentId),account);
+ const s=await f.owner(),current=f.app.auth.session({headers:{cookie:s.cookie}}),challenge=f.app.auth.challenge(OTHER.address);
+ f.app.store.db.prepare('UPDATE credentials SET expires=0 WHERE hash=?').run(current.hash);
+ const issued=await f.app.auth.login(challenge.id,await OTHER.signMessage({message:challenge.message}),current);
+ assert.notEqual(issued.owner.id,s.state.owner.id);assert.equal(issued.owner.address,OTHER.address.toLowerCase());assert.equal(f.app.store.get('owners',s.state.owner.id).address,null);
+});
 test('pairing expires/consumes once; reconnect rotates only token and retains wallet, capital and pause',async t=>{const f=await fixture(t),s=await f.owner(),p=await f.call('/api/pair',{},s),args={pairingCode:p.value.pairingCode,name:'First'},r=await f.call('/api/agent',{action:'register_dot',arguments:args}),a=r.value.result;assert.equal((await f.call('/api/agent',{action:'register_dot',arguments:args})).status,403);await f.call('/api/control',{agentId:a.agentId,paused:true},s);f.app.paper.seed(a.agentId,1000);const p2=await f.call('/api/pair',{agentId:a.agentId},s),r2=await f.call('/api/agent',{action:'register_dot',arguments:{pairingCode:p2.value.pairingCode,name:'Different'}}),b=r2.value.result;assert.equal(b.agentId,a.agentId);assert.equal(b.address,a.address);assert.equal(b.paused,true);assert.equal((await f.agentCall(a,'get_account')).status,401);assert.equal((await f.agentCall(b,'get_account')).status,200);assert.equal(f.app.paper.account(a.agentId).nativeRaw,'1000000000000000000');assert.equal(f.app.store.get('agents',a.agentId).name,'First');
  const p3=await f.call('/api/pair',{},s),row=f.app.store.get('pairings',(await import('../lib/database.mjs')).digest(p3.value.pairingCode));row.expiresAt=0;f.app.store.put('pairings',row);assert.equal((await f.call('/api/agent',{action:'register_dot',arguments:{pairingCode:p3.value.pairingCode,name:'expired'}})).status,403);
 });

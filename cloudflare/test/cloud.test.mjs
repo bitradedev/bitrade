@@ -14,6 +14,7 @@ import {mergeLedger} from '../import.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 import {PublicBscData} from '../public-data.mjs';
 import {ESTABLISHED_ASSETS} from '../../bi-trade/lib/established-risk.mjs';
+import {OwnerAuth,COOKIE} from '../../bi-trade/lib/auth.mjs';
 const requireTool=createRequire(realpathSync('node_modules/wrangler/package.json')),{build}=requireTool('esbuild'),{Miniflare,convertV4MiniflareOptions}=requireTool('miniflare');
 mkdirSync('.cloud-test-build',{recursive:true});
 await build({entryPoints:['cloudflare/market.ts'],bundle:true,platform:'node',format:'esm',outfile:'.cloud-test-build/market.mjs'});
@@ -23,6 +24,14 @@ const TOKEN='0x1111111111111111111111111111111111111111',RECIPIENT='0x2222222222
 function fixture(t){const db=new DatabaseSync(':memory:');t.after(()=>db.close());const sql={exec(query,...args){if(!args.length&&query.split(';').filter(x=>x.trim()).length>1){db.exec(query);return {toArray:()=>[],rowsWritten:0};}const s=db.prepare(query);if(/^(?:CREATE|DELETE|INSERT|UPDATE)/i.test(query.trim())){const r=s.run(...args);return {toArray:()=>[],rowsWritten:r.changes};}const rows=s.all(...args);return {toArray:()=>rows,rowsWritten:0};}};
  const store=new CloudStore({sql,transactionSync(fn){db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}});return {db,store};}
 test('Cloud ledger rolls back all writes and keeps rate limits across repository reconstruction',t=>{const {store}=fixture(t);assert.throws(()=>store.transaction(()=>{store.put('test',{id:'one'});throw Error('abort');}));assert.equal(store.get('test','one'),null);const req={socket:{remoteAddress:'test-ip'}};store.rateLimit(req,'session',1,60000);assert.throws(()=>store.rateLimit(req,'session',1,60000),/频繁/);assert.equal(store.db.prepare('SELECT n FROM rate_limits').get().n,2);});
+test('Cloud wallet binding rolls back ownership and old-session revocation if issuing the replacement session fails',async t=>{
+ const {store}=fixture(t),auth=new OwnerAuth(store,'https://bitrade.site'),issued=auth.guest(),req={headers:{cookie:COOKIE+'='+issued.token}},current=auth.session(req),old=store.get('owners',issued.owner.id);
+ store.put('paper-fills',{id:'retained-history',agentId:'retained-agent',usd:20,netUsd:-1});
+ auth.verify=async()=>TOKEN;auth.issue=()=>{throw Error('replacement session unavailable');};
+ await assert.rejects(auth.login('valid-verified-nonce','valid-signature',current),/replacement session unavailable/);
+ assert.deepEqual(store.get('owners',old.id),old);assert.equal(store.all('owners').length,1);assert.equal(auth.session(req).owner.id,old.id);assert.equal(auth.session(req).owner.address,null);
+ assert.deepEqual(store.get('paper-fills','retained-history'),{id:'retained-history',agentId:'retained-agent',usd:20,netUsd:-1});
+});
 test('Cloud eviction preserves queued orders, cancels interrupted quotes and never fabricates a fill',t=>{const {store}=fixture(t);store.put('paper-orders',{id:'queued',status:'queued'});store.put('paper-orders',{id:'quoting',status:'quoting'});new PaperDesk(store,{},{preserveQueued:true});assert.equal(store.get('paper-orders','queued').status,'queued');assert.equal(store.get('paper-orders','quoting').status,'cancelled');assert.equal(store.all('paper-fills').length,0);});
 test('Private migration merges without deleting new users or sessions and refuses to overwrite cloud fills',t=>{const {store}=fixture(t),vault=new EncryptedVault(vaultKey),id='showcase-trend',agent={id,ownerId:'platform-showcase',source:'builtin',...vault.create(id)};
  store.put('owners',{id:'new-cloud-owner'});store.db.prepare('INSERT INTO credentials VALUES(?,?,?,?,?,?)').run('keep','owner','new-cloud-owner',null,Date.now()+10000,'keep-csrf');store.put('agents',{id:'new-user-agent',ownerId:'new-cloud-owner'});

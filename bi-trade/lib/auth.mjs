@@ -105,19 +105,32 @@ export class OwnerAuth {
   }
   async login(id, signature, current) {
     const a = await this.verify(id, signature, 'login');
-    let owner = this.store.all('owners').find((x) => x.address === a);
-    if (!owner && current?.owner.kind === 'demo') {
-      owner = { ...current.owner, address: a, kind: 'wallet' };
-      this.store.put('owners', owner);
-    } else if (!owner) {
-      owner = { id: identifier(), address: a, kind: 'wallet', createdAt: Date.now() };
-      this.store.put('owners', owner);
-    }
-    if (current)
-      this.store.db
-        .prepare('DELETE FROM credentials WHERE hash=? AND kind=?')
-        .run(current.hash, 'owner');
-    return this.issue(owner);
+    return this.store.transaction(() => {
+      // Verification yields: another login, logout or expiry may have changed
+      // this browser's demo session. Only its current unbound owner can migrate.
+      const credential = current
+          ? this.store.db
+              .prepare('SELECT owner FROM credentials WHERE hash=? AND kind=? AND expires>?')
+              .get(current.hash, 'owner', Date.now())
+          : null,
+        demo =
+          credential && credential.owner === current?.owner.id
+            ? this.store.get('owners', credential.owner)
+            : null;
+      let owner = this.store.all('owners').find((x) => x.address === a);
+      if (!owner && demo?.kind === 'demo' && demo.address === null) {
+        owner = { ...demo, address: a, kind: 'wallet' };
+        this.store.put('owners', owner);
+      } else if (!owner) {
+        owner = { id: identifier(), address: a, kind: 'wallet', createdAt: Date.now() };
+        this.store.put('owners', owner);
+      }
+      if (current)
+        this.store.db
+          .prepare('DELETE FROM credentials WHERE hash=? AND kind=?')
+          .run(current.hash, 'owner');
+      return this.issue(owner);
+    });
   }
   agent(req) {
     const header = req.headers.authorization;

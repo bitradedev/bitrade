@@ -104,6 +104,7 @@ pnpm exec wrangler secret delete BI_TRADE_MIGRATION_TOKEN
 - 固定CAKE/BTCB/ETH的价格与卖出核价使用BSC RPC、Chainlink及Honeypot.is交易检测，图表限频不会阻断已核实的退出路线。官方工厂池、代码哈希、税和检测年龄仍检查。图表统计只引用原始时间仍有效的缓存，缺失或过期时显示未知；新开仓仍需完整图表、持仓及风控报告，不把可报价等同于可开仓。
 - 使用真实 BSC 固定区块报价和近期成交 Gas 样本，保留 Flap、Four.meme、Pancake V2/V3 路线及反向报价。没有签名、发送交易或 GMGN 金融执行接口。
 - 初期账本由一个 Durable Object 串行保护，适合早期用户规模。增长后需按账户拆分对象，并把公开排名聚合独立处理。
+- 钱包登录在签名验证后重新核对体验会话与当前Owner，仅仍有效且未绑定的体验账户可迁移；并发登录、退出或过期不会覆盖其他钱包的账户归属。绑定与凭据更新使用同一同步事务，既有Agent及账本不迁移到另一个签名者。
 - Cloudflare 免费方案有请求、CPU、SQL 读写与存储配额；AI 和 GMGN 也有各自额度。免费额度耗尽会影响服务，应在 Cloudflare 面板观察用量，再决定是否升级。本项目不会自动开通付费方案。
 - 保留主密钥与 Cloudflare 存储备份。重新部署代码不会清空账本；不要修改 Durable Object 的固定名称 `bitrade-platform-v1` 或随意新增迁移标签。
 
