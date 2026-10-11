@@ -31,6 +31,7 @@ export class CloudMarket {
   rpc: any;
   gmgn: any;
   publicData: any;
+  memeData: any;
   store: any;
   venues: any;
   gas: any;
@@ -55,11 +56,12 @@ export class CloudMarket {
       rpc = new CloudRpc(),
       gmgn = new GmgnHTTP(null),
       publicData = null,
+      memeData = null,
       memeOnly = false,
       onGap = () => {},
     }: any = {},
   ) {
-    Object.assign(this, { store, rpc, gmgn, publicData, memeOnly, gap: onGap });
+    Object.assign(this, { store, rpc, gmgn, publicData, memeData, memeOnly, gap: onGap });
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
@@ -67,6 +69,7 @@ export class CloudMarket {
     for (const m of store.all('cloud-metadata')) this.metadata.set(m.id, m);
     this.fxValue = store.get('cloud-settings', 'native-fx');
     this.discoveryAt = store.get('cloud-settings', 'discovery')?.at ?? 0;
+    this.cursor = store.get('cloud-settings', 'market-cursor')?.next ?? 0;
   }
   statuses() {
     return [
@@ -83,7 +86,12 @@ export class CloudMarket {
     return [...this.catalog.values()];
   }
   marketScope() {
-    if (this.memeOnly) return { kind: 'meme', tokens: [], policy: 'bsc-meme-paper-v1' };
+    if (this.memeOnly)
+      return {
+        kind: 'meme',
+        tokens: this.memeData?.candidates().map((c: any) => c.symbol) ?? [],
+        policy: 'bsc-meme-paper-v1',
+      };
     return this.publicData
       ? {
           kind: 'established',
@@ -101,7 +109,9 @@ export class CloudMarket {
   isEntryCandidate(token: string) {
     return (
       !this.memeOnly ||
-      (!establishedAsset(token) && this.catalog.get(token.toLowerCase())?.category === 'meme')
+      (!establishedAsset(token) &&
+        this.catalog.get(token.toLowerCase())?.category === 'meme' &&
+        this.catalog.get(token.toLowerCase())?.entryActive !== false)
     );
   }
   assertEntry(token: string) {
@@ -158,6 +168,12 @@ export class CloudMarket {
   async loadMetadata(token: string) {
     const old = this.metadata.get(token);
     if (old && Date.now() - old.at >= 0 && Date.now() - old.at < 90000) return old;
+    if (this.memeData?.supports(token)) {
+      const next = await this.memeData.metadata(token);
+      this.metadata.set(token, next);
+      this.store.put('cloud-metadata', next);
+      return next;
+    }
     if (this.publicData?.supports(token)) {
       const next = await this.publicData.metadata(token);
       this.metadata.set(token, next);
@@ -180,15 +196,14 @@ export class CloudMarket {
     const md = await this.loadMetadata(token),
       hint = md.info.biggest_pool_address;
     const revision = this.quoteRevision.bsc,
-      route =
-        md.source === 'public-bsc'
-          ? await this.venues.bsc.pool(
-              address(token),
-              address(CHAIN_CONFIG.bsc.wrapped),
-              address(hint),
-              block,
-            )
-          : await this.venues.bsc.resolve(address(token), block, hint);
+      route = ['public-bsc', 'meme-bsc'].includes(md.source)
+        ? await this.venues.bsc.pool(
+            address(token),
+            address(CHAIN_CONFIG.bsc.wrapped),
+            address(hint),
+            block,
+          )
+        : await this.venues.bsc.resolve(address(token), block, hint);
     if (revision !== this.quoteRevision.bsc) throw Error('核价期间发生区块重组');
     this.routes.set(token, { block, route });
     capMap(this.routes, 100);
@@ -202,7 +217,7 @@ export class CloudMarket {
     const s = md.security,
       buy = finite(s.buy_tax),
       sell = finite(s.sell_tax);
-    if (md.source === 'public-bsc' && s.verifiedPool !== r.pool)
+    if (['public-bsc', 'meme-bsc'].includes(md.source) && s.verifiedPool !== r.pool)
       throw new RouteBlocked('TAX_UNKNOWN', '买卖税检测与当前池不一致');
     if (buy === null || sell === null) throw new RouteBlocked('TAX_UNKNOWN', '外盘买卖税字段缺失');
     if (buy !== 0 || sell !== 0)
@@ -259,7 +274,9 @@ export class CloudMarket {
       )
         throw Error('外盘转账税清算尚未核实');
       const statsAt =
-          md.source === 'public-bsc' && Object.hasOwn(md, 'marketDataAt') ? md.marketDataAt : md.at,
+          ['public-bsc', 'meme-bsc'].includes(md.source) && Object.hasOwn(md, 'marketDataAt')
+            ? md.marketDataAt
+            : md.at,
         statsFresh =
           Number.isFinite(statsAt) && Date.now() - statsAt >= 0 && Date.now() - statsAt < 120000;
       m = {
@@ -277,11 +294,13 @@ export class CloudMarket {
         buyTaxPct: Number(r.state?.buyTaxRate ?? 0) / 100,
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
         dataSource:
-          md.source === 'public-bsc'
-            ? statsFresh
-              ? 'BSC RPC · DEX Screener · Honeypot.is'
-              : 'BSC RPC · Honeypot.is'
-            : 'BSC RPC · GMGN',
+          md.source === 'meme-bsc'
+            ? 'BSC RPC · Four.meme · GeckoTerminal / DEX Screener · Honeypot.is'
+            : md.source === 'public-bsc'
+              ? statsFresh
+                ? 'BSC RPC · DEX Screener · Honeypot.is'
+                : 'BSC RPC · Honeypot.is'
+              : 'BSC RPC · GMGN',
         marketDataAt: statsFresh ? statsAt : null,
         priceChange: statsFresh ? (md.info.priceChange ?? null) : null,
         transactions: statsFresh ? (md.info.txns ?? null) : null,
@@ -298,6 +317,46 @@ export class CloudMarket {
     return m;
   }
   async discover() {
+    if (this.memeOnly && this.memeData) {
+      const candidates = await this.memeData.discover(),
+        active = new Set(candidates.map((c: any) => c.address));
+      for (const candidate of candidates) {
+        const old = this.catalog.get(candidate.address);
+        const m = {
+          ...old,
+          ...candidate,
+          category: 'meme',
+          chain: 'bsc',
+          quality: old?.quality ?? 'unavailable',
+          updatedAt: old?.updatedAt ?? 0,
+          discoveredAt: old?.discoveredAt ?? candidate.at,
+          entryActive: true,
+        };
+        this.catalog.set(m.address, m);
+        this.store.put('cloud-markets', m);
+      }
+      for (const [token, m] of this.catalog)
+        if (m.category === 'meme' && !active.has(token)) {
+          const next = { ...m, entryActive: false };
+          this.catalog.set(token, next);
+          this.store.put('cloud-markets', next);
+        }
+      const held = new Set(
+        this.store
+          .all('paper-lots')
+          .filter((l: any) => BigInt(l.remainingRaw) > 0n)
+          .map((l: any) => l.token),
+      );
+      for (const [token, m] of this.catalog)
+        if (!active.has(token) && !held.has(token) && !this.publicData?.supports(token)) {
+          this.catalog.delete(token);
+          this.metadata.delete(token);
+          this.routes.delete(token);
+          for (const kind of ['cloud-markets', 'cloud-metadata'])
+            this.store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run(kind, token);
+        }
+      return;
+    }
     // Keep a narrow, independently verified mature-asset universe available
     // even while the meme-token provider is cooling down.
     for (const item of (this.memeOnly ? [] : this.publicData?.candidates()) ?? []) {
@@ -383,13 +442,13 @@ export class CloudMarket {
       } catch {
         /* An unavailable USD feed does not disconnect the chain. */
       }
-      if (this.gmgn.status?.().limited && !this.publicData) return;
+      if (this.gmgn.status?.().limited && !this.publicData && !this.memeData) return;
       try {
         await this.discover();
       } catch {
         /* Continue updating already discovered markets when discovery is unavailable. */
       }
-      if (this.gmgn.status?.().limited && !this.publicData) return;
+      if (this.gmgn.status?.().limited && !this.publicData && !this.memeData) return;
       try {
         const candidates = [...this.catalog.keys()].filter((token) => this.isEntryCandidate(token)),
           pool = [...new Set([...tokens, ...candidates])],
@@ -403,6 +462,8 @@ export class CloudMarket {
             ),
           ].slice(0, 8);
         this.cursor = pool.length ? (this.cursor + limit) % pool.length : 0;
+        if (this.memeOnly)
+          this.store.put('cloud-settings', { id: 'market-cursor', next: this.cursor });
         for (const token of selected) await this.refreshMarket(token);
         await this.updateHead();
       } catch (e: any) {
@@ -423,8 +484,8 @@ export class CloudMarket {
   marketWait() {
     const rpc = this.rpc.status?.();
     if (rpc?.limited) return { retryAt: rpc.retryAt };
-    if (this.publicData) {
-      const waits = this.publicData
+    if (this.memeData || this.publicData) {
+      const waits = (this.memeData ?? this.publicData)
         .status()
         .filter((s: any) => s.limited)
         .map((s: any) => s.retryAt);
@@ -446,7 +507,7 @@ export class CloudMarket {
       try {
         const md = this.metadata.get(m.address);
         if (Date.now() - md.at >= 120000) continue;
-        if (md.source === 'public-bsc' && !this.routes.has(m.address)) continue;
+        if (['public-bsc', 'meme-bsc'].includes(md.source) && !this.routes.has(m.address)) continue;
         const v = this.venues.bsc,
           cached = this.routes.get(m.address),
           r =
@@ -483,7 +544,7 @@ export class CloudMarket {
           Date.now() - m.marketDataAt < 120000;
         const next = {
           ...m,
-          ...(md.source === 'public-bsc' && !statsFresh
+          ...(['public-bsc', 'meme-bsc'].includes(md.source) && !statsFresh
             ? {
                 liquidityUsd: null,
                 volumeUsd: null,

@@ -27,8 +27,14 @@ export async function runScheduledRound(host) {
       ];
       await host.market.refresh(tokens, { limit: 1 });
       await app.paper.tick();
-      if (!host.decisionTask)
-        await host.risk.tick([...tokens, ...app.showcase.freshMarkets().map((m) => m.address)]);
+      if (!host.decisionTask) {
+        const fresh = app.showcase.freshMarkets();
+        const riskTokens =
+          host.market.marketScope?.()?.kind === 'meme'
+            ? fresh.sort((a, b) => b.updatedAt - a.updatedAt).map((m) => m.address)
+            : [...tokens, ...fresh.map((m) => m.address)];
+        await host.risk.tick(riskTokens);
+      }
       await host.market.pulse(1);
       if (host.decisionTask) await app.showcase.watchExits();
       else {

@@ -172,20 +172,34 @@ For strategy hypotheses, see /playbook. The platform makes no promise of profit.
 
 ## Independent BSC paper markets
 
-The Cloudflare site can quote the fixed mature BTCB, ETH and CAKE contracts
-without GMGN. DEX Screener supplies independent market statistics, Honeypot.is
-supplies buy/sell checks and top-holder samples, and the BSC RPC calculates exact
-Pancake V2 amounts. Contract code, the factory pool and the tested pair must match.
-BNB/USD comes from Chainlink. Receipt fees use a separate public BNB Chain node
-and must match the quote node's canonical block. No server purchase is required.
+Cloudflare new entries are limited to BSC memes, for built-in and external Agents.
+CAKE, ETH and BTCB are excluded; historical records and held positions retain
+their original exits. The discovery list combines popular and recent Four.meme
+tokens with GeckoTerminal fallback. Labels alone are insufficient: BSC reads must
+verify Four.meme/Flap launch identity and graduated Pancake V2/V3 WBNB pools.
+Independent chart statistics come from DEX Screener or GeckoTerminal. Honeypot.is
+provides buy/sell checks and top-50 holders. Exact amounts use chain reserves or
+Quoter; Chainlink supplies BNB/USD, and canonical transaction receipts supply
+estimated fees. No financial API, transaction signing or broadcast is used.
 
-The mature-market risk policy is `established-spot-v1`; it is only for virtual
-funds and these three exact addresses. `screened-limited` permits an entry only
-after the narrow checks pass, including observed concentration, current zero-tax
-buy/sell simulation and pool depth/activity. Bundler and shared-funding metrics
-remain null, and custodial issuance/governance risks remain. This policy does not
-exempt new tokens from the full existing risk checks. Never report null as zero
-or treat a quote as a fill. An AI may choose hold even with eligible markets.
+The `bsc-meme-paper-v1` policy uses observed risk, not a full safety verdict.
+Sell simulation, zero buy/sell/transfer tax, verified non-proxy source, official
+pool identity, holder data, at least $10,000 liquidity, $1,000 daily volume and
+50 holders are required. The largest observed circulating holding must be at
+most 10%, the top ten at most 50%. Known same-transaction distributions exceeding
+25% are blocked. Each buy also respects the existing 1% liquidity limit,
+available funds and fresh later-block matching. There is no fixed dollar cap.
+
+Transfer correlation covers only the stated recent 200-block token sample.
+Full-history bundling, insider holdings, native shared funding and blacklist
+capability remain null and are disclosed. `screened-limited` may allow virtual
+entries after required checks; it is not a guarantee. Graduated zero-tax WBNB
+pools are supported by this independent path; bonding curves and taxed memes
+remain unavailable. A failed optional transfer sample is disclosed as unavailable.
+Stale chart or core evidence cannot authorize a buy. Existing holdings may still
+exit after fresh on-chain pool/code and sell checks even if charts are unavailable.
+Never report null as zero, a quote as a fill, or restore mature assets as fallback
+buys. An AI may choose hold even with eligible memes.
 
 ## Public strategy and performance
 

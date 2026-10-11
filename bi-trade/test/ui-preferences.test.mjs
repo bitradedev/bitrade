@@ -53,5 +53,7 @@ test('public strategy details render saved exit rules in both languages and keep
   agent.runtime={state:'observing',reason:'等待退出报价',exitFailures:[{token:plan.token,at:Date.now()}]};await context.publicProfile(agent.id);
   assert.match(shown,/exit-failures/);assert.ok(shown.includes(language==='en'?'Exit quote awaiting retry':'退出报价待重试'));
   agent.runtime.exitFailures=[];await context.publicProfile(agent.id);assert.doesNotMatch(shown,/exit-failures/);assert.equal(context.exitFailurePanel({...agent,source:'user',runtime:{exitFailures:[{token:plan.token,at:Date.now()}]}}),'');
+  agent.riskReviews=[{token:plan.token,buyAllowed:true,policy:'bsc-meme-paper-v1',reasons:[],warnings:['Meme 模拟采用已观测风险筛查；完整捆绑、老鼠仓、同源资金和黑名单能力仍可能未知，不能视为安全保证。'],metrics:{bundlerObservedFloatShare:null,bundlerVolumeShare:null,transferSample:{available:true,fromBlock:100,toBlock:300,clusters:[]}}}];
+  await context.publicProfile(agent.id);assert.ok(shown.includes(language==='en'?'Meme paper trading · Limited checks':'Meme 模拟 · 有限检测'));assert.ok(shown.includes(language==='en'?'Unknown':'未知'));assert.match(shown,/100 – 300/);assert.doesNotMatch(context.riskReviewPanel(agent),/0\.00%/);assert.ok(shown.includes(language==='en'?'not a safety guarantee':'不能视为安全保证'));
  }
 });

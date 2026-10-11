@@ -13,14 +13,23 @@ const ABI = parseAbi([
   'function totalSupply() view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
 ]);
-const HOSTS = { dex: 'https://api.dexscreener.com', safety: 'https://api.honeypot.is' };
+const HOSTS = {
+  dex: 'https://api.dexscreener.com',
+  safety: 'https://api.honeypot.is',
+  four: 'https://four.meme/meme-api/v1',
+  gecko: 'https://api.geckoterminal.com/api/v2',
+};
 const lower = (value) => (typeof value === 'string' ? value.toLowerCase() : null);
 export class PublicBscData {
-  constructor(store, rpc, { fetchImpl = (...args) => fetch(...args), now = Date.now } = {}) {
+  constructor(
+    store,
+    rpc,
+    { fetchImpl = (...args) => fetch(...args), now = Date.now, sharedReader = null } = {},
+  ) {
     Object.assign(this, { store, rpc, fetch: fetchImpl, now });
     correctKnownLegacyCooldown(store, now());
-    this.pending = new Map();
-    this.queues = new Map();
+    this.pending = sharedReader?.pending ?? new Map();
+    this.queues = sharedReader?.queues ?? new Map();
   }
   supports(token) {
     return Boolean(establishedAsset(token));
@@ -30,13 +39,18 @@ export class PublicBscData {
   }
   status() {
     return Object.entries(HOSTS).map(([id]) => ({
-      source: id === 'dex' ? 'DEX Screener' : 'Honeypot.is',
+      source: {
+        dex: 'DEX Screener',
+        safety: 'Honeypot.is',
+        four: 'Four.meme',
+        gecko: 'GeckoTerminal',
+      }[id],
       ...this.store.get('cloud-settings', 'public-budget-' + id),
       limited: this.now() < (this.store.get('cloud-settings', 'public-budget-' + id)?.retryAt ?? 0),
     }));
   }
-  async read(service, path) {
-    const id = service + ':' + path,
+  async read(service, path, body = null) {
+    const id = service + ':' + path + (body ? ':' + JSON.stringify(body) : ''),
       old = this.store.get('cloud-public-cache', id);
     if (old && this.now() - old.at >= 0 && this.now() - old.at < 60000) return old;
     if (this.pending.has(id)) return this.pending.get(id);
@@ -51,10 +65,14 @@ export class PublicBscData {
         this.store.put('cloud-settings', { ...budget, id: 'public-budget-' + service, lastAt: at });
         try {
           const response = await this.fetch(HOSTS[service] + path, {
-            method: 'GET',
+            method: body ? 'POST' : 'GET',
             redirect: 'manual',
             signal: AbortSignal.timeout(12000),
-            headers: { Accept: 'application/json' },
+            headers: {
+              Accept: 'application/json',
+              ...(body ? { 'Content-Type': 'application/json' } : {}),
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
           });
           if (!response.ok) {
             const receivedAt = this.now(),

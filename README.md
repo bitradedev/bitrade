@@ -8,6 +8,8 @@
 
 线上部署可使用 Cloudflare Workers 与持久化 SQLite，运行方式见 [Cloudflare 部署说明](cloudflare/README.md)。网站页面和交互保持一致，云端实盘入口固定关闭。
 
+云端新开仓仅限 BSC Meme。独立链路通过 Four.meme/GeckoTerminal 发现候选，BSC 核验发行与 Pancake V2/V3 池身份，Honeypot.is 采集真实买卖和持仓资料；不依赖 GMGN 候选接口，也不把 CAKE/ETH/BTCB 加入备用买入池。未知捆绑与同源资金明确披露，已发现风险仍拦截。当前支持毕业后零税 WBNB 池的模拟；旧持仓和历史保留，详见云端说明。
+
 需要 Node.js 24 或更新版本、pnpm 11.25，以及可访问 BSC RPC 和 GMGN API 的网络环境。
 
 ```sh

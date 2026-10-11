@@ -10,6 +10,7 @@ import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
 import { marketFetch } from './market-source.mjs';
 import { PublicBscData } from './public-data.mjs';
+import { MemeBscData } from './meme-data.mjs';
 import { IOBudget } from './io-budget.mjs';
 import { runScheduledRound } from './scheduler.mjs';
 import { handleFetch } from './bridge.mjs';
@@ -77,14 +78,22 @@ export class TradingPlatform extends DurableObject<any> {
             fetchImpl: this.io.fetch,
             store: this.store,
           }),
+          memeData =
+            this.env.BI_TRADE_MEME_ONLY === 'true'
+              ? new MemeBscData(this.store, rpc, { fetchImpl: this.io.fetch })
+              : null,
           publicData =
             this.env.BI_TRADE_PUBLIC_MARKET === 'true'
-              ? new PublicBscData(this.store, rpc, { fetchImpl: this.io.fetch })
+              ? new PublicBscData(this.store, rpc, {
+                  fetchImpl: this.io.fetch,
+                  sharedReader: memeData,
+                })
               : null,
           market = new CloudMarket(this.store, {
             rpc,
             gmgn: source,
             publicData,
+            memeData,
             memeOnly: this.env.BI_TRADE_MEME_ONLY === 'true',
             onGap: () => this.app?.paper.gap(),
           });
@@ -92,9 +101,17 @@ export class TradingPlatform extends DurableObject<any> {
             maxTokensPerTick: 1,
             source: {
               label: (token: string) =>
-                publicData?.supports(token) ? 'BSC RPC · DEX Screener · Honeypot.is' : 'GMGN API',
+                memeData?.supports(token)
+                  ? 'BSC Meme · Four.meme / GeckoTerminal · Honeypot.is · RPC'
+                  : publicData?.supports(token)
+                    ? 'BSC RPC · DEX Screener · Honeypot.is'
+                    : 'GMGN API',
               riskReport: (token: string) =>
-                publicData?.supports(token) ? publicData.riskReport(token) : null,
+                memeData?.supports(token)
+                  ? memeData.riskReport(token)
+                  : publicData?.supports(token)
+                    ? publicData.riskReport(token)
+                    : null,
               info: (...args: any[]) => source.info(...args),
               holders: (...args: any[]) => source.holders(...args),
               security: (...args: any[]) => source.security(...args),
@@ -188,7 +205,8 @@ export class TradingPlatform extends DurableObject<any> {
           marketService: this.market.gmgn.status(),
           marketTransport: this.env.GMGN_RELAY_URL ? 'private-relay' : 'cloudflare-fetch',
           publicMarketEnabled: Boolean(this.market.publicData),
-          publicMarketSources: this.market.publicData?.status() ?? [],
+          publicMarketSources: (this.market.memeData ?? this.market.publicData)?.status() ?? [],
+          marketScope: this.market.marketScope(),
           rpcSources: [
             { source: 'BSC price RPC', ...this.market.rpc.status() },
             ...(this.market.rpc.receiptRpc
@@ -201,12 +219,19 @@ export class TradingPlatform extends DurableObject<any> {
           marketRetryAt: this.store.get('cloud-settings', 'gmgn-budget')?.cooldown ?? null,
           marketRetryReason: this.store.get('cloud-settings', 'gmgn-budget')?.errorCode ?? null,
           candidates: {
-            known: this.market.markets().length,
-            verified: this.market.markets().filter((m: any) => m.quality === 'verified').length,
+            known: this.market.markets().filter((m: any) => this.market.isEntryCandidate(m.address))
+              .length,
+            verified: this.market
+              .markets()
+              .filter(
+                (m: any) => this.market.isEntryCandidate(m.address) && m.quality === 'verified',
+              ).length,
             fresh: app.showcase.freshMarkets().length,
             waiting: this.market
               .markets()
-              .filter((m: any) => m.quality !== 'verified')
+              .filter(
+                (m: any) => this.market.isEntryCandidate(m.address) && m.quality !== 'verified',
+              )
               .slice(0, 4)
               .map((m: any) => ({ symbol: m.symbol, reason: m.reason })),
           },
