@@ -1,4 +1,6 @@
 window.BI_UI_EN = {
+"AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。":"The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.",
+"持仓在核价期间改变，稍后重新检查":"Positions changed during quote verification. They will be checked again.",
 "退出报价待重试":"Exit quote awaiting retry",
 "部分持仓退出报价暂不可用；其他持仓已继续核对，稍后自动重试。":"Some positions have unavailable exit quotes. Other positions were still checked. Retrying automatically.",
 "当前生效的退出规则":"Active exit rules",

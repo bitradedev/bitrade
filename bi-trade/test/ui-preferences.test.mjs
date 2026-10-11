@@ -29,6 +29,8 @@ test('user-authored names, strategies, and unrecognized decision summaries stay 
  const builtin={...user,source:'builtin'};assert.equal(ui.agentName(builtin),'BI Trend Hunter');assert.equal(ui.strategyName(builtin),'Trend momentum');
  assert.equal(ui.systemMessage('这是 Agent 原始决策：等待下一根 K 线。'),'这是 Agent 原始决策：等待下一根 K 线。');
  assert.equal(ui.systemMessage('等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。'),'Waiting for the administrator to configure the OpenAI API key. AI decisions have not started.');
+ assert.equal(ui.systemMessage('AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。'),'The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.');
+ assert.equal(ui.systemMessage('持仓在核价期间改变，稍后重新检查'),'Positions changed during quote verification. They will be checked again.');
 });
 
 test('public strategy details render saved exit rules in both languages and keep unknown plans unknown',async()=>{
