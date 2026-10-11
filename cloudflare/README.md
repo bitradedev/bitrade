@@ -104,7 +104,7 @@ pnpm exec wrangler secret delete BI_TRADE_MIGRATION_TOKEN
 
 ## 运行与限制
 
-- `/api/health` 检查服务和实盘锁；`/api/runtime` 提供不含密钥的行情、候选、调度状态和限频恢复时间。
+- `/api/health` 检查服务和实盘锁；`/api/runtime` 提供不含密钥的行情、候选、调度状态和限频恢复时间。`candidates.eligible` 统计当前新鲜且风险允许的 Meme；`screening` 给出最多四项真实检查状态、原时间与原因，优先显示已允许项。报价核实不等同风险检查通过。
 - GMGN 请求共用队列。429 遵守返回的恢复时间，并降低采集速度；风控缓存保留实际读取时间，不刷新旧数据的年龄。缺数据、未知税或过期报价均不制造模拟成交。
 - 公共数据源按 [RFC 9110 的 Retry-After 定义](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)区分整数秒数与 HTTP 日期；数字不会同时进入日期解析。429 至少冷却5分钟，有效更长等待仍保留，重启不重置期限。最近HTTP失败的时间、状态及解析后的服务端期限保留，恢复不会修改旧资料年龄。
 - 固定CAKE/BTCB/ETH的价格与卖出核价使用BSC RPC、Chainlink及Honeypot.is交易检测，图表限频不会阻断已核实的退出路线。官方工厂池、代码哈希、税和检测年龄仍检查。图表统计只引用原始时间仍有效的缓存，缺失或过期时显示未知；新开仓仍需完整图表、持仓及风控报告，不把可报价等同于可开仓。

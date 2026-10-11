@@ -227,6 +227,30 @@ export class TradingPlatform extends DurableObject<any> {
                 (m: any) => this.market.isEntryCandidate(m.address) && m.quality === 'verified',
               ).length,
             fresh: app.showcase.freshMarkets().length,
+            eligible: app.showcase
+              .freshMarkets()
+              .filter((m: any) => this.risk.snapshot(m.address, m.priceUsd).buyAllowed).length,
+            screening: this.market
+              .markets()
+              .filter((m: any) => this.market.isEntryCandidate(m.address))
+              .map((m: any) => {
+                const r = this.risk.snapshot(m.address, m.priceUsd);
+                return {
+                  token: m.address,
+                  symbol: m.symbol,
+                  state: r.state,
+                  buyAllowed: r.buyAllowed,
+                  fetchedAt: r.fetchedAt ?? null,
+                  reasons: r.reasons,
+                  policy: r.policy ?? null,
+                };
+              })
+              .sort(
+                (a: any, b: any) =>
+                  Number(b.buyAllowed) - Number(a.buyAllowed) ||
+                  (b.fetchedAt ?? 0) - (a.fetchedAt ?? 0),
+              )
+              .slice(0, 4),
             waiting: this.market
               .markets()
               .filter(
