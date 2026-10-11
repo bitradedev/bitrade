@@ -449,28 +449,11 @@ export class MemeBscData extends PublicBscData {
       qr = BigInt(reserves[quote0 ? 0 : 1]),
       tr = BigInt(reserves[quote0 ? 1 : 0]);
     if (qr <= 0n || tr <= 0n) throw Error('链上 Meme 池没有可核实的储备');
-    const toBlock = Math.max(0, b.number - 4),
-      fromBlock = Math.max(0, toBlock - 999),
-      start = await this.rpc.block(fromBlock);
-    if (
-      !Number.isFinite(start.time) ||
-      this.now() < start.time ||
-      this.now() - start.time >= 86400000
-    )
-      throw Error('换手样本不在近24小时范围');
-    const logs = await this.rpc.request('eth_getLogs', [
-        {
-          address: pool,
-          fromBlock: '0x' + fromBlock.toString(16),
-          toBlock: '0x' + toBlock.toString(16),
-          topics: [getEventSelector(POOL_SWAP[0])],
-        },
-      ]),
-      v = swapTurnover(logs, pool, fromBlock, toBlock, quote0),
+    const sample = await this.turnoverWindow(pool, b, quote0, fx.usd),
       priceUsd = (Number(qr) / 1e18 / (Number(tr) / 10 ** decimals)) * fx.usd;
     if (!Number.isFinite(priceUsd) || priceUsd <= 0) throw Error('链上 Meme 价格未核实');
     return {
-      at: this.now(),
+      at: sample.at,
       pair: {
         chainId: 'bsc',
         dexId: 'pancakeswap',
@@ -480,22 +463,82 @@ export class MemeBscData extends PublicBscData {
         labels: ['v2'],
         priceUsd: String(priceUsd),
         liquidity: { usd: (Number(qr) / 1e18) * fx.usd * 2 },
-        volume: { h24: (Number(v.quoteRaw) / 1e18) * fx.usd },
+        volume: { h24: (Number(sample.quoteRaw) / 1e18) * fx.usd },
         priceChange: null,
         txns: null,
         chartSource: 'BSC RPC',
         volumeWindow: {
           kind: 'recent-swap-lower-bound',
-          fromBlock,
-          toBlock,
-          fromTime: start.time,
-          quoteRaw: String(v.quoteRaw),
-          buys: v.buys,
-          sells: v.sells,
+          fromBlock: sample.fromBlock,
+          toBlock: sample.toBlock,
+          fromTime: sample.fromTime,
+          quoteRaw: sample.quoteRaw,
+          buys: sample.buys,
+          sells: sample.sells,
           usdReferenceAt: fx.at,
         },
       },
     };
+  }
+  async turnoverWindow(pool, b, quote0, nativeUsd) {
+    const id = 'meme-turnover:' + pool,
+      old = this.store.get('cloud-public-cache', id);
+    if (
+      old &&
+      this.now() - old.at >= 0 &&
+      this.now() - old.at < 60000 &&
+      old.toBlock <= b.number &&
+      this.now() - old.fromTime < 86400000
+    ) {
+      const anchor = await this.rpc.block(old.toBlock, true);
+      if (anchor.hash === old.blockHash) return old;
+    }
+    const toBlock = Math.max(0, b.number - 4);
+    let fromBlock = toBlock,
+      quoteRaw = 0n,
+      buys = 0,
+      sells = 0;
+    // Respect the public node's small request range. Expand a bounded lookback
+    // only when recent activity alone cannot prove the unchanged threshold.
+    for (let page = 0; page < 5; page++) {
+      const end = toBlock - page * 1000;
+      if (end < 0) break;
+      const start = Math.max(0, end - 999),
+        logs = await this.rpc.request('eth_getLogs', [
+          {
+            address: pool,
+            fromBlock: '0x' + start.toString(16),
+            toBlock: '0x' + end.toString(16),
+            topics: [getEventSelector(POOL_SWAP[0])],
+          },
+        ]),
+        v = swapTurnover(logs, pool, start, end, quote0);
+      fromBlock = start;
+      quoteRaw += v.quoteRaw;
+      buys += v.buys;
+      sells += v.sells;
+      if ((Number(quoteRaw) / 1e18) * nativeUsd >= 1000 || start === 0) break;
+    }
+    const [start, anchor] = await Promise.all([this.rpc.block(fromBlock), this.rpc.block(toBlock)]);
+    if (
+      !Number.isFinite(start.time) ||
+      this.now() < start.time ||
+      this.now() - start.time >= 86400000
+    )
+      throw Error('换手样本不在近24小时范围');
+    const row = {
+      id,
+      at: this.now(),
+      fromBlock,
+      toBlock,
+      fromTime: start.time,
+      blockHash: anchor.hash,
+      quoteRaw: String(quoteRaw),
+      buys,
+      sells,
+    };
+    this.store.put('cloud-public-cache', row);
+    return row;
   }
   async tradingEvidence(token) {
     if (!this.supports(token)) throw Error('Meme 候选来源尚未核实');

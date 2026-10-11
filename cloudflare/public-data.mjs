@@ -53,6 +53,9 @@ export class PublicBscData {
     const id = service + ':' + path + (body ? ':' + JSON.stringify(body) : ''),
       old = this.store.get('cloud-public-cache', id);
     if (old && this.now() - old.at >= 0 && this.now() - old.at < 60000) return old;
+    const missing = this.store.get('cloud-public-cache', 'resource-miss:' + id);
+    if (missing && this.now() < missing.retryAt)
+      throw Error('该代币或池资料尚未就绪：HTTP ' + missing.status);
     if (this.pending.has(id)) return this.pending.get(id);
     const task = (this.queues.get(service) ?? Promise.resolve())
       .catch(() => {})
@@ -77,6 +80,23 @@ export class PublicBscData {
           if (!response.ok) {
             const receivedAt = this.now(),
               retry = retryAfter(response.headers.get('Retry-After'), receivedAt);
+            if ([400, 404].includes(response.status)) {
+              this.store.put('cloud-public-cache', {
+                id: 'resource-miss:' + id,
+                at: receivedAt,
+                status: response.status,
+                retryAt: Math.max(receivedAt + 60000, retry.at ?? 0),
+              });
+              this.store.put('cloud-settings', {
+                ...budget,
+                id: 'public-budget-' + service,
+                lastAt: at,
+                lastResourceFailure: { at: receivedAt, status: response.status },
+              });
+              throw Object.assign(Error('该代币或池资料尚未就绪：HTTP ' + response.status), {
+                sourceResourceMissing: true,
+              });
+            }
             this.store.put('cloud-settings', {
               ...budget,
               id: 'public-budget-' + service,
@@ -114,7 +134,7 @@ export class PublicBscData {
           });
           return row;
         } catch (e) {
-          if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+          if (e?.code === 'CF_SUBREQUEST_BUDGET' || e?.sourceResourceMissing) throw e;
           const current = this.store.get('cloud-settings', 'public-budget-' + service);
           if (!(current.retryAt > at))
             this.store.put('cloud-settings', {

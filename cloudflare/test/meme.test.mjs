@@ -44,6 +44,14 @@ test('Chain pool turnover validates events and duplicates, keeping USD turnover 
  const c=await data.chainChart(TOKEN);assert.equal(c.pair.priceUsd,'0.75');assert.equal(c.pair.liquidity.usd,1500000);assert.equal(c.pair.volume.h24,3750);assert.equal(c.pair.priceChange,null);assert.equal(c.pair.txns,null);assert.equal(c.pair.volumeWindow.kind,'recent-swap-lower-bound');assert.equal(c.pair.volumeWindow.toBlock,96);
  store.put('cloud-settings',{id:'native-fx',source:'Chainlink BNB/USD · BSC',usd:750,at:Date.now()-90001});await assert.rejects(data.chainChart(TOKEN),/过期/);
 });
+test('A quiet recent page expands the bounded real turnover sample, preserves cache age and resamples after a fork',async t=>{
+ const {store,rpc,data}=sourceFixture(t);rpc.setHead(8000);let calls=0,fork=false,now=Date.now();data.now=()=>now;
+ const block=rpc.block;rpc.block=async(...args)=>({...await block(...args),time:now-5000,hash:fork?'fork':'original'});
+ const topic=keccak256(new TextEncoder().encode('Swap(address,uint256,uint256,uint256,uint256,address)')),pad=a=>'0x'+'0'.repeat(24)+a.slice(2),log={address:POOL,blockNumber:'0x'+(5500).toString(16),blockHash:'0x'+'ac'.repeat(32),transactionHash:'0x'+'bc'.repeat(32),logIndex:'0x1',topics:[topic,pad(OWNER),pad(OWNER)],data:encodeAbiParameters(parseAbiParameters('uint256,uint256,uint256,uint256'),[0n,2n*10n**18n,100n,0n])};
+ rpc.request=async(method,[q])=>{assert.equal(method,'eth_getLogs');calls++;const from=Number(BigInt(q.fromBlock)),to=Number(BigInt(q.toBlock));assert.ok(to-from+1<=1000);return from<=5500&&to>=5500?[log]:[];};
+ const b=await rpc.block(),sample=await data.turnoverWindow(POOL,b,false,750);assert.equal(calls,3);assert.equal(sample.quoteRaw,'2000000000000000000');assert.equal(sample.fromBlock,4997);assert.equal(sample.toBlock,7996);assert.equal(sample.buys,1);
+ now+=30000;const cached=await data.turnoverWindow(POOL,b,false,750);assert.equal(calls,3);assert.equal(cached.at,sample.at);fork=true;await data.turnoverWindow(POOL,b,false,750);assert.equal(calls,6);
+});
 test('Pair parsers reject wrong chains, quotes, DEXes and token identities',()=>{
  const p=pair();assert.equal(selectDexPair([p],TOKEN),p);
  for(const mutate of [p=>p.chainId='ethereum',p=>p.dexId='unverified',p=>p.baseToken.address=OTHER,p=>p.quoteToken.address=OTHER,p=>p.labels=['unknown']]){const q=pair();mutate(q);assert.equal(selectDexPair([q],TOKEN),null);}
@@ -54,6 +62,11 @@ test('POST discovery shares cache and cooldown with all read-only sources withou
  const store=fixture(t),now=Date.now(),sent=[],body={type:'VOL',tag:['Meme']};const first=new MemeBscData(store,{}, {now:()=>now,fetchImpl:async(url,opts)=>{sent.push({url,opts});return Response.json({code:0,data:[fourRow()]});}}),second=new PublicBscData(store,{}, {now:()=>now,sharedReader:first,fetchImpl:()=>{throw Error('Shared request should coalesce');}});
  const [a,b]=await Promise.all([first.read('four','/public/token/search',body),second.read('four','/public/token/search',body)]);assert.deepEqual(a,b);assert.equal(sent.length,1);assert.equal(sent[0].opts.method,'POST');assert.deepEqual(JSON.parse(sent[0].opts.body),body);assert.equal(sent[0].opts.headers.Authorization,undefined);assert.equal(sent[0].opts.headers.Cookie,undefined);
  store.put('cloud-settings',{id:'public-budget-four',retryAt:now+300000,lastError:'HTTP 429'});await assert.rejects(first.read('four','/public/token/search',{type:'NEW'}),/冷却/);assert.equal(sent.length,1);
+});
+test('An unindexed token 404 is isolated, retained across restart, and cannot pause another token or its exit checks',async t=>{
+ const store=fixture(t);let now=Date.now(),calls=0;const fetchImpl=async url=>{calls++;return url.includes(OTHER)?Response.json({}, {status:404}):Response.json(check());},data=new PublicBscData(store,{}, {now:()=>now,fetchImpl});
+ await assert.rejects(data.read('safety','/v2/IsHoneypot?address='+OTHER),/404/);now+=2001;await data.read('safety','/v2/IsHoneypot?address='+TOKEN);assert.equal(calls,2);assert.equal(data.status().find(s=>s.source==='Honeypot.is').limited,false);
+ const restarted=new PublicBscData(store,{}, {now:()=>now,fetchImpl});await assert.rejects(restarted.read('safety','/v2/IsHoneypot?address='+OTHER),/404/);assert.equal(calls,2);assert.equal(store.get('cloud-settings','public-budget-safety').lastResourceFailure.status,404);
 });
 test('Discovery mixes recent and volume memes, preserves held routes and deactivates dropped entries',async t=>{
  const store=fixture(t),now=Date.now(),data=new MemeBscData(store,{}, {now:()=>now}),requests=[];
