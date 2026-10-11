@@ -236,6 +236,7 @@ export class TokenRiskGuard {
             ),
           );
           const report = evaluateTokenRisk(token, { info, holders, security }, capturedAt);
+          report.source = this.source.label?.(token) ?? report.source;
           if (!this.stopped) this.store.put('token-risk-reports', report);
         } catch {
           if (!this.stopped)
@@ -243,7 +244,7 @@ export class TokenRiskGuard {
               id: token,
               token,
               chain: 'bsc',
-              source: 'GMGN CLI',
+              source: this.source.label?.(token) ?? 'GMGN CLI',
               fetchedAt: this.now(),
               state: 'unknown',
               buyAllowed: false,

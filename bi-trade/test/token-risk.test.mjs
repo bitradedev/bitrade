@@ -14,6 +14,23 @@ test('holder risk screening keeps missing/partial fields unknown rather than tre
  assert.equal(evaluateTokenRisk(TOKEN,evidence()).state,'screened');
  for(const mutate of [d=>{delete d.info.stat.top_bundler_trader_percentage;},d=>{d.holders.list=[];},d=>{d.holders.list=d.holders.list.slice(0,8);},d=>{d.holders.list[1].amount_percentage=true;},d=>{delete d.holders.list[1].maker_token_tags;},d=>{delete d.security.is_honeypot;},d=>{d.security.address=POOL;}]){const d=evidence();mutate(d);const r=evaluateTokenRisk(TOKEN,d);assert.equal(r.buyAllowed,false);assert.equal(r.state,'unknown');assert.ok(r.reasons.length);}
 });
+test('a failed independent risk source keeps its provider label, blocks entry and recovers without calling GMGN',async t=>{
+ let now=Date.now(),unavailable=true,fallbackCalls=0;
+ const label='BSC RPC · DEX Screener · Honeypot.is';
+ const {guard,store}=fixture(t,{now:()=>now,source:{label:()=>label,riskReport:async()=>{
+  if(unavailable)throw Error('Chart source cooling down');
+  return {...evaluateTokenRisk(TOKEN,evidence(),now),source:label};
+ },info:async()=>{fallbackCalls++;throw Error('GMGN must not be called');}}});
+ const failed=await guard.refresh(TOKEN);assert.equal(failed.source,label);assert.equal(failed.state,'unknown');assert.equal(failed.buyAllowed,false);assert.equal(failed.metrics,null);assert.equal(fallbackCalls,0);
+ await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:10}),/开仓风险检查未通过/);
+ unavailable=false;now+=RISK_POLICY.maxAgeMs;const recovered=await guard.refresh(TOKEN);assert.equal(recovered.source,label);assert.equal(recovered.buyAllowed,true);assert.equal(recovered.fetchedAt,now);assert.equal(fallbackCalls,0);assert.equal(store.get('token-risk-reports',TOKEN).source,label);
+});
+test('raw risk reads report the configured API source and retain the default CLI attribution when no label is supplied',async t=>{
+ const d=evidence(),source={info:async()=>d.info,holders:async()=>d.holders,security:async()=>d.security};
+ const api=fixture(t,{source:{...source,label:()=> 'GMGN API'}}),local=fixture(t,{source});
+ assert.equal((await api.guard.refresh(TOKEN)).source,'GMGN API');
+ assert.equal((await local.guard.refresh(TOKEN)).source,'GMGN CLI · token info/holders/security');
+});
 test('pool-dominated launch supply suppresses inflated wallet percentages and cannot pass a clean verdict',()=>{
  const d=evidence();d.holders.list=[{address:POOL,amount_percentage:.993,addr_type:2,maker_token_tags:[]},{address:wallet(0),amount_percentage:.007,addr_type:0,maker_token_tags:['bundler']}];
  const r=evaluateTokenRisk(TOKEN,d);assert.equal(r.state,'unknown');assert.equal(r.buyAllowed,false);assert.equal(r.metrics.bundlerObservedFloatShare,null);assert.equal(r.metrics.largestObservedFloatShare,null);assert.match(r.reasons.join('；'),/不足2%/);

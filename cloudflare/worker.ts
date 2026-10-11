@@ -87,6 +87,8 @@ export class TradingPlatform extends DurableObject<any> {
         const risk = new TokenRiskGuard(this.store, {
             maxTokensPerTick: 1,
             source: {
+              label: (token: string) =>
+                publicData?.supports(token) ? 'BSC RPC · DEX Screener · Honeypot.is' : 'GMGN API',
               riskReport: (token: string) =>
                 publicData?.supports(token) ? publicData.riskReport(token) : null,
               info: (...args: any[]) => source.info(...args),
