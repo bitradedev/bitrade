@@ -18,6 +18,7 @@ import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP, unwrap } from './gmgn.mjs';
 import { NativePrice } from './native-price.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
+import { RISK_POLICY } from '../bi-trade/lib/token-risk-core.mjs';
 const finite = (x: any) =>
   x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x)) ? Number(x) : null;
 const raw = (x: any) => {
@@ -504,8 +505,25 @@ export class CloudMarket {
     // No GMGN I/O here: keep the chain and already collected markets fresh while
     // risk collection or model inference is waiting on a slower remote service.
     const entries = this.markets().filter((m: any) => this.metadata.has(m.address));
-    const selected = entries.slice(this.pulseCursor, this.pulseCursor + limit);
-    this.pulseCursor = entries.length ? (this.pulseCursor + limit) % entries.length : 0;
+    const eligible = this.memeOnly
+      ? entries.filter((m: any) => {
+          const r = this.store.get('token-risk-reports', m.address);
+          return (
+            this.isEntryCandidate(m.address) &&
+            r?.policy === 'bsc-meme-paper-v1' &&
+            r.buyAllowed === true &&
+            Number.isFinite(r.fetchedAt) &&
+            Date.now() - r.fetchedAt >= 0 &&
+            Date.now() - r.fetchedAt <= RISK_POLICY.maxAgeMs
+          );
+        })
+      : [];
+    const pool = eligible.length ? eligible : entries;
+    const selected = Array.from(
+      { length: Math.min(limit, pool.length) },
+      (_, i) => pool[(this.pulseCursor + i) % pool.length],
+    );
+    this.pulseCursor = pool.length ? (this.pulseCursor + limit) % pool.length : 0;
     for (const m of selected) {
       try {
         const md = this.metadata.get(m.address);
