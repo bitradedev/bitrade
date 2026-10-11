@@ -109,6 +109,14 @@ test('Successful recovery gradually restores bounded pacing and persists it inst
  for(let n=0;n<10;n++){now+=20000;await g.security('bsc','0x'+String(n+1).padStart(40,'0'));}
  assert.equal(g.spacing,3000);assert.equal(store.get('cloud-settings','gmgn-budget').spacing,3000);
 });
+test('Concurrent Agent consumers share one serial GMGN queue with a one-second hard minimum even for an old zero spacing setting',async t=>{
+ const {store}=fixture(t);let now=1000000,active=0,peak=0;const times=[];
+ store.put('cloud-settings',{id:'gmgn-budget',lastAt:999800,cooldown:0,spacing:0});
+ const g=new GmgnHTTP('test',{store,now:()=>now,sleep:async ms=>{now+=ms;},fetchImpl:async()=>{times.push(now);active++;peak=Math.max(peak,active);await Promise.resolve();active--;return Response.json({code:0,data:{}});}});
+ await Promise.all([g.info('bsc',TOKEN),g.security('bsc',TOKEN),g.holders('bsc',TOKEN)]);
+ assert.equal(peak,1);assert.equal(times.length,3);assert.ok(times[0]-999800>=1000);assert.ok(times.slice(1).every((at,i)=>at-times[i]>=1000));assert.equal(g.status().sharedQueue,true);assert.equal(g.status().minimumSpacingMs,1000);
+ const restart=new GmgnHTTP('test',{store,now:()=>now,sleep:async ms=>{now+=ms;},fetchImpl:async()=>{times.push(now);return Response.json({code:0,data:{}});}});await restart.trenches();assert.ok(times[3]-times[2]>=1000);
+});
 test('Native BNB price verifies oracle identity, rounds and source age without calling GMGN',async()=>{
  const now=1000000,calls=[];let round=[4n,76000000000n,990n,995n,4n];
  const rpc={block:async()=>({number:42,time:now}),read:async(to,_abi,fn,_args,block)=>{calls.push({to,fn,block});return fn==='description'?'BNB / USD':fn==='decimals'?8:round;}};

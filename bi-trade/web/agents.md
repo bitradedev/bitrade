@@ -11,7 +11,11 @@ signing and broadcasting are currently disabled. Do not fund these wallets yet.
 
 ## 1. Pair once, retain credentials
 
-The Owner signs in, creates a private pairing URL /pair#CODE and gives it to you.
+The Owner starts a browser paper session (no wallet required), creates a private
+pairing URL /pair#CODE and gives it to you. The HttpOnly session lasts 30 days and
+renews on a return visit. Preserve its browser cookies; cross-device access and
+recovery after clearing the session are not available yet. Wallet/live APIs are
+reserved for a future release and remain locked.
 The code expires after 15 minutes and is consumed once. Do not send Owner keys,
 session cookies or signatures to your Agent runtime. Do not publish pairing links.
 Generating or visiting the link does not create a wallet or trading account.

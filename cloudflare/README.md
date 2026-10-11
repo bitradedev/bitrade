@@ -119,13 +119,22 @@ pnpm exec wrangler secret delete BI_TRADE_MIGRATION_TOKEN
 ## 运行与限制
 
 - `/api/health` 检查服务和实盘锁；`/api/runtime` 提供不含密钥的行情、候选、调度状态和限频恢复时间。`candidates.eligible` 统计当前新鲜且风险允许的 Meme；`screening` 给出最多四项真实检查状态、原时间与原因，优先显示已允许项。报价核实不等同风险检查通过。
-- GMGN 请求共用队列。429 遵守返回的恢复时间，并降低采集速度；风控缓存保留实际读取时间，不刷新旧数据的年龄。缺数据、未知税或过期报价均不制造模拟成交。
+- GMGN 请求共用串行队列，硬最低间隔1秒，正常约3秒，限频后自适应5–15秒。429 遵守返回的恢复时间；三款内置 Agent 共用行情缓存、每轮只运行一款并保存轮换游标。降低频率不会提前解除已有封禁，风控缓存保留实际读取时间。
+- Meme 不依赖 GMGN：候选依次结合 Four.meme、GeckoTerminal 与 BSC 发行事件；图表依次使用 DEX Screener、GeckoTerminal 与真实 V2 池储备和有界 Swap 样本。不同来源各自串行、缓存、冷却；所有来源失败时仍等待，不伪造价格、活跃度、风险或成交。完整捆绑资料仍可能未知。
 - 公共数据源按 [RFC 9110 的 Retry-After 定义](https://www.rfc-editor.org/rfc/rfc9110.html#name-retry-after)区分整数秒数与 HTTP 日期；数字不会同时进入日期解析。429 至少冷却5分钟，有效更长等待仍保留，重启不重置期限。最近HTTP失败的时间、状态及解析后的服务端期限保留，恢复不会修改旧资料年龄。
-- 固定CAKE/BTCB/ETH的价格与卖出核价使用BSC RPC、Chainlink及Honeypot.is交易检测，图表限频不会阻断已核实的退出路线。官方工厂池、代码哈希、税和检测年龄仍检查。图表统计只引用原始时间仍有效的缓存，缺失或过期时显示未知；新开仓仍需完整图表、持仓及风控报告，不把可报价等同于可开仓。
+- 历史CAKE/BTCB/ETH持仓仅保留退出核价能力，禁止加入 Meme 新开仓候选；官方工厂池、代码哈希、税和检测年龄仍检查。图表统计只引用原始时间仍有效的缓存，缺失或过期时显示未知；新开仓仍需当前有效的行情、持仓及风控报告。
 - 使用真实 BSC 固定区块报价和近期成交 Gas 样本，保留 Flap、Four.meme、Pancake V2/V3 路线及反向报价。没有签名、发送交易或 GMGN 金融执行接口。
 - 初期账本由一个 Durable Object 串行保护，适合早期用户规模。增长后需按账户拆分对象，并把公开排名聚合独立处理。
 - 钱包登录在签名验证后重新核对体验会话与当前Owner，仅仍有效且未绑定的体验账户可迁移；并发登录、退出或过期不会覆盖其他钱包的账户归属。绑定与凭据更新使用同一同步事务，既有Agent及账本不迁移到另一个签名者。
 - Cloudflare 免费方案有请求、CPU、SQL 读写与存储配额；AI 和 GMGN 也有各自额度。免费额度耗尽会影响服务，应在 Cloudflare 面板观察用量，再决定是否升级。本项目不会自动开通付费方案。
 - 保留主密钥与 Cloudflare 存储备份。重新部署代码不会清空账本；不要修改 Durable Object 的固定名称 `bitrade-platform-v1` 或随意新增迁移标签。
+
+## 经用户明确授权的内置模拟重置
+
+`BI_TRADE_SHOWCASE_RESET_ID` 是一次性运维部署参数，不是公开 API，默认不配置。仅当用户明确同意重置三款内置 Agent 时使用 `showcase-paper-...` 唯一操作编号。初始化先核对三个固定 ID、builtin 来源、platform-showcase 归属和 paper 模式，在同一事务内将旧账户、订单、成交、持仓、资金流水、决策状态和退出计划完整留档到私有 `paper-reset-archives`，再分配各1000U；失败则整体回滚。不触碰用户账户、凭据、密钥、风控或服务冷却，不生成平仓交易。相同编号重启或再次部署不会再执行；后续正常部署不携带此参数。
+
+`/api/runtime` 的 `showcaseReset` 仅提供操作时间、范围、数量和存档校验摘要，不公开旧存档内容。此操作建立新模拟轮次；旧轮次记录保留在私有存档，后续对账从明确的新轮次起点进行，不再对公开页面执行旧轮次“成交必须仍存在”的检查。
+
+模拟页面无需连接钱包，以当前浏览器 HttpOnly 会话管理；30天有效、重新访问续期，过期或主动清除后目前无法跨设备找回。钱包与实盘 API 保留但页面不展示连接或资金操作；实盘签名广播仍关闭。
 
 Cloudflare 文档：[SQLite 存储](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)、[Alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)、[Workers 定价与配额](https://developers.cloudflare.com/workers/platform/pricing/)。

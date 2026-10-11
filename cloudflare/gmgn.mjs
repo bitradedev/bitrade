@@ -3,16 +3,25 @@ const HOST = 'https://openapi.gmgn.ai',
   types = [6, 7, 1, 16, 8, 3, 9, 10, 2, 17, 18, 0];
 export const unwrap = (value) => value?.data ?? value;
 export class GmgnHTTP {
-  constructor(key, { fetchImpl = (...args) => fetch(...args), now = Date.now, store = null } = {}) {
+  constructor(
+    key,
+    {
+      fetchImpl = (...args) => fetch(...args),
+      now = Date.now,
+      store = null,
+      sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    } = {},
+  ) {
     this.key = key;
     this.fetch = fetchImpl;
     this.now = now;
     this.store = store;
+    this.sleep = sleep;
     this.tail = Promise.resolve();
     const saved = store?.get('cloud-settings', 'gmgn-budget');
     this.lastAt = saved?.lastAt ?? 0;
     this.cooldown = saved?.cooldown ?? 0;
-    this.spacing = saved?.spacing ?? 3000;
+    this.spacing = Number.isFinite(saved?.spacing) ? Math.max(1000, saved.spacing) : 3000;
     this.failures = saved?.failures ?? 0;
     this.errorCode = saved?.errorCode ?? null;
     this.lastSuccessAt = saved?.lastSuccessAt ?? null;
@@ -29,6 +38,8 @@ export class GmgnHTTP {
       errorCode: this.errorCode,
       consecutiveLimits: this.failures,
       spacingMs: this.spacing,
+      minimumSpacingMs: 1000,
+      sharedQueue: true,
       lastSuccessAt: this.lastSuccessAt,
     };
   }
@@ -77,8 +88,8 @@ export class GmgnHTTP {
       .then(async () => {
         if (!this.key) throw Error('尚未配置 GMGN 行情密钥');
         if (this.now() < this.cooldown) throw Error('GMGN 行情限频，等待额度恢复后自动重试');
-        const wait = Math.max(0, this.spacing - (this.now() - this.lastAt));
-        if (wait) await new Promise((r) => setTimeout(r, wait));
+        const wait = Math.max(0, Math.max(1000, this.spacing) - (this.now() - this.lastAt));
+        if (wait) await this.sleep(wait);
         this.lastAt = this.now();
         this.saveBudget();
         const url = new URL(path, HOST);

@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { viem } from './dependencies.mjs';
 import { digest, identifier, fail } from './database-core.mjs';
 export const COOKIE = 'bi_trade_session';
+export const PAPER_SESSION_SECONDS = 30 * 86400;
 export function address(value) {
   if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(value) || /^0x0{40}$/i.test(value))
     throw fail('BSC钱包地址无效');
@@ -24,15 +25,29 @@ export class OwnerAuth {
       .get(digest(token), 'owner', Date.now());
     if (!c) return null;
     const owner = this.store.get('owners', c.owner);
-    return owner ? { owner, csrf: c.csrf, hash: c.hash } : null;
+    return owner ? { owner, csrf: c.csrf, hash: c.hash, token } : null;
   }
   issue(owner) {
     const token = randomBytes(32).toString('base64url'),
       csrf = randomBytes(24).toString('base64url');
+    const maxAge = owner.kind === 'demo' ? PAPER_SESSION_SECONDS : 86400;
     this.store.db
       .prepare('INSERT INTO credentials VALUES(?,?,?,?,?,?)')
-      .run(digest(token), 'owner', owner.id, null, Date.now() + 86400000, csrf);
-    return { token, csrf, owner };
+      .run(digest(token), 'owner', owner.id, null, Date.now() + maxAge * 1000, csrf);
+    return { token, csrf, owner, maxAge };
+  }
+  renewDemo(session) {
+    if (session.owner.kind !== 'demo') return null;
+    const result = this.store.db
+      .prepare('UPDATE credentials SET expires=? WHERE hash=? AND kind=? AND owner=? AND expires>?')
+      .run(
+        Date.now() + PAPER_SESSION_SECONDS * 1000,
+        session.hash,
+        'owner',
+        session.owner.id,
+        Date.now(),
+      );
+    return result.changes ? { token: session.token, maxAge: PAPER_SESSION_SECONDS } : null;
   }
   guest() {
     const owner = { id: identifier(), address: null, createdAt: Date.now(), kind: 'demo' };

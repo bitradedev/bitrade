@@ -32,6 +32,19 @@ test('user-authored names, strategies, and unrecognized decision summaries stay 
  assert.equal(ui.systemMessage('AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。'),'The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.');
  assert.equal(ui.systemMessage('持仓在核价期间改变，稍后重新检查'),'Positions changed during quote verification. They will be checked again.');
 });
+test('Paper account UI offers browser sessions and hides wallet/live controls in both languages while retaining account actions',()=>{
+ for(const language of ['zh','en']){
+  const {ui,context}=preferences({'bi-ui-language':language}),app=readFileSync(resolve(web,'app.js'),'utf8');context.BiUI=ui;
+  vm.runInContext(app.slice(0,app.indexOf('const docSections=')),context);
+  context.avatarSrc=()=>'/agent-trend-v1.png';context.archivedAccounts=()=>'';context.activityTable=()=>'';
+  const login=context.dashboard();assert.match(login,/data-action="guest"/);assert.doesNotMatch(login,/data-action="login"/);assert.ok(login.includes(language==='en'?'No wallet required':'无需连接钱包'));
+  context.stateInput={owner:{id:'owner',kind:'demo',address:null},liveEnabled:false,agents:[],orders:[],activity:[]};vm.runInContext('S=stateInput',context);
+  const emptyAccount=context.dashboard();assert.match(emptyAccount,/data-action="pair"/);assert.doesNotMatch(emptyAccount,/data-action="login"/);
+  const a={id:'agent-1',name:'My Agent',mode:'paper',source:'user',connectionState:'awaiting-agent',paused:false,public:false,address:'0x'+'11'.repeat(20),policy:{mode:'balance'},paper:{balanceUsd:1000,realizedUsd:-2,realizedNativeRaw:'-1',positions:[]}};
+  const card=context.agentCard(a,0);assert.match(card,/\$1,000\.00/);assert.match(card,/-\$2\.00/);assert.match(card,/data-action="pause"/);assert.match(card,/data-action="reconnect"/);assert.match(card,/data-action="archive"/);assert.match(card,/data-action="strategy"/);assert.doesNotMatch(card,/data-action="(?:login|fund|withdraw|recover|mode|policy|copy-wallet)"/);
+  context.stateInput.liveEnabled=true;vm.runInContext('S=stateInput',context);assert.match(context.agentCard(a,0),/data-action="fund"/);
+ }
+});
 
 test('public strategy details render saved exit rules in both languages and keep unknown plans unknown',async()=>{
  for(const language of ['zh','en']){

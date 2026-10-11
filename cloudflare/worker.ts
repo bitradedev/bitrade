@@ -15,6 +15,7 @@ import { IOBudget } from './io-budget.mjs';
 import { runScheduledRound } from './scheduler.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
+import { resetShowcasePaper } from './showcase-reset.mjs';
 
 const SECURITY = {
   'X-Content-Type-Options': 'nosniff',
@@ -65,6 +66,7 @@ export class TradingPlatform extends DurableObject<any> {
     this.initializing = this.ctx
       .blockConcurrencyWhile(async () => {
         if (!this.env.BI_TRADE_VAULT_KEY) throw Error('Missing vault secret');
+        resetShowcasePaper(this.store, this.env.BI_TRADE_SHOWCASE_RESET_ID);
         const vault = new EncryptedVault(Buffer.from(this.env.BI_TRADE_VAULT_KEY, 'base64'));
         const source = new GmgnHTTP(
             this.env.GMGN_RELAY_URL ? this.env.GMGN_RELAY_TOKEN : this.env.GMGN_API_KEY,
@@ -193,6 +195,7 @@ export class TradingPlatform extends DurableObject<any> {
           platform: 'cloudflare',
           liveEnabled: false,
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
+          showcaseReset: this.store.get('cloud-settings', 'showcase-paper-reset'),
           marketConfigured: !!(
             this.env.GMGN_API_KEY ||
             this.market.publicData ||

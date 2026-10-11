@@ -58,6 +58,16 @@ test('Pair parsers reject wrong chains, quotes, DEXes and token identities',()=>
  const value={data:[{attributes:{address:POOL,name:'Meme / WBNB',base_token_price_usd:'1',reserve_in_usd:'20000',volume_usd:{h24:'5000'}},relationships:{base_token:{data:{id:'bsc_'+TOKEN}},quote_token:{data:{id:'bsc_'+WBNB}},dex:{data:{id:'pancakeswap_v2'}}}}]};
  assert.equal(geckoPair(value,TOKEN).pairAddress,POOL);assert.equal(geckoPair(value,OTHER),null);value.data[0].relationships.quote_token.data.id='bsc_'+OTHER;assert.equal(geckoPair(value,TOKEN),null);
 });
+test('Meme prices fail over from limited DEX Screener to GeckoTerminal and then verified chain reserves without retrying a cooling provider',async t=>{
+ const store=fixture(t),rpc=rpcFixture();let now=Date.now();const sent=[];
+ const value={data:[{attributes:{address:POOL,name:'Meme / WBNB',base_token_price_usd:'1',reserve_in_usd:'20000',volume_usd:{h24:'5000'}},relationships:{base_token:{data:{id:'bsc_'+TOKEN}},quote_token:{data:{id:'bsc_'+WBNB}},dex:{data:{id:'pancakeswap_v2'}}}}]};
+ const data=new MemeBscData(store,rpc,{now:()=>now,fetchImpl:async url=>{sent.push(String(url));return String(url).includes('dexscreener')?Response.json({}, {status:429,headers:{'Retry-After':'600'}}):Response.json(value);}});
+ const chart=await data.chart(TOKEN);assert.equal(chart.pair.chartSource,'GeckoTerminal');assert.equal(chart.at,now);assert.equal(sent.length,2);const dexDeadline=store.get('cloud-settings','public-budget-dex').retryAt;assert.equal(dexDeadline,now+605000);
+ now+=1000;const cached=await data.chart(TOKEN);assert.equal(sent.length,2);assert.equal(cached.at,chart.at);
+ now+=60001;store.put('cloud-settings',{id:'public-budget-gecko',retryAt:now+300000});store.put('cloud-settings',{id:'native-fx',source:'Chainlink BNB/USD · BSC',usd:750,at:now});
+ const block=rpc.block;rpc.block=async n=>({...await block(n),time:now});
+ const fallback=await data.chart(TOKEN);assert.equal(fallback.pair.chartSource,'BSC RPC');assert.equal(fallback.pair.priceUsd,'0.75');assert.equal(sent.length,2);assert.equal(store.get('cloud-settings','public-budget-dex').retryAt,dexDeadline);assert.equal(fallback.pair.volumeWindow.kind,'recent-swap-lower-bound');assert.equal(fallback.pair.volume.h24,0);
+});
 test('POST discovery shares cache and cooldown with all read-only sources without provider credentials',async t=>{
  const store=fixture(t),now=Date.now(),sent=[],body={type:'VOL',tag:['Meme']};const first=new MemeBscData(store,{}, {now:()=>now,fetchImpl:async(url,opts)=>{sent.push({url,opts});return Response.json({code:0,data:[fourRow()]});}}),second=new PublicBscData(store,{}, {now:()=>now,sharedReader:first,fetchImpl:()=>{throw Error('Shared request should coalesce');}});
  const [a,b]=await Promise.all([first.read('four','/public/token/search',body),second.read('four','/public/token/search',body)]);assert.deepEqual(a,b);assert.equal(sent.length,1);assert.equal(sent[0].opts.method,'POST');assert.deepEqual(JSON.parse(sent[0].opts.body),body);assert.equal(sent[0].opts.headers.Authorization,undefined);assert.equal(sent[0].opts.headers.Cookie,undefined);

@@ -539,10 +539,10 @@ export async function createPlatformCore(options) {
     if (write && !equal(req.headers['x-csrf-token'], s.csrf)) throw fail('账户请求校验失败', 403);
     return s;
   }
-  function cookie(res, token) {
+  function cookie(res, token, maxAge = 86400) {
     res.setHeader(
       'Set-Cookie',
-      `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${token ? 86400 : 0}${origin.startsWith('https:') ? '; Secure' : ''}`,
+      `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${token ? maxAge : 0}${origin.startsWith('https:') ? '; Secure' : ''}`,
     );
   }
   function send(res, status, value, type = 'application/json; charset=utf-8') {
@@ -837,12 +837,15 @@ export async function createPlatformCore(options) {
       if (req.headers.origin !== origin) throw fail('浏览器写入请求缺少本网站来源', 403);
       if (path === '/api/session') {
         fields(data, []);
-        limit(req, 'new-session', 10, 3600000);
         let s = auth.session(req);
         if (!s) {
+          limit(req, 'new-session', 10, 3600000);
           const issued = auth.guest();
-          cookie(res, issued.token);
+          cookie(res, issued.token, issued.maxAge);
           s = { owner: issued.owner, csrf: issued.csrf };
+        } else {
+          const renewed = auth.renewDemo(s);
+          if (renewed) cookie(res, renewed.token, renewed.maxAge);
         }
         return send(res, 200, state(s));
       }

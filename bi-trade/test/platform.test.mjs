@@ -55,6 +55,18 @@ async function fixture(t,options={}){if(options.showcase===true)options={...opti
  async function register(session,name='Agent'){const p=await call('/api/pair',{},session),r=await call('/api/agent',{action:'register_dot',arguments:{pairingCode:p.value.pairingCode,name}});assert.equal(r.status,200);return r.value.result;}
  const agentCall=(agent,action,args={})=>call('/api/agent',{action,arguments:args},null,{Authorization:'Bearer '+agent.agentToken});return {app,g,rpc,url,call,owner,register,agentCall};
 }
+test('Browser paper sessions last 30 days and renew the same identity without creating or changing an Agent',async t=>{
+ const f=await fixture(t),response=await fetch(f.url+'/api/session',{method:'POST',headers:{Origin:f.url,'Content-Type':'application/json'},body:'{}'}),state=await response.json(),cookie=response.headers.get('set-cookie');
+ assert.match(cookie,/HttpOnly; SameSite=Strict; Path=\/; Max-Age=2592000/);assert.equal(state.owner.kind,'demo');assert.equal(state.owner.address,null);assert.deepEqual(state.agents,[]);
+ const s={cookie:cookie.split(';')[0],state},agent=await f.register(s),session=f.app.auth.session({headers:{cookie:s.cookie}});
+ f.app.store.db.prepare('UPDATE credentials SET expires=? WHERE hash=?').run(Date.now()+1000,session.hash);
+ const renewed=await fetch(f.url+'/api/session',{method:'POST',headers:{Origin:f.url,'Content-Type':'application/json',Cookie:s.cookie},body:'{}'}),next=await renewed.json();
+ assert.equal(next.owner.id,state.owner.id);assert.equal(next.csrf,state.csrf);assert.equal(renewed.headers.get('set-cookie')?.split(';')[0],s.cookie);assert.equal(next.agents[0].id,agent.agentId);assert.equal(f.app.store.all('agents').length,1);
+ assert.ok(f.app.store.db.prepare('SELECT expires FROM credentials WHERE hash=?').get(session.hash).expires>Date.now()+29*86400000);assert.doesNotMatch(JSON.stringify(next),new RegExp(session.token));
+ f.app.store.db.prepare('UPDATE credentials SET expires=0 WHERE hash=?').run(session.hash);assert.equal(f.app.auth.renewDemo(session),null);assert.equal(f.app.auth.session({headers:{cookie:s.cookie}}),null);
+ const walletIssued=f.app.auth.issue({id:state.owner.id,kind:'wallet'});assert.equal(walletIssued.maxAge,86400);assert.equal(f.app.auth.renewDemo({owner:{kind:'wallet'}}),null);
+});
+
 test('pairing tickets and browser visits create no wallets; only runtime registration can claim one',async t=>{
  const f=await fixture(t),s=await f.owner(),p=await f.call('/api/pair',{},s),args={pairingCode:p.value.pairingCode,name:'Actual runtime'};
  assert.equal(f.app.store.all('agents').length,0);assert.equal(f.app.store.all('paper-accounts').length,0);
