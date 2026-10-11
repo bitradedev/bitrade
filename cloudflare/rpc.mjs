@@ -14,6 +14,16 @@ const ALLOWED = new Set([
   'eth_call',
   'eth_gasPrice',
 ]);
+// BNB Chain's public endpoint supports prices/blocks, but disables getLogs.
+const BACKUP_ALLOWED = new Set([
+  'eth_chainId',
+  'eth_blockNumber',
+  'eth_getBlockByNumber',
+  'eth_getBlockByHash',
+  'eth_getCode',
+  'eth_call',
+  'eth_gasPrice',
+]);
 export const hexBlock = (n) => {
   if (!Number.isSafeInteger(n) || n < 0) throw Error('Invalid block number');
   return '0x' + n.toString(16);
@@ -39,6 +49,7 @@ export class CloudRpc {
     {
       fetchImpl = (...args) => fetch(...args),
       receiptUrl = null,
+      backupUrl = null,
       store = null,
       now = Date.now,
     } = {},
@@ -58,8 +69,18 @@ export class CloudRpc {
       receiptUrl && publicEndpoint(receiptUrl) !== this.url
         ? new CloudRpc(receiptUrl, { fetchImpl, store, now })
         : null;
+    this.backupRpc =
+      backupUrl && publicEndpoint(backupUrl) !== this.url
+        ? this.receiptRpc?.url === publicEndpoint(backupUrl)
+          ? this.receiptRpc
+          : new CloudRpc(backupUrl, { fetchImpl, store, now })
+        : null;
+    this.activeSource = 'primary';
+    this.backupVerification = null;
+    this.backupAnchors = new Map();
+    this.backupAnchorChecks = new Map();
   }
-  status() {
+  sourceStatus() {
     return {
       retryAt: this.cooldown.retryAt ?? 0,
       limited: this.now() < (this.cooldown.retryAt ?? 0),
@@ -67,6 +88,22 @@ export class CloudRpc {
       lastFailure: this.cooldown.lastFailure ?? null,
       lastSuccessAt: this.cooldown.lastSuccessAt ?? null,
     };
+  }
+  status() {
+    const primary = this.sourceStatus();
+    if (!this.backupRpc) return primary;
+    const backup = this.backupRpc.sourceStatus();
+    return {
+      ...primary,
+      primary,
+      backup,
+      activeSource: this.activeSource,
+      limited: primary.limited && backup.limited,
+      retryAt: primary.limited && backup.limited ? Math.min(primary.retryAt, backup.retryAt) : 0,
+    };
+  }
+  statusFor(method) {
+    return BACKUP_ALLOWED.has(method) ? this.status() : this.sourceStatus();
   }
   #save(state) {
     this.cooldown = { ...state, id: this.budgetId };
@@ -83,7 +120,9 @@ export class CloudRpc {
         lastFailure: { at, status: 429, serverRetryAt: retry.at },
       });
     }
-    return Error(message + '：HTTP ' + response.status);
+    return Object.assign(Error(message + '：HTTP ' + response.status), {
+      rpcUnavailable: [403, 429, 500, 502, 503, 504].includes(response.status),
+    });
   }
   #recovered() {
     if (this.cooldown.retryAt > 0)
@@ -93,7 +132,8 @@ export class CloudRpc {
     const task = this.tail
       .catch(() => {})
       .then(() => {
-        if (this.status().limited) throw Error('BSC RPC 限频冷却中，稍后自动重试');
+        if (this.sourceStatus().limited)
+          throw Object.assign(Error('BSC RPC 限频冷却中，稍后自动重试'), { rpcUnavailable: true });
         return execute();
       });
     this.tail = task;
@@ -112,20 +152,73 @@ export class CloudRpc {
           body: JSON.stringify({ jsonrpc: '2.0', id: ++this.id, method, params }),
         });
       } catch (e) {
-        throw Error(
-          /too many subrequests|subrequest limit/i.test(String(e?.message))
-            ? '云端单轮请求上限已到，下一轮自动重试'
-            : 'BSC RPC 网络不可用',
+        const local =
+          e?.code === 'CF_SUBREQUEST_BUDGET' ||
+          /too many subrequests|subrequest limit/i.test(String(e?.message));
+        throw Object.assign(
+          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : 'BSC RPC 网络不可用'),
+          { rpcUnavailable: !local },
         );
       }
       if (!r.ok) throw this.#failed(r, 'BSC RPC 请求失败');
       const data = await r.json();
       if (data.error || !Object.hasOwn(data, 'result')) throw Error('BSC RPC 未返回有效读取结果');
       this.#recovered();
+      this.activeSource = 'primary';
       return data.result;
     };
     // Shared bounded concurrency avoids public RPC bursts from route discovery.
-    return this.#queued(execute);
+    return this.#queued(execute).catch((error) => {
+      if (!error.rpcUnavailable || !this.backupRpc || !BACKUP_ALLOWED.has(method)) throw error;
+      return this.#backupRequest(method, params);
+    });
+  }
+  async #backupRequest(method, params) {
+    const client = this.backupRpc;
+    if (!client.verified) {
+      if (!this.backupVerification)
+        this.backupVerification = client
+          .request('eth_chainId')
+          .then((chain) => {
+            if (BigInt(chain) !== 56n) throw Error('备用 RPC 并非 BSC 主网');
+            client.verified = true;
+          })
+          .finally(() => {
+            this.backupVerification = null;
+          });
+      await this.backupVerification;
+    }
+    const fixed = method === 'eth_call' || method === 'eth_getCode' ? params[1] : null;
+    if (typeof fixed === 'string' && /^0x[0-9a-f]+$/i.test(fixed)) {
+      const number = Number(BigInt(fixed)),
+        anchor = this.cache.get(number),
+        old = this.backupAnchors.get(number);
+      if (anchor && (!old || old.hash !== anchor.hash || this.now() - old.at >= 5000)) {
+        const key = number + ':' + anchor.hash;
+        let task = this.backupAnchorChecks.get(key);
+        if (!task) {
+          task = client
+            .block(number, true)
+            .then((secondary) => {
+              if (
+                secondary.number !== number ||
+                secondary.hash !== anchor.hash ||
+                this.cache.get(number)?.hash !== anchor.hash
+              )
+                throw Error('备用 RPC 与报价区块不一致，等待重新核价');
+              this.backupAnchors.set(number, { hash: anchor.hash, at: this.now() });
+              if (this.backupAnchors.size > 64)
+                this.backupAnchors.delete(this.backupAnchors.keys().next().value);
+            })
+            .finally(() => this.backupAnchorChecks.delete(key));
+          this.backupAnchorChecks.set(key, task);
+        }
+        await task;
+      }
+    }
+    const result = await client.request(method, params);
+    this.activeSource = 'backup';
+    return result;
   }
   async read(token, abi, fn, args = [], block, from) {
     const params = [

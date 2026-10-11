@@ -77,6 +77,7 @@ export class TradingPlatform extends DurableObject<any> {
           ),
           rpc = new CloudRpc(this.env.BSC_RPC_URL, {
             receiptUrl: this.env.BSC_RECEIPT_RPC_URL,
+            backupUrl: this.env.BSC_PRICE_BACKUP_RPC_URL ?? this.env.BSC_RECEIPT_RPC_URL,
             fetchImpl: this.io.fetch,
             store: this.store,
           }),
@@ -212,6 +213,9 @@ export class TradingPlatform extends DurableObject<any> {
           marketScope: this.market.marketScope(),
           rpcSources: [
             { source: 'BSC price RPC', ...this.market.rpc.status() },
+            ...(this.market.rpc.backupRpc
+              ? [{ source: 'BSC price backup RPC', ...this.market.rpc.backupRpc.status() }]
+              : []),
             ...(this.market.rpc.receiptRpc
               ? [{ source: 'BSC receipt RPC', ...this.market.rpc.receiptRpc.status() }]
               : []),

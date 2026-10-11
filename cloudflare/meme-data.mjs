@@ -244,7 +244,7 @@ export function transferClusters(logs, holders, token, fromBlock, toBlock) {
 export class MemeBscData extends PublicBscData {
   status() {
     const s = this.store.get('cloud-settings', 'meme-chain-index') ?? {},
-      rpc = this.rpc.status?.() ?? {};
+      rpc = this.rpc.statusFor?.('eth_getLogs') ?? this.rpc.status?.() ?? {};
     return [
       ...super.status(),
       {

@@ -6,6 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {keccak256,encodeAbiParameters,parseAbiParameters} from 'viem';
 import {CloudStore} from '../store.mjs';
 import {PublicBscData} from '../public-data.mjs';
+import {CloudRpc} from '../rpc.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 import {PaperDesk} from '../../bi-trade/lib/paper-desk.mjs';
 import {runScheduledRound} from '../scheduler.mjs';
@@ -22,6 +23,19 @@ const check=()=>({chain:{id:'56'},token:{address:TOKEN,symbol:'Meme',totalHolder
 const holders=()=>({totalSupply:'1000000',holders:[{address:POOL,balance:'500000',isContract:true},...Array.from({length:50},(_,i)=>({address:'0x'+(100+i).toString(16).padStart(40,'0'),balance:'10000',isContract:false}))]});
 function rpcFixture(){let head=100;const calls=[];return {chain:'bsc',calls,setHead:n=>head=n,knownBlock:()=>null,block:async n=>({number:n??head,time:Date.now(),hash:'canonical',transactions:[]}),request:async(method)=>{calls.push(method);if(method==='eth_getCode')return '0x6000';if(method==='eth_getLogs')return [];throw Error('Unexpected RPC');},read:async(_to,_abi,name,args)=>{calls.push(name);if(name==='getTokenInfo'){const f=Array(12).fill(0);f[0]=2;f[1]=MANAGER;f[2]='0x'+'00'.repeat(20);f[11]=true;return f;}if(name==='token0')return TOKEN;if(name==='token1')return WBNB;if(name==='factory')return FACTORY;if(name==='getPair')return POOL;if(name==='totalSupply')return 1000000n;if(name==='balanceOf')return args[0]===POOL?500000n:0n;if(name==='decimals')return 18;if(name==='getReserves')return [1000000n*10n**18n,1000n*10n**18n,0];throw Error('Unexpected '+name);}};}
 function sourceFixture(t){const store=fixture(t),rpc=rpcFixture(),data=new MemeBscData(store,rpc);store.put('cloud-meme-candidates',{id:TOKEN,address:TOKEN,symbol:'Meme',category:'meme',active:true,entryRank:0});data.chart=async()=>({pair:pair(),at:Date.now()});data.read=async(_service,path)=>({at:Date.now(),value:path.includes('TopHolders')?holders():check()});return {store,rpc,data};}
+
+test('A recovered price backup cannot mark unavailable launchpad events as recovered',async(t)=>{
+ const store=fixture(t),now=1000000,calls=[];
+ const rpc=new CloudRpc('https://primary.example',{store,now:()=>now,backupUrl:'https://backup.example',fetchImpl:async(url,options)=>{
+  const q=JSON.parse(options.body);calls.push([url,q.method]);if(url.includes('primary'))return Response.json({}, {status:429,headers:{'Retry-After':'60'}});
+  return Response.json({result:q.method==='eth_chainId'?'0x38':{number:'0x64',timestamp:'0x3e8',hash:'0x'+'11'.repeat(32),transactions:[]}});
+ }});
+ await rpc.block();assert.equal(rpc.status().limited,false);
+ const data=new MemeBscData(store,rpc,{now:()=>now}),events=data.status().find(s=>s.source==='BSC launchpad events');
+ assert.equal(events.limited,true);assert.equal(events.retryAt,1065000);
+ assert.deepEqual(await data.scanMigrations(),[]);assert.equal(calls.filter(([u])=>u.includes('primary')).length,1);assert.ok(!calls.some(([u,m])=>u.includes('backup')&&m==='eth_getLogs'));
+ assert.equal(store.get('cloud-settings','meme-chain-index').lastSuccessAt,undefined);
+});
 
 test('Four public candidates use explicit BSC and Meme evidence, not quote ticker or unrelated assets',()=>{
  const rows=[fourRow(),fourRow(),...['chain','tag','status','quote','tax','address'].map(k=>{const r=fourRow(OTHER);if(k==='chain')r.networkCode=1;if(k==='tag')r.tag='DeFi';if(k==='status')r.status='CREATE';if(k==='quote')r.symbol='USD1';if(k==='tax')r.taxFee='.01';if(k==='address')r.tokenAddress='invalid';return r;}),fourRow('0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82')];
