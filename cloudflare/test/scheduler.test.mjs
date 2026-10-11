@@ -4,6 +4,21 @@ import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 
+test('repeated Meme risk continuations cannot starve a held stop that has never failed',async()=>{
+ const token='0x'+'11'.repeat(20),rows=new Map(),calls=[];let queued=false,watched=0,matched=0;
+ const io=new IOBudget(45,async url=>{calls.push(url);return Response.json({});});
+ const store={all:kind=>kind==='paper-lots'?[{token,remainingRaw:'1'}]:[],get:(kind,id)=>rows.get(kind+id),put:(kind,v)=>rows.set(kind+v.id,structuredClone(v)),prune(){}};
+ store.put('cloud-settings',{id:'risk-priority-round',tokens:[token]});
+ const app={paper:{orders:()=>queued?[{status:'queued'}]:[],async tick(){if(queued){matched++;queued=false;}}},showcase:{exitCandidates:()=>queued?[]:[{id:'showcase-trend'}],async watchExits(){watched++;await io.fetch('https://exit.example');queued=true;},freshMarkets:()=>[{address:token,updatedAt:Date.now()}],tick(){throw Error('A held stop must not wait for model or risk availability');}}};
+ let host={io,riskRequestReserve:32,store,app,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},market:{isEntryCandidate:()=>true,marketScope:()=>({kind:'meme'}),async updateHead(){await io.fetch('https://head.example');},async fx(){await io.fetch('https://fx.example');},async refresh(){for(let i=0;i<36;i++)await io.fetch('https://market.example/'+i);},async pulse(){}},risk:{async tick(){for(let i=0;i<20;i++)await io.fetch('https://risk.example/'+i);}}};
+ const round=()=>io.run('alarm',()=>runScheduledRound(host));
+ await round();assert.equal(watched,1,'An unfailed held exit is checked before repeated risk continuations');assert.equal(queued,true);assert.equal(io.lastAlarm.used,3);assert.equal(rows.get('cloud-settingsscheduler').phase,'exits');assert.deepEqual(rows.get('cloud-settingsrisk-priority-round').tokens,[token]);
+ // A reconstructed scheduler still matches the proposed stop before any risk work.
+ host={...host,working:null};await round();assert.equal(matched,1);assert.equal(watched,1);assert.equal(rows.get('cloud-settingsscheduler').phase,'matching');assert.equal(io.lastAlarm.used,2);
+ await round();assert.equal(watched,1,'The persisted 30-second exit interval is respected');assert.equal(rows.get('cloud-settingsscheduler').phase,'risk');assert.equal(io.lastAlarm.used,22);
+ store.put('cloud-settings',{id:'exit-priority-round',at:Date.now()-30001});store.put('cloud-settings',{id:'risk-priority-round',tokens:[token]});await round();assert.equal(watched,2);assert.equal(queued,true);assert.equal(io.lastAlarm.used,3);assert.deepEqual(calls.slice(-3),['https://head.example','https://fx.example','https://exit.example']);
+});
+
 test('A costly Meme refresh defers risk to its own persisted round without poisoning evidence; queued matching still comes first',async()=>{
  const token='0x'+'11'.repeat(20),at=Date.now(),rows=new Map();let collected=0,refreshes=0,decisions=0,queued=false,matched=0,heavy=true;
  let io=new IOBudget(45,async()=>Response.json({}));
@@ -86,9 +101,17 @@ test('a stale held Meme gets risk collection even when no market is fresh, witho
 test('failed held exits get their own bounded retry round before heavy collection, while queued matching stays first',async()=>{
  const calls=[],rows=new Map(),io=new IOBudget(4,async url=>{calls.push(url);return Response.json({});});let queued=false,watched=0;
  const host={io,ctx:{storage:{setAlarm:async()=>{}},waitUntil(){}},store:{all:kind=>kind==='showcase-status'?[{id:'showcase-trend',exitFailures:[{token:'held'}]}]:[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,v),prune(){}},arm:async()=>{}};
- const app={paper:{orders:()=>queued?[{status:'queued'}]:[],tick:async()=>{queued=false;}},showcase:{watchExits:async options=>{assert.equal(options.onlyFailures,true);watched++;await io.fetch('https://exit.example');},freshMarkets:()=>[],tick:()=>{throw Error('Do not run a model in an exit retry round');}}};host.initialize=async()=>app;host.market={updateHead:async()=>{await io.fetch('https://head.example');},fx:async()=>{await io.fetch('https://fx.example');},refresh:async()=>{throw Error('Do not consume the exit budget on discovery');}};host.risk={tick:()=>{throw Error('Do not collect holders in an exit retry round');}};
+ const app={paper:{orders:()=>queued?[{status:'queued'}]:[],tick:async()=>{queued=false;}},showcase:{watchExits:async options=>{assert.equal(options.onlyFailures,false,'A failed route must not exclude other held stops');watched++;await io.fetch('https://exit.example');},freshMarkets:()=>[],tick:()=>{throw Error('Do not run a model in an exit retry round');}}};host.initialize=async()=>app;host.market={updateHead:async()=>{await io.fetch('https://head.example');},fx:async()=>{await io.fetch('https://fx.example');},refresh:async()=>{throw Error('Do not consume the exit budget on discovery');}};host.risk={tick:()=>{throw Error('Do not collect holders in an exit retry round');}};
  await io.run('alarm',()=>runScheduledRound(host));assert.equal(watched,1);assert.equal(rows.get('cloud-settingsscheduler').phase,'exits');assert.equal(io.lastAlarm.used,3);assert.deepEqual(calls,['https://head.example','https://fx.example','https://exit.example']);
  queued=true;await io.run('alarm',()=>runScheduledRound(host));assert.equal(queued,false);assert.equal(watched,1);assert.equal(rows.get('cloud-settingsscheduler').phase,'matching');assert.equal(io.lastAlarm.used,2);
+});
+
+test('exit quote budget exhaustion remains visible and leaves pending risk work for the next round',async()=>{
+ const rows=new Map(),token='0x'+'11'.repeat(20),io=new IOBudget(3,async()=>Response.json({}));
+ const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,v)};store.put('cloud-settings',{id:'risk-priority-round',tokens:[token]});
+ const app={paper:{orders:()=>[]},showcase:{exitCandidates:()=>[{id:'showcase-trend'}],async watchExits(){try{await io.fetch('https://exit.example/1');await io.fetch('https://exit.example/2');}catch(e){assert.equal(e.code,'CF_SUBREQUEST_BUDGET');}}}};
+ const host={io,store,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},market:{async updateHead(){await io.fetch('https://head.example');},async fx(){await io.fetch('https://fx.example');}}};
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(io.lastAlarm.used,3);assert.equal(io.lastAlarm.exhausted,true);assert.equal(store.get('cloud-settings','scheduler').phase,'exits');assert.equal(store.get('cloud-settings','scheduler').ok,false);assert.match(store.get('cloud-settings','scheduler').reason,/预算/);assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[token]);
 });
 
 test('a delayed model cannot hold the next market, exit or matching alarm; background I/O stays in its original budget',async()=>{

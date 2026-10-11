@@ -220,21 +220,25 @@ export class ShowcaseAgents {
       this.checkingExits.delete(a.id);
     }
   }
+  exitCandidates({ onlyFailures = false } = {}) {
+    if (this.stopped) return [];
+    return SHOWCASE_PROFILES.map((p) => this.store.get('agents', p.id)).filter(
+      (a) =>
+        a &&
+        !a.closedAt &&
+        !a.paused &&
+        a.mode === 'paper' &&
+        !this.paper.view(a.id).pending &&
+        this.paper.lots(a.id).length &&
+        (!onlyFailures || this.store.get('showcase-status', a.id)?.exitFailures?.length) &&
+        !this.checkingExits.has(a.id) &&
+        this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000,
+    );
+  }
   watchExits({ onlyFailures = false } = {}) {
     if (this.watching || this.stopped) return this.watching;
     this.watching = (async () => {
-      const eligible = SHOWCASE_PROFILES.map((p) => this.store.get('agents', p.id)).filter(
-        (a) =>
-          a &&
-          !a.closedAt &&
-          !a.paused &&
-          a.mode === 'paper' &&
-          !this.paper.view(a.id).pending &&
-          this.paper.lots(a.id).length &&
-          (!onlyFailures || this.store.get('showcase-status', a.id)?.exitFailures?.length) &&
-          !this.checkingExits.has(a.id) &&
-          this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000,
-      );
+      const eligible = this.exitCandidates({ onlyFailures });
       if (!eligible.length) return;
       const a = eligible[this.watchCursor++ % eligible.length];
       try {

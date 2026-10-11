@@ -9,6 +9,8 @@ import {LiveDesk,recordReceipt} from '../lib/live-desk.mjs';
 import {v2Abi,erc20Abi,ROUTER_V2,WBNB} from '../lib/bsc-rpc.mjs';
 import {SHOWCASE_PROFILES} from '../lib/showcase-agents.mjs';
 import {publicAgent} from '../lib/public-agents.mjs';
+import {runScheduledRound} from '../../cloudflare/scheduler.mjs';
+import {IOBudget} from '../../cloudflare/io-budget.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
 test('Market outage is shown as waiting with retry time, spends no AI calls and resumes decisions on recovery',async t=>{
@@ -312,6 +314,21 @@ test('a pending model cannot block other exits or buy back a position already cl
  assert.match(f.app.store.get('showcase-status',agents[0].id).reason,/旧提案已取消/);
  for(const a of agents){assert.equal(f.app.paper.check(a.id),true);assert.ok(f.app.paper.fills(a.id).find(f=>f.side==='sell').netUsd<0);}
  assert.equal(f.app.live.orders().length,0);
+});
+
+test('a real paper stop is checked and matched before a pending Meme risk continuation, without model calls',async t=>{
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='risk-wait-stop';
+ const entry=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});entry.dueAt=Date.now()-1;f.app.store.put('paper-orders',entry);f.g.advance();await f.app.paper.tick();
+ f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ f.app.store.put('cloud-settings',{id:'risk-priority-round',tokens:[TOKEN]});
+ const calls=[],io=new IOBudget(45,async url=>{calls.push(url);return Response.json({});});
+ const host={io,store:f.app.store,app:f.app,initialize:async()=>f.app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},risk:{tick(){throw Error('Stop checks and matching must precede pending risk work');}},market:{async updateHead(){await io.fetch('https://head.example');f.g.advance();},async fx(){await io.fetch('https://fx.example');},refresh(){throw Error('Do not spend exit budget on discovery');}}};
+ f.g.fx=940;f.g.advance();f.app.showcase.exitChecks.clear();
+ await io.run('alarm',()=>runScheduledRound(host));
+ const sale=f.app.paper.orders(a.id).find(o=>o.side==='sell');assert.ok(sale);assert.equal(sale.status,'queued');assert.match(sale.reason,/止损/);assert.equal(f.app.paper.fills(a.id).length,1);assert.equal(f.app.store.get('cloud-settings','scheduler').phase,'exits');
+ sale.dueAt=Date.now()-1;f.app.store.put('paper-orders',sale);await io.run('alarm',()=>runScheduledRound(host));
+ assert.equal(f.app.store.get('cloud-settings','scheduler').phase,'matching');assert.equal(f.app.paper.fills(a.id).length,2);assert.ok(f.app.paper.fills(a.id).find(x=>x.side==='sell').netUsd<0);assert.equal(f.app.paper.lots(a.id).length,0);assert.equal(f.app.paper.check(a.id),true);
+ assert.deepEqual(f.app.store.get('cloud-settings','risk-priority-round').tokens,[TOKEN]);assert.equal(f.app.store.all('ai-usage').length,0);assert.equal(f.app.live.orders().length,0);assert.deepEqual(calls,['https://head.example','https://fx.example','https://head.example','https://fx.example']);
 });
 
 test('an account change during an exit quote discards the entire old position snapshot',async t=>{

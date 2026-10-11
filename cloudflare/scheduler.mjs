@@ -28,17 +28,27 @@ export async function runScheduledRound(host) {
         return;
       }
       const failedExits = host.store.all('showcase-status').some((s) => s.exitFailures?.length),
+        dueExits = app.showcase.exitCandidates?.().length,
         retry = host.store.get?.('cloud-settings', 'exit-priority-round');
-      if (failedExits && Date.now() - (retry?.at ?? 0) >= 30000) {
+      if (
+        !app.showcase.watching &&
+        (failedExits || dueExits) &&
+        Date.now() - (retry?.at ?? 0) >= 30000
+      ) {
         host.store.put('cloud-settings', { id: 'exit-priority-round', at: Date.now() });
         await host.market.updateHead();
         await host.market.fx();
-        await app.showcase.watchExits({ onlyFailures: true });
+        // Rotate all due held accounts, including those that have never failed.
+        // Repeated risk continuations must not postpone their first stop check.
+        await app.showcase.watchExits({ onlyFailures: false });
         host.store.put('cloud-settings', {
           id: 'scheduler',
           at: Date.now(),
-          ok: true,
+          ok: !host.io.exhausted,
           phase: 'exits',
+          ...(host.io.exhausted
+            ? { reason: '本轮退出核价预算已用完，持仓将在后续轮次继续核对' }
+            : {}),
         });
         return;
       }
