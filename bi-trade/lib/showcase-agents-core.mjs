@@ -206,7 +206,11 @@ export class ShowcaseAgents {
   }
   async checkExits(a) {
     if (this.checkingExits.has(a.id)) return null;
-    if (this.now() - (this.exitChecks.get(a.id) ?? 0) < 30000) return false;
+    if (this.now() - (this.exitChecks.get(a.id) ?? 0) < 30000) {
+      if (this.store.get('showcase-status', a.id)?.exitFailures?.length)
+        throw fail('部分持仓退出报价暂不可用；其他持仓已继续核对，稍后自动重试。', 503);
+      return false;
+    }
     this.exitChecks.set(a.id, this.now());
     this.checkingExits.add(a.id);
     try {

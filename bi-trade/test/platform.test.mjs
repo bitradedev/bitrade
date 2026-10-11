@@ -347,6 +347,21 @@ for(const [trigger,fx,maxHoldMinutes] of [['止盈',1200,60],['止损',940,60],[
  const detail=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(detail.exitPlans[0].token,TOKEN);assert.equal(detail.runtime.exitFailures[0].token,TOKEN);assert.equal(detail.runtime.exitFailures.length,1);assert.doesNotMatch(JSON.stringify(detail.runtime),/isolated fixture|no verified exit route/);
 });
 
+test('a failed exit quote keeps AI deferred throughout the retry interval and resumes only after verification',async t=>{
+ let calls=0,now=Date.now();
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'重新核价后观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='retry-window-entry';
+ for(const p of SHOWCASE_PROFILES.slice(1))f.app.store.put('agents',{...f.app.store.get('agents',p.id),paused:true});
+ const o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+ f.app.store.put('showcase-exits',{id,agentId:a.id,token:TOKEN,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ f.app.showcase.now=()=>now;const inventory=f.app.paper.lots(a.id),account=f.app.paper.account(a.id);
+ f.g.failure=Error('isolated unavailable exit');await f.app.showcase.run();assert.equal(calls,0);
+ const quotes=f.g.calls;f.g.failure=null;now+=1000;f.g.advance();await f.app.showcase.run();
+ assert.equal(calls,0,'AI must wait for the failed position to be verified again');assert.equal(f.g.calls,quotes,'retry waiting must not increase provider requests');
+ assert.equal(f.app.store.get('showcase-status',a.id).state,'observing');assert.equal(f.app.store.get('showcase-status',a.id).exitFailures.length,1);
+ now+=30000;f.g.advance();await f.app.showcase.run();assert.equal(calls,1);assert.deepEqual(f.app.store.get('showcase-status',a.id).exitFailures,[]);
+ assert.deepEqual(f.app.paper.lots(a.id),inventory);assert.deepEqual(f.app.paper.account(a.id),account);assert.equal(f.app.paper.fills(a.id).length,1);assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);
+});
+
 test('unavailable exits keep all inventory, defer AI, and clear retry notices after real quotes recover',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'隔离测试恢复后观察',exit:{takeProfitPct:30,stopLossPct:15,maxHoldMinutes:1440}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
  for(const p of SHOWCASE_PROFILES.slice(1))f.app.store.put('agents',{...f.app.store.get('agents',p.id),paused:true});
