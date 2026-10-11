@@ -114,6 +114,7 @@ export class ShowcaseAgents {
       .filter(
         (m) =>
           m.chain === 'bsc' &&
+          (this.gateway.isEntryCandidate?.(m.address) ?? true) &&
           m.quality === 'verified' &&
           this.now() - m.updatedAt >= 0 &&
           this.now() - m.updatedAt <= 15000 &&

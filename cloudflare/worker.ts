@@ -85,6 +85,7 @@ export class TradingPlatform extends DurableObject<any> {
             rpc,
             gmgn: source,
             publicData,
+            memeOnly: this.env.BI_TRADE_MEME_ONLY === 'true',
             onGap: () => this.app?.paper.gap(),
           });
         const risk = new TokenRiskGuard(this.store, {

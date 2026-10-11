@@ -1,4 +1,7 @@
 window.BI_UI_EN = {
+"仅选择 BSC Meme 新开仓，核对交易池、可卖出性和已知风险。未知资料单独标明，已有持仓继续按原规则退出。":"New entries are limited to BSC memes after checking pools, sellability and known risks. Missing evidence is disclosed; existing positions keep their saved exit rules.",
+"当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。":"New entries are limited to BSC memes. Existing positions continue exit verification.",
+"正在核对 BSC Meme 候选、交易池和风险资料，合格后继续模拟评估。":"Verifying BSC meme candidates, pools and risk evidence. Paper evaluation resumes when the checks pass.",
 "AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。":"The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.",
 "持仓在核价期间改变，稍后重新检查":"Positions changed during quote verification. They will be checked again.",
 "退出报价待重试":"Exit quote awaiting retry",

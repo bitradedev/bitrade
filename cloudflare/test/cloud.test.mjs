@@ -33,6 +33,13 @@ test('Cloud wallet binding rolls back ownership and old-session revocation if is
  assert.deepEqual(store.get('paper-fills','retained-history'),{id:'retained-history',agentId:'retained-agent',usd:20,netUsd:-1});
 });
 test('Cloud eviction preserves queued orders, cancels interrupted quotes and never fabricates a fill',t=>{const {store}=fixture(t);store.put('paper-orders',{id:'queued',status:'queued'});store.put('paper-orders',{id:'quoting',status:'quoting'});new PaperDesk(store,{},{preserveQueued:true});assert.equal(store.get('paper-orders','queued').status,'queued');assert.equal(store.get('paper-orders','quoting').status,'cancelled');assert.equal(store.all('paper-fills').length,0);});
+test('Meme-only scope excludes mature assets from new entries while retaining them for exits',t=>{
+ const {store}=fixture(t),market=new CloudMarket(store,{memeOnly:true,publicData:{candidates:()=>ESTABLISHED_ASSETS,supports:()=>true},gmgn:{status:()=>({limited:true})}});
+ const old=ESTABLISHED_ASSETS[0];market.catalog.set(old.address,{address:old.address,category:'meme'});market.catalog.set(TOKEN,{address:TOKEN,category:'meme'});
+ assert.equal(market.marketScope().kind,'meme');assert.equal(market.isEntryCandidate(old.address),false);assert.throws(()=>market.assertEntry(old.address),/仅允许.*Meme/);
+ assert.equal(market.getMarket('bsc',old.address).address,old.address);assert.equal(market.isEntryCandidate(TOKEN),true);assert.doesNotThrow(()=>market.assertEntry(TOKEN));
+});
+
 test('Private migration merges without deleting new users or sessions and refuses to overwrite cloud fills',t=>{const {store}=fixture(t),vault=new EncryptedVault(vaultKey),id='showcase-trend',agent={id,ownerId:'platform-showcase',source:'builtin',...vault.create(id)};
  store.put('owners',{id:'new-cloud-owner'});store.db.prepare('INSERT INTO credentials VALUES(?,?,?,?,?,?)').run('keep','owner','new-cloud-owner',null,Date.now()+10000,'keep-csrf');store.put('agents',{id:'new-user-agent',ownerId:'new-cloud-owner'});
  const snapshot={version:1,entities:[{kind:'agents',id,payload:JSON.stringify(agent)}],intents:[],audit:[]};mergeLedger(store,vault,snapshot,'test');assert.equal(store.get('agents','new-user-agent').ownerId,'new-cloud-owner');assert.equal(store.db.prepare('SELECT hash FROM credentials').get().hash,'keep');assert.equal(store.get('agents',id).address,agent.address);

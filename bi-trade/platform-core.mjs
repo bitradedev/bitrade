@@ -122,7 +122,8 @@ export async function createPlatformCore(options) {
   paper = new PaperDesk(store, gateway, {
     preserveQueued: options.preserveQueued === true,
     buyGuard: async (a, token, q) => {
-      if (a.source === 'builtin' && riskGuard)
+      await gateway.assertEntry?.(token);
+      if (riskGuard && (a.source === 'builtin' || gateway.marketScope?.().kind === 'meme'))
         await riskGuard.assertBuy(token, {
           sizeUsd: q.nativeUsd ? (Number(BigInt(q.inputRaw)) / 1e18) * q.nativeUsd : null,
           marketPrice: q.marketPrice,

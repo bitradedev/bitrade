@@ -17,6 +17,7 @@ import {
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP, unwrap } from './gmgn.mjs';
 import { NativePrice } from './native-price.mjs';
+import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 const finite = (x: any) =>
   x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x)) ? Number(x) : null;
 const raw = (x: any) => {
@@ -43,6 +44,7 @@ export class CloudMarket {
   head: any = { chain: 'bsc', connected: false, head: 0, headAt: 0, chainTime: 0 };
   refreshTask: any = null;
   discoveryAt = 0;
+  memeOnly = false;
   cursor = 0;
   pulseCursor = 0;
   persistAt = new Map<string, number>();
@@ -53,10 +55,11 @@ export class CloudMarket {
       rpc = new CloudRpc(),
       gmgn = new GmgnHTTP(null),
       publicData = null,
+      memeOnly = false,
       onGap = () => {},
     }: any = {},
   ) {
-    Object.assign(this, { store, rpc, gmgn, publicData, gap: onGap });
+    Object.assign(this, { store, rpc, gmgn, publicData, memeOnly, gap: onGap });
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
@@ -80,6 +83,7 @@ export class CloudMarket {
     return [...this.catalog.values()];
   }
   marketScope() {
+    if (this.memeOnly) return { kind: 'meme', tokens: [], policy: 'bsc-meme-paper-v1' };
     return this.publicData
       ? {
           kind: 'established',
@@ -93,6 +97,16 @@ export class CloudMarket {
   }
   getMarket(chain: string, token: string) {
     return chain === 'bsc' ? this.catalog.get(token.toLowerCase()) : null;
+  }
+  isEntryCandidate(token: string) {
+    return (
+      !this.memeOnly ||
+      (!establishedAsset(token) && this.catalog.get(token.toLowerCase())?.category === 'meme')
+    );
+  }
+  assertEntry(token: string) {
+    if (!this.isEntryCandidate(token))
+      throw Error('当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。');
   }
   async updateHead() {
     const b = await this.rpc.block();
@@ -286,7 +300,7 @@ export class CloudMarket {
   async discover() {
     // Keep a narrow, independently verified mature-asset universe available
     // even while the meme-token provider is cooling down.
-    for (const item of this.publicData?.candidates() ?? []) {
+    for (const item of (this.memeOnly ? [] : this.publicData?.candidates()) ?? []) {
       if (!this.catalog.has(item.address)) {
         const m = {
           id: item.address,
@@ -315,6 +329,7 @@ export class CloudMarket {
           !/flap|four[._-]?meme|pool_pancake/i.test(item.launchpad_platform ?? '')
         )
           continue;
+        if (this.memeOnly && !/flap|four[._-]?meme/i.test(item.launchpad_platform ?? '')) continue;
         const token = item.address.toLowerCase();
         if (!this.catalog.has(token)) {
           const m = {
@@ -322,6 +337,7 @@ export class CloudMarket {
             address: token,
             chain: 'bsc',
             symbol: String(item.symbol ?? token.slice(0, 10)).slice(0, 60),
+            category: 'meme',
             quality: 'unavailable',
             updatedAt: 0,
             discoveredAt: Date.now(),
@@ -375,7 +391,7 @@ export class CloudMarket {
       }
       if (this.gmgn.status?.().limited && !this.publicData) return;
       try {
-        const candidates = [...this.catalog.keys()],
+        const candidates = [...this.catalog.keys()].filter((token) => this.isEntryCandidate(token)),
           pool = [...new Set([...tokens, ...candidates])],
           selected = [
             ...new Set(
@@ -398,6 +414,7 @@ export class CloudMarket {
     return this.refreshTask;
   }
   marketReason() {
+    if (this.memeOnly) return '正在核对 BSC Meme 候选、交易池和风险资料，合格后继续模拟评估。';
     if (this.publicData) return '正在核对成熟外盘的独立行情与买卖检测，取得有效数据后自动继续。';
     return this.gmgn.status?.().limited
       ? '行情服务限频冷却中，候选币与风控资料暂不可用；恢复后自动继续。'
