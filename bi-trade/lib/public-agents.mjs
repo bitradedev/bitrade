@@ -1,6 +1,7 @@
 import { fail } from './database-core.mjs';
 import { avatarFor } from './agent-avatars.mjs';
 import { showcasePositions } from './showcase-exits.mjs';
+import { showcaseAttempt } from './showcase-attempt.mjs';
 
 export function strategyDto(agent) {
   const s = agent.strategy ?? {};
@@ -113,6 +114,7 @@ export function publicAgent(store, paper, live, agent) {
                 sizeUsd: runtime.decision.sizeUsd,
               }
             : null,
+          lastExecution: showcaseAttempt(store, agent),
         }
       : null,
   };

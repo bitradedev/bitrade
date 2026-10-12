@@ -1,4 +1,5 @@
 import { RISK_POLICY } from '../bi-trade/lib/token-risk-core.mjs';
+import { runProposalRound } from './proposal-round.mjs';
 function riskDue(host, token) {
   const row = host.store.get?.('token-risk-reports', token);
   return (
@@ -50,6 +51,11 @@ export async function runScheduledRound(host) {
             ? { reason: '本轮退出核价预算已用完，持仓将在后续轮次继续核对' }
             : {}),
         });
+        return;
+      }
+      const proposal = app.showcase.pendingProposal?.();
+      if (proposal && !host.decisionTask) {
+        await runProposalRound(host, app, proposal);
         return;
       }
       const tokens = [

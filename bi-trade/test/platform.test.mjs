@@ -331,6 +331,24 @@ test('a real paper stop is checked and matched before a pending Meme risk contin
  assert.deepEqual(f.app.store.get('cloud-settings','risk-priority-round').tokens,[TOKEN]);assert.equal(f.app.store.all('ai-usage').length,0);assert.equal(f.app.live.orders().length,0);assert.deepEqual(calls,['https://head.example','https://fx.example','https://head.example','https://fx.example']);
 });
 
+test('deferred AI proposals persist without an order, use current guarded execution once, and expose safe execution results',async t=>{
+ let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,deferExecution:true,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'buy',token:TOKEN,sizeUsd:50,reason:'隔离测试：先核查再执行',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+ await f.app.showcase.run();const proposal=f.app.showcase.pendingProposal();assert.equal(proposal.agentId,a.id);assert.equal(f.app.paper.orders().length,0);assert.equal(f.app.paper.fills().length,0);assert.equal(calls,1);
+ const pending=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(pending.runtime.state,'waiting-execution');assert.equal(pending.runtime.lastExecution.status,'pending');assert.doesNotMatch(JSON.stringify(pending),/basis|requestKey|ownerId|encryptedKey/);
+ await f.app.showcase.executeProposal(proposal);const order=f.app.paper.orders(a.id)[0];assert.equal(order.status,'queued');assert.deepEqual(f.app.store.get('showcase-exits',order.id).stopLossPct,5);await f.app.showcase.executeProposal(proposal);assert.equal(f.app.paper.orders(a.id).length,1);assert.equal(f.app.paper.fills(a.id).length,0);
+ order.dueAt=Date.now()-1;f.app.store.put('paper-orders',order);f.g.advance();await f.app.paper.tick();assert.equal(f.app.paper.fills(a.id).length,1);assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);assert.equal(calls,1);
+ const finished=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(finished.runtime.lastExecution.status,'filled');
+ f.app.store.put('requests',{id:'old-failed-attempt',agentId:a.id,createdAt:Date.now()+1,action:'buy_token',status:'failed',error:'CF_SUBREQUEST_BUDGET private-provider-secret'});const failed=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(failed.runtime.lastExecution.code,'REQUEST_BUDGET');assert.doesNotMatch(JSON.stringify(failed),/private-provider-secret|CF_SUBREQUEST_BUDGET/);
+});
+
+test('deferred proposals cannot execute after pause, expiry or account change',async t=>{
+ for(const kind of ['pause','expiry','balance']){
+  const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,deferExecution:true,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){return {action:'buy',token:TOKEN,sizeUsd:50,reason:'隔离测试：旧提案不得执行',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+  await f.app.showcase.run();const p=f.app.showcase.pendingProposal();if(kind==='pause')f.app.store.put('agents',{...a,paused:true});else if(kind==='expiry'){p.expiresAt=Date.now()-1;f.app.store.put('showcase-proposals',p);}else {const balance=f.app.paper.account(a.id);f.app.store.put('paper-accounts',{...balance,nativeRaw:String(BigInt(balance.nativeRaw)+1n)});}
+  await f.app.showcase.executeProposal(p);assert.equal(f.app.paper.orders(a.id).length,0);assert.equal(f.app.paper.fills(a.id).length,0);assert.equal(f.app.showcase.pendingProposal(),null);assert.equal(f.app.live.orders().length,0);
+ }
+});
+
 test('an account change during an exit quote discards the entire old position snapshot',async t=>{
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
  for(const [id,token] of [['snapshot-first',TOKEN],['snapshot-second',other]]){

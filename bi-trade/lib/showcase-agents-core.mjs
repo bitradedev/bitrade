@@ -47,6 +47,7 @@ export class ShowcaseAgents {
     riskGuard,
     configReader,
     maxAgentsPerRun = SHOWCASE_PROFILES.length,
+    deferExecution = false,
     now = () => Date.now(),
   }) {
     Object.assign(this, { store, vault, paper, gateway, execute, planner, riskGuard, now });
@@ -55,6 +56,7 @@ export class ShowcaseAgents {
     this.task = null;
     this.controller = null;
     this.maxAgentsPerRun = Math.max(1, Math.min(SHOWCASE_PROFILES.length, maxAgentsPerRun));
+    this.deferExecution = deferExecution;
     this.sampleAt = 0;
     this.tickAt = 0;
     this.exitChecks = new Map();
@@ -301,6 +303,89 @@ export class ShowcaseAgents {
       throw fail('部分持仓退出报价暂不可用；其他持仓已继续核对，稍后自动重试。', 503);
     return false;
   }
+  pendingProposal() {
+    return (
+      SHOWCASE_PROFILES.map((p) => this.store.get('showcase-proposals', p.id))
+        .filter((p) => p?.state === 'pending')
+        .sort((a, b) => a.createdAt - b.createdAt)[0] ?? null
+    );
+  }
+  validateProposal(proposal) {
+    const saved = this.store.get('showcase-proposals', proposal.id),
+      agent = this.store.get('agents', proposal.agentId);
+    if (saved?.state !== 'pending' || saved.createdAt !== proposal.createdAt) return false;
+    let reason = null;
+    if (this.now() >= proposal.expiresAt) reason = 'AI 提案已过期，等待重新评估。';
+    else if (!agent || agent.closedAt || agent.paused || agent.mode !== 'paper')
+      reason = '账户已暂停或状态变化，AI 提案已取消。';
+    else if (this.accountBasis(agent.id) !== proposal.basis)
+      reason = 'AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。';
+    if (!reason) return true;
+    this.store.put('showcase-proposals', {
+      ...saved,
+      state: 'cancelled',
+      reason,
+      completedAt: this.now(),
+    });
+    this.status(proposal.agentId, { state: 'observing', reason });
+    return false;
+  }
+  async submitDecision(agent, decision, requestKey) {
+    let order;
+    if (decision.action === 'buy') {
+      const fx = this.paper.fx();
+      if (!fx) throw fail('决策后 BNB 美元行情已过期');
+      const size = String(BigInt(Math.floor((decision.sizeUsd / fx) * 1e18)));
+      order = await this.execute(agent, 'buy_token', {
+        token: decision.token,
+        amount: size,
+        requestKey,
+        reason: decision.reason,
+      });
+      if (!['queued', 'quoting', 'filled', 'partial'].includes(order.status))
+        throw fail('原模拟下单已失败或取消，等待重新评估。');
+      this.store.put('showcase-exits', {
+        id: order.id,
+        agentId: agent.id,
+        token: decision.token,
+        ...decision.exit,
+        orderId: order.id,
+      });
+    } else order = await this.sell(agent, decision.token, decision.reason, requestKey);
+    this.status(agent.id, { state: 'queued', reason: decision.reason, orderId: order.id });
+    return order;
+  }
+  async executeProposal(proposal) {
+    if (!this.validateProposal(proposal)) return;
+    const agent = this.store.get('agents', proposal.agentId);
+    try {
+      const order = await this.submitDecision(agent, proposal.decision, proposal.requestKey);
+      this.store.put('showcase-proposals', {
+        ...proposal,
+        state: 'submitted',
+        orderId: order.id,
+        completedAt: this.now(),
+      });
+    } catch (e) {
+      const reason = e.status ? e.message : '本次模拟下单未完成，等待重新评估。';
+      this.store.put('showcase-proposals', {
+        ...proposal,
+        state: 'failed',
+        reason,
+        completedAt: this.now(),
+      });
+      this.status(agent.id, { state: 'error', reason });
+    }
+  }
+  rejectProposal(proposal, reason) {
+    this.store.put('showcase-proposals', {
+      ...proposal,
+      state: 'failed',
+      reason,
+      completedAt: this.now(),
+    });
+    this.status(proposal.agentId, { state: 'observing', reason });
+  }
   tick() {
     if (this.task || this.stopped || this.now() - this.tickAt < 5000) return this.task;
     this.tickAt = this.now();
@@ -357,6 +442,14 @@ export class ShowcaseAgents {
       }
       if (this.paper.view(a.id).pending) {
         this.status(a.id, { state: 'queued', reason: '模拟订单等待后续区块重新核价' });
+        continue;
+      }
+      const proposal = this.store.get('showcase-proposals', a.id);
+      if (proposal?.state === 'pending' && this.validateProposal(proposal)) {
+        this.status(a.id, {
+          state: 'waiting-execution',
+          reason: 'AI 已提出交易，正在核对当前行情与风险。',
+        });
         continue;
       }
       const previous = this.store.get('showcase-status', a.id),
@@ -468,27 +561,23 @@ export class ShowcaseAgents {
           state: 'observing',
         });
         if (decision.action === 'hold') continue;
-        let order;
-        if (decision.action === 'buy') {
-          const fx = this.paper.fx();
-          if (!fx) throw fail('决策后 BNB 美元行情已过期');
-          const size = String(BigInt(Math.floor((decision.sizeUsd / fx) * 1e18)));
-          order = await this.execute(current, 'buy_token', {
-            token: decision.token,
-            amount: size,
-            requestKey: 'ai-' + identifier(),
-            reason: decision.reason,
-          });
-          this.store.put('showcase-exits', {
-            id: order.id,
+        if (this.deferExecution) {
+          this.store.put('showcase-proposals', {
+            id: a.id,
             agentId: a.id,
-            token: decision.token,
-            ...decision.exit,
-            orderId: order.id,
+            state: 'pending',
+            stage: 'evidence',
+            createdAt: this.now(),
+            expiresAt: Math.min(context.at + 180000, this.now() + 120000),
+            basis,
+            decision,
+            requestKey: 'ai-' + identifier(),
           });
-        } else
-          order = await this.sell(current, decision.token, decision.reason, 'ai-' + identifier());
-        this.status(a.id, { state: 'queued', reason: decision.reason, orderId: order.id });
+          this.status(a.id, {
+            state: 'waiting-execution',
+            reason: 'AI 已提出交易，正在核对当前行情与风险。',
+          });
+        } else await this.submitDecision(current, decision, 'ai-' + identifier());
       } catch (e) {
         if (!this.stopped)
           this.status(a.id, {

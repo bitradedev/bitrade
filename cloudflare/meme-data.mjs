@@ -336,6 +336,24 @@ export class MemeBscData extends PublicBscData {
     // universe to a few blocked leaders or broaden it to unrelated assets.
     let rows = [];
     for (let i = 0; i < 8; i++) for (const list of lists) if (list[i]) rows.push(list[i]);
+    const hasFourRows = rows.length > 0,
+      previous = this.candidates(),
+      known = previous
+        .filter((c) => {
+          const binding = this.store.get('cloud-meme-pools', c.address);
+          return (
+            !establishedAsset(c.address) &&
+            /^0x[0-9a-f]{64}$/i.test(binding?.codeHash ?? '') &&
+            binding.pair &&
+            selectDexPair([binding.pair], c.address)
+          );
+        })
+        .sort((a, b) => {
+          const permitted = (c) =>
+            this.store.get('token-risk-reports', c.address)?.buyAllowed === true;
+          return Number(permitted(b)) - Number(permitted(a));
+        })
+        .slice(0, 4);
     if (!rows.length) {
       try {
         const d = await this.read(
@@ -365,25 +383,30 @@ export class MemeBscData extends PublicBscData {
             };
           })
           .filter((c) => c.address && !establishedAsset(c.address));
-        // Pool lists are unverified launchpad hints, not replacements for
-        // previously discovered memes. Preserve their ongoing evaluation.
-        rows = [
-          ...rows.slice(0, 4),
-          ...this.candidates(),
-          ...MEME_BOOTSTRAP.map((c) => ({ ...c, at: this.now() })),
-        ];
       } catch (e) {
         if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
       }
     }
     const migrations = await this.scanMigrations();
-    if (!rows.length)
-      rows = [
-        ...migrations,
-        ...this.candidates(),
-        ...MEME_BOOTSTRAP.map((c) => ({ ...c, at: this.now() })),
-      ];
-    else rows = [...migrations.slice(0, 4), ...rows];
+    const bootstrapCursor = Number.isInteger(current?.bootstrapCursor)
+        ? current.bootstrapCursor
+        : 0,
+      bootstrap = MEME_BOOTSTRAP.map((_, i) => ({
+        ...MEME_BOOTSTRAP[(bootstrapCursor + i) % MEME_BOOTSTRAP.length],
+        at: this.now(),
+      }));
+    // Route bindings only preserve discovery hints, never freshness or permission.
+    // During list outages reserve space for rediscovery and cap the combined
+    // unverified pool/event arrivals; a full backlog must not crowd both out.
+    rows = hasFourRows
+      ? [...known, ...migrations.slice(0, 4), ...rows, ...previous, ...bootstrap]
+      : [
+          ...known,
+          ...bootstrap.slice(0, 4),
+          ...[...migrations, ...rows].slice(0, 4),
+          ...previous,
+          ...bootstrap,
+        ];
     const seen = new Set();
     rows = rows.filter((c) => !seen.has(c.address) && seen.add(c.address)).slice(0, 12);
     if (!rows.length) throw Error('独立 Meme 发现暂未返回候选');
@@ -403,7 +426,11 @@ export class MemeBscData extends PublicBscData {
       if (old.active === false && !held.has(old.id))
         for (const kind of ['cloud-meme-candidates', 'cloud-meme-pools'])
           this.store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run(kind, old.id);
-    this.store.put('cloud-settings', { id: 'meme-discovery', at: this.now() });
+    this.store.put('cloud-settings', {
+      id: 'meme-discovery',
+      at: this.now(),
+      bootstrapCursor: (bootstrapCursor + 2) % MEME_BOOTSTRAP.length,
+    });
     return this.candidates();
   }
   async chart(token) {

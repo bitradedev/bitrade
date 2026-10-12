@@ -123,17 +123,6 @@ export class TradingPlatform extends DurableObject<any> {
             },
           }),
           planner = new OpenAIPlanner({ timeoutMs: 90000, fetchImpl: this.io.fetch });
-        // Refresh exact market evidence after the remote model returns; it may take over a minute.
-        const freshPlanner = {
-          decide: async (...args: any[]) => {
-            const decision = await planner.decide(...args);
-            await market.refresh(decision.token ? [decision.token] : [], {
-              limit: 1,
-              onlyRequested: true,
-            });
-            return decision;
-          },
-        };
         const configReader = () =>
           this.env.BI_TRADE_AI_API_KEY
             ? validateConfig({
@@ -156,7 +145,7 @@ export class TradingPlatform extends DurableObject<any> {
           liveEnabled: false,
           rpc: { balance: async () => 0n },
           rateLimit: (...args: any[]) => this.store.rateLimit(...args),
-          showcaseOptions: { configReader, planner: freshPlanner, maxAgentsPerRun: 1 },
+          showcaseOptions: { configReader, planner, maxAgentsPerRun: 1, deferExecution: true },
           assetReader: async (name: string) =>
             Buffer.from(
               await (

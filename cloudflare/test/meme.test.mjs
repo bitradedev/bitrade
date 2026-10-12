@@ -98,6 +98,19 @@ test('Discovery mixes recent and volume memes, preserves held routes and deactiv
  data.read=async(_service,path,body)=>{requests.push(body.type);return {at:now,value:{code:0,data:Array.from({length:20},(_,i)=>fourRow('0x'+((body.type==='VOL'?1000:2000)+i).toString(16).padStart(40,'0')))}};};
  const rows=await data.discover();assert.equal(rows.length,12);assert.deepEqual(requests,['VOL','NEW']);assert.equal(rows[1].address,'0x'+(2000).toString(16).padStart(40,'0'));assert.equal(data.supports(OTHER),true);assert.equal(store.get('cloud-meme-candidates',OTHER).active,false);assert.equal(store.get('paper-fills','history').netUsd,-5);await data.discover();assert.equal(requests.length,2);
 });
+test('Repeated unverified pool and migration hints retain verified Meme routes and recover bootstrap identities after a polluted pool',async t=>{
+ const {store,data}=sourceFixture(t);await data.metadata(TOKEN);let now=Date.now(),round=0;data.now=()=>now;
+ const binding=structuredClone(store.get('cloud-meme-pools',TOKEN));store.put('paper-fills',{id:'retained-history',token:TOKEN,netUsd:-7});
+ const hint=(n)=>({id:'0x'+n.toString(16).padStart(40,'0'),address:'0x'+n.toString(16).padStart(40,'0'),category:'meme',symbol:'Pending',at:now});
+ data.read=async service=>{if(service==='four')throw Error('Unavailable');return {at:now,value:{data:Array.from({length:20},(_,i)=>({relationships:{base_token:{data:{id:'bsc_'+hint(3000+round*100+i).address}},dex:{data:{id:'pancakeswap_v2'}}}})),included:[]}};};
+ data.scanMigrations=async()=>Array.from({length:4},(_,i)=>hint(4000+round*100+i));
+ for(round=0;round<6;round++){
+  now+=300001;const rows=await data.discover();assert.ok(rows.some(c=>c.address===TOKEN),'Unverified hints must not evict a previously verified Meme route');assert.ok(rows.length<=12);assert.deepEqual(store.get('cloud-meme-pools',TOKEN),binding,'Discovery must not refresh old proof or chart age');assert.equal(store.get('paper-fills','retained-history').netUsd,-7);
+ }
+ const polluted=fixture(t),recovered=new MemeBscData(polluted,{}, {now:()=>now});for(let i=0;i<12;i++)polluted.put('cloud-meme-candidates',{...hint(5000+i),active:true,entryRank:i});recovered.read=async()=>{throw Error('Providers unavailable');};recovered.scanMigrations=async()=>[];
+ const rows=await recovered.discover();assert.ok(rows.some(c=>c.address===MEME_BOOTSTRAP[0].address),'A full unverified backlog cannot permanently remove bootstrap discovery');assert.ok(rows.every(c=>c.priceUsd===undefined));assert.ok(rows.length<=12);
+});
+
 test('Fallback pool hints cannot discard already discovered memes before launch identity checks',async t=>{
  const {store,data}=sourceFixture(t);data.read=async service=>{if(service==='four')throw Error('Unavailable');return {at:Date.now(),value:{data:[{relationships:{base_token:{data:{id:'bsc_'+OTHER}},dex:{data:{id:'pancakeswap_v2'}}}}],included:[]}};};
  const rows=await data.discover();assert.ok(rows.some(c=>c.address===TOKEN));assert.ok(rows.some(c=>c.address===OTHER));assert.ok(rows.length<=12);assert.equal(store.get('cloud-meme-candidates',TOKEN).active,true);
