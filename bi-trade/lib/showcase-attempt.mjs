@@ -14,8 +14,14 @@ function failure(message) {
 }
 export function showcaseAttempt(store, agent) {
   if (agent.source !== 'builtin') return null;
-  const request = store.forAgent('requests', agent.id).sort((a, b) => b.createdAt - a.createdAt)[0],
-    proposal = store.get('showcase-proposals', agent.id);
+  const reset = store.get('cloud-settings', 'showcase-paper-reset'),
+    cutoff = reset?.agentIds?.includes(agent.id) ? reset.completedAt : 0,
+    request = store
+      .forAgent('requests', agent.id)
+      .filter((r) => r.createdAt >= cutoff)
+      .sort((a, b) => b.createdAt - a.createdAt)[0],
+    savedProposal = store.get('showcase-proposals', agent.id),
+    proposal = savedProposal?.createdAt >= cutoff ? savedProposal : null;
   if (proposal && (!request || proposal.createdAt > request.createdAt)) {
     const pending = proposal.state === 'pending';
     return {

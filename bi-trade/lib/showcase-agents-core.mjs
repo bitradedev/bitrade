@@ -310,12 +310,29 @@ export class ShowcaseAgents {
         .sort((a, b) => a.createdAt - b.createdAt)[0] ?? null
     );
   }
+  decisionDue() {
+    return SHOWCASE_PROFILES.some((p) => {
+      const a = this.store.get('agents', p.id);
+      return (
+        a &&
+        !a.closedAt &&
+        !a.paused &&
+        a.mode === 'paper' &&
+        !this.paper.view(a.id).pending &&
+        this.store.get('showcase-proposals', a.id)?.state !== 'pending' &&
+        this.now() >= (this.store.get('showcase-status', a.id)?.nextDecisionAt ?? 0)
+      );
+    });
+  }
   validateProposal(proposal) {
     const saved = this.store.get('showcase-proposals', proposal.id),
       agent = this.store.get('agents', proposal.agentId);
     if (saved?.state !== 'pending' || saved.createdAt !== proposal.createdAt) return false;
     let reason = null;
-    if (this.now() >= proposal.expiresAt) reason = 'AI 提案已过期，等待重新评估。';
+    const reset = this.store.get('cloud-settings', 'showcase-paper-reset');
+    if (reset?.agentIds?.includes(proposal.agentId) && proposal.createdAt < reset.completedAt)
+      reason = '账户轮次已变化，AI 提案已取消。';
+    else if (this.now() >= proposal.expiresAt) reason = 'AI 提案已过期，等待重新评估。';
     else if (!agent || agent.closedAt || agent.paused || agent.mode !== 'paper')
       reason = '账户已暂停或状态变化，AI 提案已取消。';
     else if (this.accountBasis(agent.id) !== proposal.basis)
@@ -399,18 +416,19 @@ export class ShowcaseAgents {
   async run() {
     this.sample();
     const held = SHOWCASE_PROFILES.flatMap((p) => this.paper.lots(p.id).map((l) => l.token));
-    this.riskGuard.tick([
-      ...held,
-      ...SHOWCASE_PROFILES.flatMap((p) =>
-        this.paper
-          .fills(p.id)
-          .filter((f) => f.side === 'buy')
-          .sort((a, b) => b.at - a.at)
-          .slice(0, 1)
-          .map((f) => f.token),
-      ),
-      ...this.freshMarkets().map((m) => m.address),
-    ]);
+    if (!this.deferExecution)
+      this.riskGuard.tick([
+        ...held,
+        ...SHOWCASE_PROFILES.flatMap((p) =>
+          this.paper
+            .fills(p.id)
+            .filter((f) => f.side === 'buy')
+            .sort((a, b) => b.at - a.at)
+            .slice(0, 1)
+            .map((f) => f.token),
+        ),
+        ...this.freshMarkets().map((m) => m.address),
+      ]);
     let config;
     try {
       config = this.configReader();

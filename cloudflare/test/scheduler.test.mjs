@@ -4,6 +4,16 @@ import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 
+test('a permitted Meme is evaluated before unrelated pending risk can consume its price and risk freshness window',async()=>{
+ const good='0x'+'11'.repeat(20),bad='0x'+'22'.repeat(20),rows=new Map(),io=new IOBudget(45,async()=>Response.json({})),kept=[];let decisions=0,riskCalls=0,due=true;
+ const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,structuredClone(v)),prune(){}};store.put('cloud-settings',{id:'risk-priority-round',tokens:[bad]});
+ const market={markets:()=>[{address:good,priceUsd:1}],isEntryCandidate:()=>true,marketScope:()=>({kind:'meme'}),async updateHead(){await io.fetch('https://head.example');},async fx(){await io.fetch('https://fx.example');},async refresh(tokens,options){assert.deepEqual(tokens,[good]);assert.equal(options.onlyRequested,true);for(let i=0;i<4;i++)await io.fetch('https://market.example/'+i);}};
+ const app={paper:{orders:()=>[],async tick(){}},showcase:{decisionDue:()=>due,freshMarkets:()=>[{address:good,priceUsd:1,updatedAt:Date.now()}],async tick(){decisions++;due=false;await io.fetch('https://model.example');}}};
+ const host={io,store,market,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil:p=>kept.push(p)},risk:{snapshot:t=>({buyAllowed:t===good}),async tick(){riskCalls++;for(let i=0;i<20;i++)await io.fetch('https://risk.example/'+i);}}};
+ await io.run('alarm',()=>runScheduledRound(host));await Promise.all(kept);assert.equal(decisions,1);assert.equal(riskCalls,0);assert.equal(io.lastAlarm.used,5);assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[bad]);assert.equal(store.get('cloud-settings','scheduler').phase,'decision-priority');
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(riskCalls,1,'Other candidate risk proceeds while the Agent is within its evaluation interval');assert.equal(decisions,1);assert.equal(store.get('cloud-settings','scheduler').phase,'risk');
+});
+
 test('repeated Meme risk continuations cannot starve a held stop that has never failed',async()=>{
  const token='0x'+'11'.repeat(20),rows=new Map(),calls=[];let queued=false,watched=0,matched=0;
  const io=new IOBudget(45,async url=>{calls.push(url);return Response.json({});});

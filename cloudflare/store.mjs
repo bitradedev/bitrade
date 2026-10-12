@@ -59,6 +59,11 @@ export class CloudStore extends PlatformRepository {
         "DELETE FROM entities WHERE kind IN ('cloud-gmgn-cache','cloud-public-cache') AND CAST(json_extract(payload,'$.at') AS INTEGER)<?",
       )
       .run(now - 300000);
+    this.db
+      .prepare(
+        "DELETE FROM entities WHERE kind='cloud-meme-turnover' AND CAST(json_extract(payload,'$.at') AS INTEGER)<?",
+      )
+      .run(now - 2 * 86400000);
     this.db.prepare('DELETE FROM rate_limits WHERE at<?').run(now - 3600000);
     this.db.prepare('DELETE FROM challenges WHERE expires<?').run(now - 86400000);
     this.db.prepare('DELETE FROM credentials WHERE expires<?').run(now);

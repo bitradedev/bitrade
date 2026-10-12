@@ -2,6 +2,7 @@ import { keccak256, parseAbi, decodeEventLog, getEventSelector } from 'viem';
 import { PublicBscData } from './public-data.mjs';
 import { evaluateMemeRisk } from '../bi-trade/lib/meme-risk.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
+import { readTurnoverHistory } from './turnover-history.mjs';
 import {
   FOUR_HELPER,
   FOUR_MANAGER,
@@ -518,69 +519,25 @@ export class MemeBscData extends PublicBscData {
           buys: sample.buys,
           sells: sample.sells,
           usdReferenceAt: fx.at,
+          sampledRanges: sample.sampledRanges ?? null,
+          hasGaps: sample.hasGaps ?? null,
+          latestSample: sample.latestSample ?? null,
+          coverage: 'rolling-observed-range',
+          dayComplete: false,
         },
       },
     };
   }
   async turnoverWindow(pool, b, quote0, nativeUsd) {
-    const id = 'meme-turnover:' + pool,
-      old = this.store.get('cloud-public-cache', id);
-    if (
-      old &&
-      this.now() - old.at >= 0 &&
-      this.now() - old.at < 60000 &&
-      old.toBlock <= b.number &&
-      this.now() - old.fromTime < 86400000
-    ) {
-      const anchor = await this.rpc.block(old.toBlock, true);
-      if (anchor.hash === old.blockHash) return old;
-    }
-    const toBlock = Math.max(0, b.number - 4);
-    let fromBlock = toBlock,
-      quoteRaw = 0n,
-      buys = 0,
-      sells = 0;
-    // Respect the public node's small request range. Expand a bounded lookback
-    // only when recent activity alone cannot prove the unchanged threshold.
-    for (let page = 0; page < 5; page++) {
-      const end = toBlock - page * 1000;
-      if (end < 0) break;
-      const start = Math.max(0, end - 999),
-        logs = await this.rpc.request('eth_getLogs', [
-          {
-            address: pool,
-            fromBlock: '0x' + start.toString(16),
-            toBlock: '0x' + end.toString(16),
-            topics: [getEventSelector(POOL_SWAP[0])],
-          },
-        ]),
-        v = swapTurnover(logs, pool, start, end, quote0);
-      fromBlock = start;
-      quoteRaw += v.quoteRaw;
-      buys += v.buys;
-      sells += v.sells;
-      if ((Number(quoteRaw) / 1e18) * nativeUsd >= 1000 || start === 0) break;
-    }
-    const [start, anchor] = await Promise.all([this.rpc.block(fromBlock), this.rpc.block(toBlock)]);
-    if (
-      !Number.isFinite(start.time) ||
-      this.now() < start.time ||
-      this.now() - start.time >= 86400000
-    )
-      throw Error('换手样本不在近24小时范围');
-    const row = {
-      id,
-      at: this.now(),
-      fromBlock,
-      toBlock,
-      fromTime: start.time,
-      blockHash: anchor.hash,
-      quoteRaw: String(quoteRaw),
-      buys,
-      sells,
-    };
-    this.store.put('cloud-public-cache', row);
-    return row;
+    return readTurnoverHistory(
+      this,
+      pool,
+      b,
+      quote0,
+      nativeUsd,
+      getEventSelector(POOL_SWAP[0]),
+      swapTurnover,
+    );
   }
   async tradingEvidence(token) {
     if (!this.supports(token)) throw Error('Meme 候选来源尚未核实');

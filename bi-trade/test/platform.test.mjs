@@ -341,6 +341,15 @@ test('deferred AI proposals persist without an order, use current guarded execut
  f.app.store.put('requests',{id:'old-failed-attempt',agentId:a.id,createdAt:Date.now()+1,action:'buy_token',status:'failed',error:'CF_SUBREQUEST_BUDGET private-provider-secret'});const failed=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(failed.runtime.lastExecution.code,'REQUEST_BUDGET');assert.doesNotMatch(JSON.stringify(failed),/private-provider-secret|CF_SUBREQUEST_BUDGET/);
 });
 
+test('public builtin execution results respect an already completed round reset without deleting retained requests',async t=>{
+ const f=await fixture(t,{showcase:true}),id=SHOWCASE_PROFILES[0].id,at=Date.now();
+ f.app.store.put('requests',{id:'private-old-request',agentId:id,createdAt:at-1000,status:'failed',action:'buy_token',error:'CF_SUBREQUEST_BUDGET'});
+ f.app.store.put('cloud-settings',{id:'showcase-paper-reset',completedAt:at,agentIds:[id]});
+ assert.equal((await f.call('/api/public/agent?id='+id)).value.agent.runtime.lastExecution,null);assert.ok(f.app.store.get('requests','private-old-request'));
+ f.app.store.put('requests',{id:'current-request',agentId:id,createdAt:at+1,status:'failed',action:'buy_token',error:'CF_SUBREQUEST_BUDGET'});
+ assert.equal((await f.call('/api/public/agent?id='+id)).value.agent.runtime.lastExecution.code,'REQUEST_BUDGET');
+});
+
 test('deferred proposals cannot execute after pause, expiry or account change',async t=>{
  for(const kind of ['pause','expiry','balance']){
   const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,deferExecution:true,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){return {action:'buy',token:TOKEN,sizeUsd:50,reason:'隔离测试：旧提案不得执行',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);

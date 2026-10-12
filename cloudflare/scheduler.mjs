@@ -1,5 +1,6 @@
 import { RISK_POLICY } from '../bi-trade/lib/token-risk-core.mjs';
 import { runProposalRound } from './proposal-round.mjs';
+import { startShowcaseDecision, runDecisionRound } from './decision-round.mjs';
 function riskDue(host, token) {
   const row = host.store.get?.('token-risk-reports', token);
   return (
@@ -57,6 +58,25 @@ export async function runScheduledRound(host) {
       if (proposal && !host.decisionTask) {
         await runProposalRound(host, app, proposal);
         return;
+      }
+      if (
+        !host.decisionTask &&
+        app.showcase.decisionDue?.() &&
+        host.market.marketScope?.()?.kind === 'meme'
+      ) {
+        const permitted = host.market
+          .markets()
+          .find(
+            (m) =>
+              host.market.isEntryCandidate(m.address) &&
+              host.risk.snapshot(m.address, m.priceUsd).buyAllowed,
+          );
+        if (permitted) {
+          // Refresh and evaluate a currently permitted token before unrelated
+          // risk continuations spend its short evidence-validity window.
+          await runDecisionRound(host, app, permitted);
+          return;
+        }
       }
       const tokens = [
         ...new Set(
@@ -132,23 +152,7 @@ export async function runScheduledRound(host) {
       }
       await host.market.pulse(1);
       if (host.decisionTask) await app.showcase.watchExits();
-      else {
-        const task = app.showcase.tick();
-        if (task) {
-          const tracked = host.io.trackDecision(task);
-          host.decisionTask = tracked;
-          // Keep the same invocation's budget for all work after the model
-          // response. A new alarm gets a new budget, not this existing task.
-          host.ctx.waitUntil(
-            tracked
-              .finally(async () => {
-                if (host.decisionTask === tracked) host.decisionTask = null;
-                await host.arm(1000);
-              })
-              .catch(() => {}),
-          );
-        }
-      }
+      else startShowcaseDecision(host, app);
       await host.risk.task;
       host.store.prune();
       host.store.put('cloud-settings', { id: 'scheduler', at: Date.now(), ok: true });
