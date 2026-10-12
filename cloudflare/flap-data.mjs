@@ -7,6 +7,7 @@ import {
 } from '../paper-terminal/src/server/adapters/types.js';
 import { FLAP_ABI, ERC20 } from '../paper-terminal/src/server/adapters/abi.js';
 import { evaluateFlapRisk } from '../bi-trade/lib/flap-risk.mjs';
+import { probeQuoteTransfers } from './quote-transfers.mjs';
 
 export const FLAP_EVENTS = parseAbi([
   'event TokenCreated(uint256 ts,address creator,uint256 nonce,address token,string name,string symbol,string meta)',
@@ -388,33 +389,65 @@ export class FlapBscData {
       throw Error('报价资产未接入');
     const route = await this.market.venues.bsc.conversion(token, this.market.head.head);
     if (!route?.pool) throw Error('报价资产兑 BNB 交易池未核实');
-    const check = await this.reader.read(
+    let check = null;
+    try {
+      check = await this.reader.read(
         'safety',
         '/v2/IsHoneypot?chainID=56&address=' + token + '&pair=' + route.pool,
-      ),
-      c = check.value;
+      );
+    } catch (e) {
+      if (e?.code === 'CF_SUBREQUEST_BUDGET') throw e;
+    }
+    const c = check?.value,
+      taxes = ['buyTax', 'sellTax', 'transferTax'],
+      taxNumber = (v) =>
+        (typeof v === 'number' || (typeof v === 'string' && v.trim())) && Number.isFinite(Number(v))
+          ? Number(v)
+          : null;
     if (
+      c?.honeypotResult?.isHoneypot === true ||
+      taxes.some((k) => taxNumber(c?.simulationResult?.[k]) > 0) ||
+      Number(c?.summary?.riskLevel) >= 20 ||
+      c?.summary?.flags?.some((f) => Number(f.severityIndex) >= 10)
+    )
+      throw Error('报价资产已发现貔貅、非零税或明显安全风险');
+    if (
+      (c?.chain?.id != null && String(c.chain.id) !== '56') ||
+      (c?.pair?.chainId != null && String(c.pair.chainId) !== '56') ||
+      (c?.token?.address && lower(c.token.address) !== token) ||
+      (c?.pair?.pair?.address && lower(c.pair.pair.address) !== route.pool)
+    )
+      throw Error('报价资产安全资料与当前资产或交易池不一致');
+    const checked = !(
       String(c?.chain?.id) !== '56' ||
       lower(c?.token?.address) !== token ||
       lower(c?.pair?.pair?.address) !== route.pool ||
       c?.simulationSuccess !== true ||
       c?.honeypotResult?.isHoneypot !== false ||
-      ['buyTax', 'sellTax', 'transferTax'].some(
-        (k) => c?.simulationResult?.[k] === undefined || Number(c.simulationResult[k]) !== 0,
-      )
-    )
-      throw Error('报价资产真实买卖或零转账税尚未核实');
-    if (
-      !FLAP_QUOTES[token] &&
-      (c?.contractCode?.isProxy !== false || c?.contractCode?.openSource !== true)
-    )
-      throw Error('自定义报价资产的合约身份未核实');
+      taxes.some((k) => taxNumber(c?.simulationResult?.[k]) !== 0)
+    );
+    let proof = null;
+    if (!checked) {
+      const block = this.market.head.head,
+        decimals = await this.market.venues.bsc.decimals(token, block),
+        balance = BigInt(await this.rpc.read(token, ERC20, 'balanceOf', [route.pool], block)),
+        unit = 10n ** BigInt(decimals),
+        sample = balance / 1000n;
+      if (sample <= 0n) throw Error('报价资产兑换池没有足够真实余额用于转账检测');
+      proof = await this.quoteTransfers(
+        token,
+        route.pool,
+        sample < unit ? sample : unit,
+        block,
+        ORDINARY_RECIPIENT,
+      );
+    }
     const symbol =
       FLAP_QUOTES[token] ??
       String(await this.rpc.read(token, ERC20, 'symbol', [], this.market.head.head)).slice(0, 60);
     return {
       id: token,
-      at: check.at,
+      at: proof?.at ?? check.at,
       source: 'flap-quote',
       info: { address: token, symbol, biggest_pool_address: route.pool },
       security: {
@@ -422,9 +455,29 @@ export class FlapBscData {
         buy_tax: 0,
         sell_tax: 0,
         verifiedPool: route.pool,
-        is_honeypot: false,
+        is_honeypot: proof ? null : false,
+        proofMode: proof ? 'rpc-sequential-transfers' : 'honeypot-simulation',
+        transferProof: proof,
       },
     };
+  }
+  async quoteTransfers(token, pool, amount, block, recipient) {
+    const parent = await this.rpc.block(block),
+      key = [token, pool, amount.toString(), recipient, parent.hash].join(':');
+    this.transferProofs ??= new Map();
+    const old = this.transferProofs.get(key);
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < 15000) return old;
+    const proof = await probeQuoteTransfers(this.rpc, {
+      token,
+      pool,
+      recipient,
+      amountRaw: String(amount),
+      block,
+    });
+    this.transferProofs.set(key, proof);
+    while (this.transferProofs.size > 256)
+      this.transferProofs.delete(this.transferProofs.keys().next().value);
+    return proof;
   }
   async metadata(token) {
     const e = await this.evidence(token),

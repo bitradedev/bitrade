@@ -323,6 +323,9 @@ export class CloudMarket {
         priceUsd,
         nativeUsd: fx.usd,
         quoteUsd,
+        quoteProofMode: conversion
+          ? (this.metadata.get(conversion.token)?.security.proofMode ?? null)
+          : null,
         quoteSymbol:
           md.flap?.quoteSymbol ??
           (conversion ? this.metadata.get(conversion.token)?.info.symbol : 'BNB'),
@@ -730,6 +733,25 @@ export class CloudMarket {
       legs = 1,
       notes: string[] = [],
       conversionImpact = 0;
+    let simulatedTransfer = false;
+    const checkConversionTransfers = async (amount: bigint) => {
+      if (
+        conversion &&
+        this.metadata.get(conversion.token)?.security.proofMode === 'rpc-sequential-transfers'
+      ) {
+        const proof = await this.memeData.flap.quoteTransfers(
+          conversion.token,
+          conversion.pool,
+          amount,
+          block,
+          recipient,
+        );
+        simulatedTransfer = true;
+        notes.push(
+          `报价资产按确切数量和模拟收款地址完成兑换池 ↔ 账户 ↔ Flap Portal 四段零税到账核对；来源区块 ${proof.parentBlock}，假设的下一块 ${proof.simulatedBlock}，未验证真实资金、签名、授权或整笔 swap`,
+        );
+      }
+    };
     if (conversion) {
       legs++;
       const unit = await v.quote(conversion, 'sell', 10n ** BigInt(quoteDecimals), block);
@@ -739,6 +761,7 @@ export class CloudMarket {
       if (side === 'buy') {
         const cv = await v.quote(conversion, 'buy', input, block, recipient);
         quoteInput = cv.out;
+        await checkConversionTransfers(cv.out);
         conversionUsd = units(cv.protocol, 18) * fx.usd;
         conversionImpact += cv.impactPct ?? feeExcludedImpact(conversion, 'buy', cv);
         notes.push(...cv.notes);
@@ -788,6 +811,7 @@ export class CloudMarket {
     if (conversion) {
       const quoteUsd = conversionSpot * fx.usd;
       if (side === 'sell') {
+        await checkConversionTransfers(core.out);
         const cv = await v.quote(conversion, 'sell', core.out, block, recipient);
         output = cv.out;
         spent = input;
@@ -819,7 +843,9 @@ export class CloudMarket {
       priceUsd = (nativeQty * fx.usd) / tokenQty;
     const impactPct = (core.impactPct ?? feeExcludedImpact(r, side, core)) + conversionImpact,
       impactQuality =
-        core.impactQuality === 'estimated' || counterfactual ? 'estimated' : 'verified';
+        core.impactQuality === 'estimated' || counterfactual || simulatedTransfer
+          ? 'estimated'
+          : 'verified';
     return {
       id: randomUUID(),
       chain,
@@ -853,10 +879,14 @@ export class CloudMarket {
           `原生币美元价格：${fx.source ?? '已核实美元参考'} ${new Date(fx.at).toISOString()}；模拟收款地址 ${recipient}，不继承目标钱包豁免`,
         ],
       },
-      quality: counterfactual || core.quality === 'estimated' ? 'estimated' : 'verified',
+      quality:
+        counterfactual || core.quality === 'estimated' || simulatedTransfer
+          ? 'estimated'
+          : 'verified',
       venue: r.kind,
-      reason:
-        core.quality === 'estimated'
+      reason: simulatedTransfer
+        ? '确切金额的链上报价与下一块报价资产连续转账模拟；不保证真实资金、签名、授权或整笔 swap'
+        : core.quality === 'estimated'
           ? 'Flap 含税外盘官方净报价；未执行真实授权和转账，成交为估计模拟'
           : counterfactual
             ? '虚拟买入后即时反向数量预览；不可用于正式研究启用门槛'

@@ -12,6 +12,7 @@ const ALLOWED = new Set([
   'eth_getTransactionByHash',
   'eth_getCode',
   'eth_call',
+  'eth_simulateV1',
   'eth_gasPrice',
 ]);
 // BNB Chain's public endpoint supports prices/blocks, but disables getLogs.
@@ -22,6 +23,7 @@ const BACKUP_ALLOWED = new Set([
   'eth_getBlockByHash',
   'eth_getCode',
   'eth_call',
+  'eth_simulateV1',
   'eth_gasPrice',
 ]);
 export const hexBlock = (n) => {
@@ -188,7 +190,7 @@ export class CloudRpc {
           });
       await this.backupVerification;
     }
-    const fixed = method === 'eth_call' || method === 'eth_getCode' ? params[1] : null;
+    const fixed = ['eth_call', 'eth_getCode', 'eth_simulateV1'].includes(method) ? params[1] : null;
     if (typeof fixed === 'string' && /^0x[0-9a-f]+$/i.test(fixed)) {
       const number = Number(BigInt(fixed)),
         anchor = this.cache.get(number),

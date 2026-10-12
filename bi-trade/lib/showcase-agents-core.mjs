@@ -180,6 +180,7 @@ export class ShowcaseAgents {
         volumeUsd: m.volumeUsd ?? null,
         volumeWindow: m.volumeWindow ?? null,
         quoteSymbol: m.quoteSymbol ?? null,
+        quoteProofMode: m.quoteProofMode ?? null,
         progressPct: m.progressPct ?? null,
         reserveUsd: m.reserveUsd ?? null,
         createdAt: m.createdAt ?? null,

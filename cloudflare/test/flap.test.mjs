@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { realpathSync, mkdirSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { encodeAbiParameters, parseAbiParameters, encodeEventTopics } from 'viem';
+import {
+  encodeAbiParameters,
+  parseAbiParameters,
+  encodeEventTopics,
+  decodeFunctionData,
+  encodeFunctionResult,
+} from 'viem';
 import { CloudStore } from '../store.mjs';
 import { evaluateFlapRisk } from '../../bi-trade/lib/flap-risk.mjs';
 import { PaperDesk } from '../../bi-trade/lib/paper-desk.mjs';
@@ -15,6 +21,7 @@ await require('esbuild').build({
     'cloudflare/meme-data.mjs',
     'cloudflare/market.ts',
     'cloudflare/flap-data.mjs',
+    'cloudflare/quote-transfers.mjs',
     'paper-terminal/src/server/adapters/math.ts',
   ],
   bundle: true,
@@ -27,6 +34,8 @@ const { flapCreations, flapTurnover, flapHolders, FLAP_EVENTS } =
   await import('../../.cloud-test-build/flap-tests/cloudflare/flap-data.mjs');
 const { MemeBscData } = await import('../../.cloud-test-build/flap-tests/cloudflare/meme-data.mjs');
 const { CloudMarket } = await import('../../.cloud-test-build/flap-tests/cloudflare/market.mjs');
+const { probeQuoteTransfers, QUOTE_TRANSFER_ABI } =
+  await import('../../.cloud-test-build/flap-tests/cloudflare/quote-transfers.mjs');
 const { flapReserve, flapVirtualSell, v2Quote, WAD, ceilDiv } =
   await import('../../.cloud-test-build/flap-tests/paper-terminal/src/server/adapters/math.mjs');
 const TOKEN = '0x' + '11'.repeat(20),
@@ -532,6 +541,34 @@ test('Flap six-decimal conversion uses actual depegged value and supports the vi
   assert(BigInt(sell.outputRaw) < BigInt(buy.inputRaw));
   assert(buy.fees.taxUsd > 0);
   assert.equal(buy.fees.includedInOutput, true);
+  f.market.metadata.get(QUOTE).security.proofMode = 'rpc-sequential-transfers';
+  const proved = [];
+  f.data.flap.quoteTransfers = async (token, pool, amount, block, recipient) => {
+    assert.equal(token, QUOTE);
+    assert.equal(pool, OTHER);
+    assert.equal(recipient, OWNER);
+    assert(amount > 0n);
+    proved.push(amount);
+    return { parentBlock: block, simulatedBlock: block + 1 };
+  };
+  const enhancedBuy = await f.market.quote({
+    chain: 'bsc',
+    token: TOKEN,
+    side: 'buy',
+    nativeAmountRaw: '1000000000000',
+    recipient: OWNER,
+  });
+  await f.market.quote({
+    chain: 'bsc',
+    token: TOKEN,
+    side: 'sell',
+    tokenAmountRaw: enhancedBuy.outputRaw,
+    recipient: OWNER,
+    block: enhancedBuy.block,
+  });
+  assert.equal(enhancedBuy.quality, 'estimated');
+  assert.match(enhancedBuy.reason, /连续转账/);
+  assert.equal(proved.length, 2);
 });
 test('Flap declaration changes and forks do not freshen failed identity evidence or turn a healthy RPC into a recovered event index', async (t) => {
   const f = gateway(t);
@@ -622,4 +659,174 @@ test('Flap old creation evidence cannot pin the risk report to the curve after n
     }),
     /扩展/,
   );
+});
+function transferSimulation(payload, parent = 100, hash = HASH) {
+  const amount = decodeFunctionData({
+      abi: QUOTE_TRANSFER_ABI,
+      data: payload.blockStateCalls[0].calls[3].data,
+    }).args[1],
+    p = 1000n * WAD,
+    r = 17n,
+    f = 23n,
+    values = [
+      p,
+      r,
+      f,
+      null,
+      p - amount,
+      r + amount,
+      null,
+      r,
+      f + amount,
+      null,
+      f,
+      r + amount,
+      null,
+      r,
+      p,
+      f,
+    ];
+  return [
+    {
+      number: '0x' + (parent + 1).toString(16),
+      parentHash: hash,
+      timestamp: payload.blockStateCalls[0].blockOverrides.time,
+      calls: values.map((v) => ({
+        status: '0x1',
+        gasUsed: '0x5208',
+        returnData: encodeFunctionResult({
+          abi: QUOTE_TRANSFER_ABI,
+          functionName: v === null ? 'transfer' : 'balanceOf',
+          result: v === null ? true : v < 0n ? 0n : v,
+        }),
+      })),
+    },
+  ];
+}
+test('Stateful quote-asset transfer proof validates exact deltas, real funding, canonical parent, next block and all four recipients without overrides', async () => {
+  const time = Date.now(),
+    rpc = {
+      block: async () => ({ number: 100, time, hash: HASH }),
+      request: async (method, [payload, block]) => {
+        assert.equal(method, 'eth_simulateV1');
+        assert.equal(block, '0x64');
+        assert.equal(payload.validation, false);
+        assert.equal(payload.blockStateCalls.length, 1);
+        assert.equal(payload.blockStateCalls[0].stateOverrides, undefined);
+        assert.equal(payload.blockStateCalls[0].calls.length, 16);
+        assert(
+          payload.blockStateCalls[0].calls.every((c) => c.to === TOKEN && !c.value && !c.signature),
+        );
+        return transferSimulation(payload);
+      },
+    };
+  const p = await probeQuoteTransfers(rpc, {
+    token: TOKEN,
+    pool: POOL,
+    recipient: OWNER,
+    amountRaw: '100',
+    block: 100,
+  });
+  assert.equal(p.quality, 'estimated');
+  assert.equal(p.parentBlock, 100);
+  assert.equal(p.simulatedBlock, 101);
+  assert.equal(p.buyTransferTaxBps, 0);
+  assert.equal(p.portalTransferTaxBps, 0);
+  for (const mutate of [
+    (j) => (j[0].parentHash = TX),
+    (j) => (j[0].number = '0x66'),
+    (j) => (j[0].calls[3].status = '0x0'),
+    (j) =>
+      (j[0].calls[6].returnData = encodeFunctionResult({
+        abi: QUOTE_TRANSFER_ABI,
+        functionName: 'transfer',
+        result: false,
+      })),
+    (j) =>
+      (j[0].calls[5].returnData = encodeFunctionResult({
+        abi: QUOTE_TRANSFER_ABI,
+        functionName: 'balanceOf',
+        result: 116n,
+      })),
+    (j) => j[0].calls.pop(),
+  ]) {
+    await assert.rejects(
+      probeQuoteTransfers(
+        {
+          ...rpc,
+          request: async (_method, [payload]) => {
+            const j = transferSimulation(payload);
+            mutate(j);
+            return j;
+          },
+        },
+        { token: TOKEN, pool: POOL, recipient: OWNER, amountRaw: '100', block: 100 },
+      ),
+    );
+  }
+  await assert.rejects(
+    probeQuoteTransfers(rpc, {
+      token: TOKEN,
+      pool: POOL,
+      recipient: OWNER,
+      amountRaw: String(2000n * WAD),
+      block: 100,
+    }),
+    /到账|扣款/,
+  );
+});
+test('Unavailable quote audit can use exact RPC transfer evidence while keeping honeypot unknown; known unsafe reports never fall through', async (t) => {
+  const f = gateway(t),
+    QUOTE = '0x55d398326f99059ff775485246999027b3197955';
+  f.setState({ ...state(), quoteTokenAddress: QUOTE });
+  await f.data.flap.evidence(TOKEN);
+  await f.market.updateHead();
+  f.market.venues.bsc.conversion = async () => ({
+    kind: 'v2',
+    token: QUOTE,
+    quote: WBNB,
+    pool: OTHER,
+    fee: 25,
+  });
+  const original = f.rpc.read;
+  f.rpc.read = async (...args) => (args[2] === 'symbol' ? 'TEST' : original(...args));
+  let proofs = 0;
+  f.rpc.request = async (method, [payload]) => {
+    assert.equal(method, 'eth_simulateV1');
+    proofs++;
+    return transferSimulation(payload);
+  };
+  f.data.read = async () => {
+    throw Object.assign(Error('Resource 404'), { sourceResourceMissing: true });
+  };
+  const md = await f.data.flap.quoteMetadata(QUOTE);
+  assert.equal(md.security.proofMode, 'rpc-sequential-transfers');
+  assert.equal(md.security.is_honeypot, null);
+  assert.equal(md.security.buy_tax, 0);
+  assert.equal(proofs, 1);
+  f.data.read = async () => ({ at: Date.now(), value: { honeypotResult: { isHoneypot: true } } });
+  await assert.rejects(f.data.flap.quoteMetadata(QUOTE), /已发现/);
+  assert.equal(proofs, 1);
+  f.data.read = async () => ({ at: Date.now(), value: { simulationResult: { buyTax: 1 } } });
+  await assert.rejects(f.data.flap.quoteMetadata(QUOTE), /非零税/);
+  assert.equal(proofs, 1);
+});
+test('Quote transfer cache remains scoped to exact amount, recipient and parent hash and never freshens the original probe time', async (t) => {
+  const f = gateway(t);
+  let proofs = 0,
+    hash = HASH;
+  f.rpc.block = async () => ({ number: 100, time: Date.now(), hash });
+  f.rpc.request = async (_method, [payload]) => {
+    proofs++;
+    return transferSimulation(payload, 100, hash);
+  };
+  const a = await f.data.flap.quoteTransfers(TOKEN, POOL, 100n, 100, OWNER),
+    again = await f.data.flap.quoteTransfers(TOKEN, POOL, 100n, 100, OWNER);
+  assert.equal(proofs, 1);
+  assert.equal(a.at, again.at);
+  await f.data.flap.quoteTransfers(TOKEN, POOL, 101n, 100, OWNER);
+  await f.data.flap.quoteTransfers(TOKEN, POOL, 100n, 100, OTHER);
+  hash = TX;
+  await f.data.flap.quoteTransfers(TOKEN, POOL, 100n, 100, OWNER);
+  assert.equal(proofs, 4);
 });

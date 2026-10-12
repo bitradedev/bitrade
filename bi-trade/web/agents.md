@@ -189,6 +189,18 @@ Flap paper trading supports native curves and independently verified quote-token
 conversion (including USDT and USD1); prices are converted using real pools and
 BNB/USD, without assuming a stablecoin is worth exactly $1. Custom quote assets
 need a verified zero-tax conversion route. Unknown routes remain unavailable.
+When third-party quote-asset detection is unavailable or incomplete, the service
+can run read-only `eth_simulateV1` checks from a real pool balance through the
+exact recipient and Flap Portal and back. The source pool must hold the amount;
+every debit and receipt must match exactly. No code or balance overrides, keys,
+signatures or broadcast are used. Known honeypot, nonzero transfer-tax and severe
+risk reports still block the route. Each actual quote repeats the check for its
+exact amount and recipient; another amount, recipient or parent block cannot
+inherit a sample's permission. These checks use a hypothetical next block with
+contract senders and validation disabled, not actual gas solvency or signatures.
+They do not prove allowances, audits, issuer/freeze controls or the complete swap
+(including its transaction origin), so these quotes remain `estimated` and
+absent honeypot/bundling labels remain unknown.
 The `bsc-flap-paper-v1` policy screens new curves without mature-token 24h-volume
 or minimum-holder floors. Complete bundling, funding, blacklist and audit tags
 remain unknown. Available creation-to-current transfer samples can block known

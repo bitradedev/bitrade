@@ -57,7 +57,7 @@ export function evaluateFlapRisk(token, e, at = Date.now()) {
     chain: 'bsc',
     source: 'Flap Portal · BSC RPC',
     policy: FLAP_POLICY,
-    policyVersion: 1,
+    policyVersion: 2,
     fetchedAt: at,
     state,
     buyAllowed: state === 'screened-limited',
@@ -68,12 +68,18 @@ export function evaluateFlapRisk(token, e, at = Date.now()) {
       ...(e?.holders?.available
         ? ['集中度与同交易分发仅按已验证发行区块起的转账记录计算；不能认定这些钱包属于同一人。']
         : ['持仓集中度资料未知。']),
+      ...(m?.quoteProofMode === 'rpc-sequential-transfers'
+        ? [
+            '报价资产用指定数量与收款地址的下一块连续转账模拟补证；代理、发行方控制、冻结和审计仍可能未知，未验证真实账户资金、签名、授权或整笔swap。',
+          ]
+        : []),
     ],
     metrics: {
       liquidityUsd: e?.reserveUsd ?? null,
       liquidityKind: Number(s?.status) === 1 ? 'curve-reserve' : 'pool-quote-reserve',
       executionQuality:
-        Number(s?.status) === 4 && (Number(s?.buyTaxRate) > 0 || Number(s?.sellTaxRate) > 0)
+        m?.quoteProofMode === 'rpc-sequential-transfers' ||
+        (Number(s?.status) === 4 && (Number(s?.buyTaxRate) > 0 || Number(s?.sellTaxRate) > 0))
           ? 'estimated'
           : 'verified-quote',
       referencePriceUsd: m?.priceUsd ?? null,
