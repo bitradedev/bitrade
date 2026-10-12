@@ -9,17 +9,18 @@ export class PaperDesk {
   constructor(
     store,
     gateway,
-    { buyGuard, preserveQueued = false, maxOrdersPerTick = Infinity } = {},
+    { buyGuard, preserveQueued = false, maxOrdersPerTick = Infinity, readOnly = false } = {},
   ) {
     this.store = store;
     this.gateway = gateway;
     this.buyGuard = buyGuard;
+    this.readOnly = readOnly;
     this.maxOrdersPerTick = maxOrdersPerTick;
     this.busy = false;
     this.stopped = false;
     this.revision = 0;
     this.locks = new Map();
-    for (const o of this.orders().filter((x) => active.has(x.status))) {
+    for (const o of this.orders().filter((x) => !readOnly && active.has(x.status))) {
       if (preserveQueued && o.status === 'queued') continue;
       o.status = 'cancelled';
       o.error = '服务重启，未假定离线期间成交';
@@ -68,6 +69,10 @@ export class PaperDesk {
   }
   account(id) {
     let a = this.store.get('paper-accounts', id);
+    if (this.readOnly) {
+      if (!a) throw fail('服务处于只读保护，暂不能初始化账户', 503);
+      return a;
+    }
     if (!a) {
       a = {
         id,
@@ -173,6 +178,7 @@ export class PaperDesk {
     return q;
   }
   current(agent) {
+    if (this.readOnly) throw fail('服务处于只读保护，暂缓模拟交易', 503);
     const a = agent ? this.store.get('agents', agent.id) : null;
     if (this.stopped || !a || a.closedAt || a.paused || a.mode !== 'paper')
       throw fail('Agent已关闭、暂停或交易模式已变化', 409);

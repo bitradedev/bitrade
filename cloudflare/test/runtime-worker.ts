@@ -11,6 +11,18 @@ export class NetworkProbe extends DurableObject{
   return Response.json({info,chain,decision});
  }
 }
+export class ReadOnlyProbe extends TradingPlatform {
+ async fetch(request:Request){
+  if(new URL(request.url).pathname==='/__test/protect'){
+   await this.initialize();await this.ctx.storage.deleteAlarm();
+   this.store.readOnlyUntil=Date.now()+3600000;this.app=null;this.market=null;this.risk=null;
+   const prepare=this.store.db.prepare.bind(this.store.db);
+   this.store.db.prepare=(q:string)=>{const s=prepare(q);return {...s,run:()=>{throw Error('Test: SQL writes are unavailable');}};};
+   return Response.json({protected:true});
+  }
+  return super.fetch(request);
+ }
+}
 export class SchedulerProbe extends TradingPlatform {
  refreshes=0; watches=0; matches=0; modelCalls=0;
  async arm(){await this.ctx.storage.deleteAlarm();}

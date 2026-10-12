@@ -1,4 +1,10 @@
-import { PlatformRepository, digest, fail } from '../bi-trade/lib/database-core.mjs';
+import {
+  PlatformRepository,
+  digest,
+  fail,
+  canonicalJson,
+  json,
+} from '../bi-trade/lib/database-core.mjs';
 
 // Consume every cursor synchronously. No cursor survives an event or await.
 export function sqlDatabase(sql) {
@@ -18,15 +24,45 @@ export function sqlDatabase(sql) {
   };
 }
 export class CloudStore extends PlatformRepository {
-  constructor(storage) {
-    super(sqlDatabase(storage.sql), (fn) => storage.transactionSync(fn));
-    this.db.exec(
-      'CREATE TABLE IF NOT EXISTS rate_limits(id TEXT PRIMARY KEY,at INTEGER NOT NULL,n INTEGER NOT NULL);',
-    );
+  constructor(storage, { readOnlyUntil = 0 } = {}) {
+    const db = sqlDatabase(storage.sql),
+      tables = new Set(
+        db
+          .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+          .all()
+          .map((r) => r.name),
+      );
+    const complete = [
+      'entities',
+      'credentials',
+      'challenges',
+      'intents',
+      'audit',
+      'rate_limits',
+    ].every((t) => tables.has(t));
+    super(db, (fn) => storage.transactionSync(fn), { initializeSchema: !complete });
+    this.readOnlyUntil = readOnlyUntil;
+    this.memoryLimits = new Map();
+    if (!complete)
+      this.db.exec(
+        'CREATE TABLE IF NOT EXISTS rate_limits(id TEXT PRIMARY KEY,at INTEGER NOT NULL,n INTEGER NOT NULL);',
+      );
+  }
+  get readOnly() {
+    return Date.now() < this.readOnlyUntil;
   }
   rateLimit(req, kind, max, ms, scope = 'ip:' + req.socket.remoteAddress) {
     const now = Date.now(),
       id = digest(kind + ':' + scope);
+    if (this.readOnly || ['GET', 'HEAD'].includes(req.method)) {
+      const old = this.memoryLimits.get(id),
+        v = !old || now - old.at >= ms ? { at: now, n: 1 } : { at: old.at, n: old.n + 1 };
+      this.memoryLimits.set(id, v);
+      if (this.memoryLimits.size > 10000)
+        this.memoryLimits.delete(this.memoryLimits.keys().next().value);
+      if (v.n > max) throw fail('请求过于频繁，请稍后重试', 429);
+      return;
+    }
     const count = this.transaction(() => {
       const old = this.db.prepare('SELECT at,n FROM rate_limits WHERE id=?').get(id),
         value = !old || now - old.at >= ms ? { at: now, n: 1 } : { at: old.at, n: old.n + 1 };
@@ -40,6 +76,10 @@ export class CloudStore extends PlatformRepository {
     if (count > max) throw fail('请求过于频繁，请稍后重试', 429);
   }
   put(kind, value) {
+    const identical = this.get(kind, value.id);
+    if (identical && canonicalJson(identical) === canonicalJson(JSON.parse(json(value))))
+      return identical;
+    if (this.readOnly) throw fail('服务暂处于只读保护，写入额度恢复后自动继续', 503);
     if (kind === 'showcase-status') {
       const old = this.get(kind, value.id);
       if (
@@ -53,6 +93,7 @@ export class CloudStore extends PlatformRepository {
     return super.put(kind, value);
   }
   prune() {
+    if (this.readOnly) return;
     const now = Date.now();
     this.db
       .prepare(

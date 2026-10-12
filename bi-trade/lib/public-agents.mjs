@@ -31,7 +31,17 @@ export function publicAgent(store, paper, live, agent) {
     simulated && openValues.every(Number.isFinite)
       ? openValues.reduce((n, x) => n + x, 0) - view.positions.reduce((n, p) => n + p.usdCost, 0)
       : null;
-  const runtime = agent.source === 'builtin' ? store.get('showcase-status', agent.id) : null;
+  const runtime =
+    agent.source === 'builtin'
+      ? store.readOnly
+        ? {
+            ...store.get('showcase-status', agent.id),
+            state: 'observing',
+            reason: '服务暂处于只读保护，写入额度恢复后自动继续。历史资金与成交已保留。',
+            nextDecisionAt: store.readOnlyUntil,
+          }
+        : store.get('showcase-status', agent.id)
+      : null;
   const riskReviews =
     agent.source === 'builtin'
       ? [

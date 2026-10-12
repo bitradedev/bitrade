@@ -230,7 +230,7 @@ export function recordReceipt(store, agent, order, receipt, at) {
 }
 
 export class LiveDesk {
-  constructor(store, vault, rpc, { enabled = false, confirmations = 3 } = {}) {
+  constructor(store, vault, rpc, { enabled = false, confirmations = 3, readOnly = false } = {}) {
     this.store = store;
     this.vault = vault;
     this.rpc = rpc;
@@ -239,7 +239,7 @@ export class LiveDesk {
     this.locks = new Map();
     this.busy = false;
     this.stopped = false;
-    for (const o of this.orders().filter((o) => o.status === 'preparing'))
+    for (const o of this.orders().filter((o) => !readOnly && o.status === 'preparing'))
       this.store.put('live-orders', {
         ...o,
         status: 'failed',

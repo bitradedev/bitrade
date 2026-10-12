@@ -656,7 +656,7 @@ export class CloudMarket {
           quality: 'verified',
         };
         this.catalog.set(m.address, next);
-        if (Date.now() - (this.persistAt.get(m.address) ?? 0) > 15000) {
+        if (Date.now() - (this.persistAt.get(m.address) ?? 0) > 60000) {
           this.store.put('cloud-markets', next);
           this.persistAt.set(m.address, Date.now());
         }

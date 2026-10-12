@@ -230,7 +230,7 @@ export class FlapBscData {
   }
   async discover() {
     const old = this.store.get('cloud-settings', 'flap-index');
-    if (old && this.now() - old.at >= 0 && this.now() - old.at < 60000)
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < 120000)
       return this.rankedLaunches();
     try {
       const head = await this.rpc.block(),

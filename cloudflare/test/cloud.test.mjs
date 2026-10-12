@@ -217,3 +217,51 @@ test('Actual Workerd retains a model task after an alarm returns while later rou
  }finally{release();await first;}
  const done=await (await stub.fetch('https://probe.example/finish')).json();assert.equal(done.active,false);assert.equal(done.decisionBudget.used,3);assert.ok(done.decisionBudget.completedAt>=done.decisionBudget.startedAt);assert.equal(done.budget.used,1);assert.deepEqual(calls,['price.example.com','slow-ai.example.com','price.example.com','after-ai.example.com']);
 });
+
+test('Actual Workerd read-only protection keeps agents and history visible without SQL writes, sessions, new funds or model calls', async (t) => {
+  const mf = new Miniflare(
+    convertV4MiniflareOptions({
+      name: 'read-only-test',
+      modules: true,
+      scriptPath: '.cloud-test-build/worker.mjs',
+      compatibilityDate: '2026-10-09',
+      compatibilityFlags: ['nodejs_compat'],
+      durableObjects: { PLATFORM: { className: 'ReadOnlyProbe', useSQLite: true } },
+      bindings: {
+        SITE_ORIGIN: 'https://bitrade.site',
+        BI_TRADE_VAULT_KEY: vaultKey.toString('base64'),
+      },
+      outboundService: async () => {
+        throw Error('Read-only service must not make outbound calls');
+      },
+      serviceBindings: { ASSETS: async () => new Response('unused') },
+    }),
+  );
+  t.after(() => mf.dispose());
+  await mf.ready;
+  const get = async (path) => {
+    const r = await mf.dispatchFetch('https://bitrade.site' + path);
+    assert.equal(r.status, 200);
+    return r.json();
+  };
+  const before = await get('/api/public'),
+    ns = await mf.getDurableObjectNamespace('PLATFORM');
+  await ns.get(ns.idFromName('bitrade-platform-v1')).fetch('https://test.example/__test/protect');
+  const after = await get('/api/public'),
+    runtime = await get('/api/runtime');
+  assert.equal(runtime.storageProtection.readOnly, true);
+  assert.equal(after.agents.length, 3);
+  for (const a of after.agents) {
+    const b = before.agents.find((x) => x.id === a.id);
+    assert.equal(a.address, b.address);
+    assert.equal(a.realizedUsd, b.realizedUsd);
+    assert.match(a.runtime.reason, /只读/);
+  }
+  const session = await mf.dispatchFetch('https://bitrade.site/api/session', {
+    method: 'POST',
+    headers: { Origin: 'https://bitrade.site', 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  assert.equal(session.status, 503);
+  assert.equal((await get('/api/leaderboard')).entries.length, 3);
+});

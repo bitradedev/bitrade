@@ -120,6 +120,7 @@ export async function createPlatformCore(options) {
   const gateway = options.gateway;
   const riskGuard = options.showcase === false ? null : options.riskGuard;
   paper = new PaperDesk(store, gateway, {
+    readOnly: options.readOnly === true,
     preserveQueued: options.preserveQueued === true,
     buyGuard: async (a, token, q) => {
       await gateway.assertEntry?.(token);
@@ -133,6 +134,7 @@ export async function createPlatformCore(options) {
   });
   const rpc = options.rpc ?? new BscRpc(options.rpcUrl ?? process.env.BI_TRADE_BSC_RPC);
   const live = new LiveDesk(store, vault, rpc, {
+    readOnly: options.readOnly === true,
     enabled: options.liveEnabled === true,
     confirmations: 3,
   });
@@ -140,6 +142,7 @@ export async function createPlatformCore(options) {
     .all('requests')
     .filter(
       (r) =>
+        options.readOnly !== true &&
         r.status === 'preparing' &&
         !store.get('paper-orders', r.id) &&
         !store.get('live-orders', r.id),
@@ -839,11 +842,12 @@ export async function createPlatformCore(options) {
         fields(data, []);
         let s = auth.session(req);
         if (!s) {
+          if (options.readOnly) throw fail('服务暂处于只读保护，暂不能创建会话', 503);
           limit(req, 'new-session', 10, 3600000);
           const issued = auth.guest();
           cookie(res, issued.token, issued.maxAge);
           s = { owner: issued.owner, csrf: issued.csrf };
-        } else {
+        } else if (!options.readOnly) {
           const renewed = auth.renewDemo(s);
           if (renewed) cookie(res, renewed.token, renewed.maxAge);
         }

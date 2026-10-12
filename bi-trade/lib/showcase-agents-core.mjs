@@ -55,6 +55,7 @@ export class ShowcaseAgents {
     maxAgentsPerRun = SHOWCASE_PROFILES.length,
     deferExecution = false,
     now = () => Date.now(),
+    readOnly = false,
   }) {
     Object.assign(this, { store, vault, paper, gateway, execute, planner, riskGuard, now });
     this.configReader = configReader ?? (() => readAIConfig(store, vault));
@@ -69,6 +70,10 @@ export class ShowcaseAgents {
     this.checkingExits = new Set();
     this.watching = null;
     this.watchCursor = 0;
+    if (readOnly) {
+      this.stopped = true;
+      return;
+    }
     store.transaction(() => {
       for (const p of SHOWCASE_PROFILES) {
         let a = store.get('agents', p.id);
@@ -108,7 +113,7 @@ export class ShowcaseAgents {
     return this.store.put('showcase-status', { ...old, ...patch, checkedAt: this.now() });
   }
   sample() {
-    if (this.now() - this.sampleAt < 30000) return;
+    if (this.now() - this.sampleAt < 60000) return;
     this.sampleAt = this.now();
     for (const m of this.freshMarkets()) {
       const id = m.address,

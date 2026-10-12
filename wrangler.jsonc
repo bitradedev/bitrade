@@ -11,6 +11,7 @@
  "assets":{"directory":"./bi-trade/web","binding":"ASSETS","run_worker_first":true,"html_handling":"none","not_found_handling":"none"},
  "durable_objects":{"bindings":[{"name":"PLATFORM","class_name":"TradingPlatform"}]},
  "migrations":[{"tag":"v1","new_sqlite_classes":["TradingPlatform"]}],
- "vars":{"SITE_ORIGIN":"https://bitrade.site","BSC_RPC_URL":"https://bsc-rpc.publicnode.com","BSC_RECEIPT_RPC_URL":"https://bsc-dataseed.bnbchain.org","BI_TRADE_AI_BASE_URL":"https://rivernexus.vip/v1","BI_TRADE_AI_MODEL":"gpt-6-luna","BI_TRADE_SHOWCASE_PAUSED":"false","BI_TRADE_PUBLIC_MARKET":"true","BI_TRADE_MEME_ONLY":"true"},
+ "vars":{"SITE_ORIGIN":"https://bitrade.site","BSC_RPC_URL":"https://bsc-rpc.publicnode.com","BSC_RECEIPT_RPC_URL":"https://bsc-dataseed.bnbchain.org","BI_TRADE_AI_BASE_URL":"https://rivernexus.vip/v1","BI_TRADE_AI_MODEL":"gpt-6-luna","BI_TRADE_SHOWCASE_PAUSED":"false","BI_TRADE_PUBLIC_MARKET":"true","BI_TRADE_MEME_ONLY":"true","BI_TRADE_STORAGE_READ_ONLY_UNTIL":"2026-10-13T00:00:00.000Z"},
+ "triggers":{"crons":["*/5 * * * *"]},
  "observability":{"enabled":false}
 }

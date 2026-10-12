@@ -33,14 +33,15 @@ export const raw = (v) => {
 export const PLATFORM_SCHEMA =
   'CREATE TABLE IF NOT EXISTS entities(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id));\n CREATE TABLE IF NOT EXISTS credentials(hash TEXT PRIMARY KEY,kind TEXT NOT NULL,owner TEXT NOT NULL,agent TEXT,expires INTEGER NOT NULL,csrf TEXT);\n CREATE TABLE IF NOT EXISTS challenges(id TEXT PRIMARY KEY,owner TEXT,address TEXT NOT NULL,purpose TEXT NOT NULL,target TEXT,message TEXT NOT NULL,expires INTEGER NOT NULL,used INTEGER NOT NULL DEFAULT 0);\n CREATE TABLE IF NOT EXISTS intents(agent TEXT NOT NULL,requestKey TEXT NOT NULL,signature TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(agent,requestKey));\n CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT,at INTEGER NOT NULL,owner TEXT,agent TEXT,kind TEXT NOT NULL,message TEXT NOT NULL);';
 export class PlatformRepository {
-  constructor(db, runTransaction) {
+  constructor(db, runTransaction, { initializeSchema = true } = {}) {
     this.db = db;
     this.runTransaction = runTransaction;
     this.depth = 0;
-    this.db.exec(PLATFORM_SCHEMA);
-    this.db.exec(
-      "CREATE INDEX IF NOT EXISTS entities_by_agent ON entities(kind,json_extract(payload,'$.agentId')) WHERE json_extract(payload,'$.agentId') IS NOT NULL;CREATE INDEX IF NOT EXISTS entities_by_owner ON entities(kind,json_extract(payload,'$.ownerId')) WHERE json_extract(payload,'$.ownerId') IS NOT NULL;",
-    );
+    if (initializeSchema) this.db.exec(PLATFORM_SCHEMA);
+    if (initializeSchema)
+      this.db.exec(
+        "CREATE INDEX IF NOT EXISTS entities_by_agent ON entities(kind,json_extract(payload,'$.agentId')) WHERE json_extract(payload,'$.agentId') IS NOT NULL;CREATE INDEX IF NOT EXISTS entities_by_owner ON entities(kind,json_extract(payload,'$.ownerId')) WHERE json_extract(payload,'$.ownerId') IS NOT NULL;",
+      );
   }
   get(kind, id) {
     const r = this.db.prepare('SELECT payload FROM entities WHERE kind=? AND id=?').get(kind, id);

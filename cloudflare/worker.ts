@@ -56,18 +56,27 @@ export class TradingPlatform extends DurableObject<any> {
   decisionTask: any = null;
   riskRequestReserve = 32;
   importing = false;
+  appReadOnly = false;
   constructor(ctx: any, env: any) {
     super(ctx, env);
-    this.store = new CloudStore(ctx.storage);
+    this.store = new CloudStore(ctx.storage, {
+      readOnlyUntil: Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '') || 0,
+    });
     this.io = new IOBudget(45);
   }
   initialize() {
+    if (this.app && this.appReadOnly && !this.store.readOnly) {
+      this.app = null;
+      this.market = null;
+      this.risk = null;
+    }
     if (this.app) return Promise.resolve(this.app);
     if (this.initializing) return this.initializing;
     this.initializing = this.ctx
       .blockConcurrencyWhile(async () => {
         if (!this.env.BI_TRADE_VAULT_KEY) throw Error('Missing vault secret');
-        resetShowcasePaper(this.store, this.env.BI_TRADE_SHOWCASE_RESET_ID);
+        if (!this.store.readOnly)
+          resetShowcasePaper(this.store, this.env.BI_TRADE_SHOWCASE_RESET_ID);
         const vault = new EncryptedVault(Buffer.from(this.env.BI_TRADE_VAULT_KEY, 'base64'));
         const source = new GmgnHTTP(
             this.env.GMGN_RELAY_URL ? this.env.GMGN_RELAY_TOKEN : this.env.GMGN_API_KEY,
@@ -144,10 +153,17 @@ export class TradingPlatform extends DurableObject<any> {
           riskGuard: risk,
           origin: this.env.SITE_ORIGIN,
           preserveQueued: true,
+          readOnly: this.store.readOnly,
           liveEnabled: false,
           rpc: { balance: async () => 0n },
           rateLimit: (...args: any[]) => this.store.rateLimit(...args),
-          showcaseOptions: { configReader, planner, maxAgentsPerRun: 1, deferExecution: true },
+          showcaseOptions: {
+            configReader,
+            planner,
+            maxAgentsPerRun: 1,
+            deferExecution: true,
+            readOnly: this.store.readOnly,
+          },
           assetReader: async (name: string) =>
             Buffer.from(
               await (
@@ -156,7 +172,10 @@ export class TradingPlatform extends DurableObject<any> {
             ),
         });
         this.app.paper.maxOrdersPerTick = 1;
-        for (const a of this.store.all('agents').filter((a: any) => a.source === 'builtin')) {
+        this.appReadOnly = this.store.readOnly;
+        for (const a of this.store
+          .all('agents')
+          .filter((a: any) => !this.store.readOnly && a.source === 'builtin')) {
           const paused = this.env.BI_TRADE_SHOWCASE_PAUSED === 'true';
           if (a.paused !== paused) this.store.put('agents', { ...a, paused });
         }
@@ -167,7 +186,8 @@ export class TradingPlatform extends DurableObject<any> {
       });
     return this.initializing;
   }
-  async arm(delay = 10000) {
+  async arm(delay = 20000) {
+    if (this.store.readOnly) return;
     const next = await this.ctx.storage.getAlarm();
     if (next === null || next > Date.now() + delay)
       await this.ctx.storage.setAlarm(Date.now() + delay);
@@ -182,10 +202,26 @@ export class TradingPlatform extends DurableObject<any> {
       if (url.pathname === '/__admin/check-ai') return await this.checkAI(request);
       if (this.importing) return json({ error: '账本正在迁移，请稍后重试' }, 503);
       const app = await this.initialize();
+      if (
+        this.store.readOnly &&
+        !['GET', 'HEAD'].includes(request.method) &&
+        url.pathname !== '/api/session'
+      )
+        return json(
+          {
+            error: '服务暂处于只读保护，写入额度恢复后自动继续。历史资金与成交已保留。',
+            retryAt: this.store.readOnlyUntil,
+          },
+          503,
+        );
       await this.arm();
       if (url.pathname === '/api/runtime')
         return json({
           platform: 'cloudflare',
+          storageProtection: {
+            readOnly: this.store.readOnly,
+            retryAt: this.store.readOnly ? this.store.readOnlyUntil : null,
+          },
           liveEnabled: false,
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
           showcaseReset: this.store.get('cloud-settings', 'showcase-paper-reset'),
@@ -388,6 +424,15 @@ export class TradingPlatform extends DurableObject<any> {
 }
 
 export default {
+  async scheduled(_controller: any, env: any, ctx: any) {
+    const id = env.PLATFORM.idFromName('bitrade-platform-v1');
+    ctx.waitUntil(
+      env.PLATFORM.get(id)
+        .fetch(new Request(env.SITE_ORIGIN + '/api/runtime'))
+        .then((r: any) => r.arrayBuffer())
+        .catch(() => {}),
+    );
+  },
   async fetch(request: Request, env: any) {
     const url = new URL(request.url),
       origin = new URL(env.SITE_ORIGIN).origin;

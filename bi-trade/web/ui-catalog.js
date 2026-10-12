@@ -9,6 +9,8 @@ window.BI_UI_EN = {
 "集中度与同交易分发仅按已验证发行区块起的转账记录计算；不能认定这些钱包属于同一人。":"Concentration and same-transaction distributions use transfer records from the verified creation block; they do not establish common wallet ownership.",
 "持仓集中度资料未知。":"Holder concentration information is unknown.",
 "报价资产用指定数量与收款地址的下一块连续转账模拟补证；代理、发行方控制、冻结和审计仍可能未知，未验证真实账户资金、签名、授权或整笔swap。":"Quote-asset evidence uses next-block transfer simulations for the exact amount and recipient. Proxy, issuer control, freeze and audit risks can remain unknown; actual funding, signatures, allowances and the complete swap are unverified.",
+"服务暂处于只读保护，写入额度恢复后自动继续。历史资金与成交已保留。":"Trading is temporarily paused in read-only protection and will resume after service capacity recovers. Funds and trade history are preserved.",
+"服务暂处于只读保护，暂不能创建会话":"The service is temporarily read-only; a new session cannot be created yet.",
 "等待执行":"Awaiting execution",
 "提案待执行":"Proposal awaiting execution",
 "已提交订单":"Order submitted",
