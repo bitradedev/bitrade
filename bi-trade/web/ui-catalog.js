@@ -1,4 +1,13 @@
 window.BI_UI_EN = {
+"Flap 模拟 · 有限检测":"Flap paper · limited screening",
+"毕业进度":"Graduation progress",
+"买入税 / 卖出税":"Buy tax / sell tax",
+"Flap 持仓转账样本：":"Flap holder transfer sample: ",
+"个观测持币地址":"observed holder addresses",
+"新币模拟使用发行身份、曲线储备与净卖出报价；不要求成熟币的全天成交量和持币人数。":"New-launch paper screening uses launch identity, real curve reserves and net sell quotes; it does not require mature-token daily volume or holder counts.",
+"完整捆绑、同源资金、黑名单和合约审计资料未知；报价成功不代表已完成账户授权或保证实际可卖出。":"Complete bundling, shared funding, blacklist and audit information are unknown. A successful quote does not verify account approval or guarantee an executable transfer.",
+"集中度与同交易分发仅按已验证发行区块起的转账记录计算；不能认定这些钱包属于同一人。":"Concentration and same-transaction distributions use transfer records from the verified creation block; they do not establish common wallet ownership.",
+"持仓集中度资料未知。":"Holder concentration information is unknown.",
 "等待执行":"Awaiting execution",
 "提案待执行":"Proposal awaiting execution",
 "已提交订单":"Order submitted",

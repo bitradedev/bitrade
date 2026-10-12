@@ -230,9 +230,22 @@ export class CloudRpc {
         block === undefined ? 'latest' : hexBlock(block),
       ],
       id = JSON.stringify(params);
+    const anchor = Number.isSafeInteger(block) ? this.cache.get(block)?.hash : null,
+      cacheKey = anchor ? id + ':' + anchor : null;
+    this.readCache ??= new Map();
+    const old = cacheKey ? this.readCache.get(cacheKey) : null;
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < 30000) return old.value;
     if (this.pending.has(id)) return this.pending.get(id);
     const p = this.request('eth_call', params)
-      .then((data) => decodeFunctionResult({ abi, functionName: fn, data }))
+      .then((data) => {
+        const value = decodeFunctionResult({ abi, functionName: fn, data });
+        if (cacheKey && this.cache.get(block)?.hash === anchor) {
+          this.readCache.set(cacheKey, { at: this.now(), value });
+          while (this.readCache.size > 512)
+            this.readCache.delete(this.readCache.keys().next().value);
+        }
+        return value;
+      })
       .finally(() => this.pending.delete(id));
     this.pending.set(id, p);
     return p;

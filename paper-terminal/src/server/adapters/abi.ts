@@ -6,6 +6,11 @@ export const FLAP_ABI=parseAbi([
  'function getFeeRate() view returns (uint256 buyFeeRate,uint256 sellFeeRate)',
  'function quoteExactInput((address inputToken,address outputToken,uint256 inputAmount) params) returns (uint256 outputAmount)',
 ]);
+export const FLAP_TAX_V3_ABI=parseAbi([
+ 'function state() view returns (uint8)','function mainPool() view returns (address)',
+ 'function buyTaxRate() view returns (uint16)','function sellTaxRate() view returns (uint16)',
+ 'function liquidationThreshold() view returns (uint256)','function balanceOf(address) view returns (uint256)',
+]);
 export const FOUR_ABI=parseAbi([
  'function getTokenInfo(address token) view returns (uint256 version,address tokenManager,address quote,uint256 lastPrice,uint256 tradingFeeRate,uint256 minTradingFee,uint256 launchTime,uint256 offers,uint256 maxOffers,uint256 funds,uint256 maxFunds,bool liquidityAdded)',
  'function tryBuy(address token,uint256 amount,uint256 funds) view returns (address tokenManager,address quote,uint256 estimatedAmount,uint256 estimatedCost,uint256 estimatedFee,uint256 amountMsgValue,uint256 amountApproval,uint256 amountFunds)',

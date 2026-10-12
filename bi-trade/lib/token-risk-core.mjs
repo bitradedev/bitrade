@@ -292,7 +292,12 @@ export class TokenRiskGuard {
       !positive(report.metrics?.liquidityUsd) ||
       sizeUsd > report.metrics.liquidityUsd * RISK_POLICY.maxOrderLiquidityShare
     )
-      throw fail('开仓金额超过已核实池流动性的1%，暂不允许买入', 409);
+      throw fail(
+        report.metrics?.liquidityKind === 'curve-reserve'
+          ? '开仓金额超过已核实曲线实有储备的1%，暂不允许买入'
+          : '开仓金额超过已核实池流动性的1%，暂不允许买入',
+        409,
+      );
     return report;
   }
   async close() {

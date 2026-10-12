@@ -2,6 +2,7 @@ import { identifier, fail } from './database-core.mjs';
 import { readAIConfig, OpenAIPlanner, validateDecision, reserveAICall } from './ai-provider.mjs';
 import { viem } from './dependencies.mjs';
 import { v2Abi, ROUTER_V2, WBNB } from './bsc-rpc.mjs';
+import { RISK_POLICY } from './token-risk-core.mjs';
 import {
   showcasePositions,
   EXIT_POLICY_VERSION,
@@ -144,6 +145,11 @@ export class ShowcaseAgents {
       at: this.now(),
       chainId: 56,
       block: head.head,
+      executionConstraints: {
+        maxLiquidityShare: RISK_POLICY.maxOrderLiquidityShare,
+        liquidityBasis: 'risk.metrics.liquidityUsd',
+        paperOnly: true,
+      },
       account: {
         initialUsd: v.initialUsd,
         balanceUsd: v.balanceUsd,
@@ -172,6 +178,11 @@ export class ShowcaseAgents {
         priceUsd: m.priceUsd,
         liquidityUsd: m.liquidityUsd ?? null,
         volumeUsd: m.volumeUsd ?? null,
+        volumeWindow: m.volumeWindow ?? null,
+        quoteSymbol: m.quoteSymbol ?? null,
+        progressPct: m.progressPct ?? null,
+        reserveUsd: m.reserveUsd ?? null,
+        createdAt: m.createdAt ?? null,
         dataSource: m.dataSource ?? null,
         marketDataAt: m.marketDataAt ?? null,
         priceChange: m.priceChange ?? null,

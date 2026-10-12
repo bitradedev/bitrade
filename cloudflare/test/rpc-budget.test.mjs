@@ -1,6 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CloudRpc } from '../rpc.mjs';
+import { parseAbi, encodeFunctionResult } from 'viem';
+
+test('Exact-block contract cache shares immutable reads without crossing recipients, blocks, forks or latest calls', async () => {
+  const abi = parseAbi(['function value() view returns (uint256)']),
+    token = '0x' + '11'.repeat(20),
+    a = '0x' + '22'.repeat(20),
+    b = '0x' + '33'.repeat(20);
+  let calls = 0;
+  const rpc = new CloudRpc('https://rpc.example', {
+    fetchImpl: async () => {
+      calls++;
+      return Response.json({
+        result: encodeFunctionResult({ abi, functionName: 'value', result: BigInt(calls) }),
+      });
+    },
+  });
+  rpc.cache.set(100, { hash: 'canonical-a' });
+  assert.equal(await rpc.read(token, abi, 'value', [], 100, a), 1n);
+  assert.equal(await rpc.read(token, abi, 'value', [], 100, a), 1n);
+  assert.equal(calls, 1);
+  assert.equal(await rpc.read(token, abi, 'value', [], 100, b), 2n);
+  rpc.cache.set(100, { hash: 'canonical-b' });
+  assert.equal(await rpc.read(token, abi, 'value', [], 100, a), 3n);
+  await rpc.read(token, abi, 'value', [], undefined, a);
+  await rpc.read(token, abi, 'value', [], undefined, a);
+  assert.equal(calls, 5);
+  await rpc.read(token, abi, 'value', [], 101, a);
+  await rpc.read(token, abi, 'value', [], 101, a);
+  assert.equal(calls, 7);
+});
 
 function store() {
   const rows = new Map();

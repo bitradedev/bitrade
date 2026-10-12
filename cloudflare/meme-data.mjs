@@ -1,5 +1,6 @@
 import { keccak256, parseAbi, decodeEventLog, getEventSelector } from 'viem';
 import { PublicBscData } from './public-data.mjs';
+import { FlapBscData } from './flap-data.mjs';
 import { evaluateMemeRisk } from '../bi-trade/lib/meme-risk.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 import { readTurnoverHistory } from './turnover-history.mjs';
@@ -114,6 +115,7 @@ export function migrationCandidates(logs, fromBlock, toBlock, at) {
       name: token,
       category: 'meme',
       label: 'launchpad-origin',
+      platform: d.eventName === 'LaunchedToDEX' ? 'flap' : 'four',
       discoverySource: 'BSC launchpad migration event',
       discoveryBlock: Number(BigInt(l.blockNumber)),
       discoveryHash: l.blockHash,
@@ -243,11 +245,16 @@ export function transferClusters(logs, holders, token, fromBlock, toBlock) {
     .map(([transactionHash, v]) => ({ transactionHash, addresses: [...v] }));
 }
 export class MemeBscData extends PublicBscData {
+  constructor(store, rpc, options = {}) {
+    super(store, rpc, options);
+    this.flap = new FlapBscData(store, rpc, this, options);
+  }
   status() {
     const s = this.store.get('cloud-settings', 'meme-chain-index') ?? {},
       rpc = this.rpc.statusFor?.('eth_getLogs') ?? this.rpc.status?.() ?? {};
     return [
       ...super.status(),
+      this.flap.status(),
       {
         source: 'BSC launchpad events',
         ...s,
@@ -311,10 +318,11 @@ export class MemeBscData extends PublicBscData {
     if (
       current &&
       this.now() - current.at >= 0 &&
-      this.now() - current.at < 300000 &&
+      this.now() - current.at < 60000 &&
       this.candidates().length
     )
       return this.candidates();
+    const launches = await this.flap.discover();
     const lists = [];
     for (const type of ['VOL', 'NEW']) {
       try {
@@ -408,6 +416,26 @@ export class MemeBscData extends PublicBscData {
           ...previous,
           ...bootstrap,
         ];
+    const knownFlap = previous
+      .filter(
+        (c) =>
+          this.flap.supports(c.address) &&
+          this.store.get('cloud-flap-evidence', c.address)?.originVerified === true,
+      )
+      .sort(
+        (a, b) =>
+          Number(this.store.get('token-risk-reports', b.address)?.buyAllowed === true) -
+          Number(this.store.get('token-risk-reports', a.address)?.buyAllowed === true),
+      )
+      .slice(0, 4);
+    const flapCursor = Number.isInteger(current?.flapCursor) ? current.flapCursor : 0;
+    const freshFlap = launches.length
+      ? Array.from(
+          { length: Math.min(4, launches.length) },
+          (_, i) => launches[(flapCursor + i) % launches.length],
+        )
+      : [];
+    rows = [...knownFlap, ...freshFlap, ...rows];
     const seen = new Set();
     rows = rows.filter((c) => !seen.has(c.address) && seen.add(c.address)).slice(0, 12);
     if (!rows.length) throw Error('独立 Meme 发现暂未返回候选');
@@ -425,12 +453,13 @@ export class MemeBscData extends PublicBscData {
     );
     for (const old of this.store.all('cloud-meme-candidates'))
       if (old.active === false && !held.has(old.id))
-        for (const kind of ['cloud-meme-candidates', 'cloud-meme-pools'])
+        for (const kind of ['cloud-meme-candidates', 'cloud-meme-pools', 'cloud-flap-evidence'])
           this.store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run(kind, old.id);
     this.store.put('cloud-settings', {
       id: 'meme-discovery',
       at: this.now(),
       bootstrapCursor: (bootstrapCursor + 2) % MEME_BOOTSTRAP.length,
+      flapCursor: launches.length ? (flapCursor + 2) % launches.length : 0,
     });
     return this.candidates();
   }
@@ -647,6 +676,7 @@ export class MemeBscData extends PublicBscData {
     return task;
   }
   async metadata(token) {
+    if (this.flap.supports(token)) return this.flap.metadata(token);
     const d = await this.tradingEvidence(token),
       c = d.check,
       p = d.pair;
@@ -694,6 +724,7 @@ export class MemeBscData extends PublicBscData {
     };
   }
   async riskReport(token) {
+    if (this.flap.supports(token)) return this.flap.riskReport(token);
     const d = await this.tradingEvidence(token),
       holders = await this.read('safety', '/v1/TopHolders?chainID=56&address=' + token);
     let transferSample = { available: false, fromBlock: null, toBlock: null, clusters: [] };

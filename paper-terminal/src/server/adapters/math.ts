@@ -38,6 +38,7 @@ export function feeExcludedImpact(route:Route,side:'buy'|'sell',result:RouteQuot
  }else{
   const lp=route.kind==='v2'?Number(route.fee??25)/10000:Number(route.kind==='v4'?route.key!.fee:route.fee!)/1e6;
   expected=Number(result.spent)*(1-lp)*(side==='buy'?1/spot:spot);
+  if(route.state?.platform==='flap')expected*=1-Number(side==='buy'?route.state.buyTaxRate:route.state.sellTaxRate)/10000;
   if(route.kind==='v4')expected*=1-(Number(route.state?.hookFeeBps||0)+Number(route.state?.creatorTaxBps||0))/10000;
  }
  if(!(expected>0)||!Number.isFinite(expected))throw new RouteBlocked('IMPACT_UNKNOWN','无费用基准数量不可核实');

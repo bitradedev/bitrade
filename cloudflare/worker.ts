@@ -105,11 +105,13 @@ export class TradingPlatform extends DurableObject<any> {
             maxTokensPerTick: 1,
             source: {
               label: (token: string) =>
-                memeData?.supports(token)
-                  ? 'BSC Meme · Four.meme / GeckoTerminal · Honeypot.is · RPC'
-                  : publicData?.supports(token)
-                    ? 'BSC RPC · DEX Screener · Honeypot.is'
-                    : 'GMGN API',
+                memeData?.flap?.supports(token)
+                  ? 'Flap Portal · BSC RPC'
+                  : memeData?.supports(token)
+                    ? 'BSC Meme · Four.meme / GeckoTerminal · Honeypot.is · RPC'
+                    : publicData?.supports(token)
+                      ? 'BSC RPC · DEX Screener · Honeypot.is'
+                      : 'GMGN API',
               riskReport: (token: string) =>
                 memeData?.supports(token)
                   ? memeData.riskReport(token)

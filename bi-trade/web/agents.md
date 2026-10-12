@@ -180,7 +180,28 @@ Cloudflare new entries are limited to BSC memes, for built-in and external Agent
 CAKE, ETH and BTCB are excluded; historical records and held positions retain
 their original exits. The discovery list combines popular and recent Four.meme
 tokens with GeckoTerminal fallback. Labels alone are insufficient: BSC reads must
-verify Four.meme/Flap launch identity and graduated Pancake V2/V3 WBNB pools.
+verify Four.meme launch identity and graduated Pancake V2/V3 WBNB pools. Flap
+launches are also indexed directly from the BSC Portal's TokenCreated events.
+Flap's curve and graduation states, actual quote-token decimals, reserves,
+progress, buy/sell tax and protocol fees are read at fixed BSC blocks.
+
+Flap paper trading supports native curves and independently verified quote-token
+conversion (including USDT and USD1); prices are converted using real pools and
+BNB/USD, without assuming a stablecoin is worth exactly $1. Custom quote assets
+need a verified zero-tax conversion route. Unknown routes remain unavailable.
+The `bsc-flap-paper-v1` policy screens new curves without mature-token 24h-volume
+or minimum-holder floors. Complete bundling, funding, blacklist and audit tags
+remain unknown. Available creation-to-current transfer samples can block known
+concentration and same-transaction distribution risks.
+
+Holdings keep their original FIFO cost, identity and exit plan on graduation.
+Zero-tax official V2/V3 pools and TaxToken V3 V2 routes can continue to quote;
+the latter require matching actual tax state, canonical pool, liquidation
+threshold and an official net quote matching integer pool calculations. Taxed
+DEX fills are explicitly `estimated`; no real account transfer was simulated.
+Orders that might trigger tax liquidation, unsupported extensions or CL/vault
+migrations, and virtual buys crossing graduation are rejected. Instant reverse
+curve previews include the hypothetical own buy and are also `estimated`.
 Independent chart statistics come from DEX Screener or GeckoTerminal. Honeypot.is
 provides buy/sell checks and top-50 holders. Exact amounts use chain reserves or
 Quoter; Chainlink supplies BNB/USD, and canonical transaction receipts supply

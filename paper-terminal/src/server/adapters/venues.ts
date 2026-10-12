@@ -1,6 +1,6 @@
 import { encodeAbiParameters,keccak256, type Address } from 'viem';
 import type { Side } from '../../shared/domain.js';
-import { ERC20,FLAP_ABI,FOUR_ABI,PONS_V1_ABI,PONS_V2_ABI,V2_ABI,V3_ABI,V4_ABI } from './abi.js';
+import { ERC20,FLAP_ABI,FLAP_TAX_V3_ABI,FOUR_ABI,PONS_V1_ABI,PONS_V2_ABI,V2_ABI,V3_ABI,V4_ABI } from './abi.js';
 import { CHAIN_CONFIG,FLAP,FOUR_HELPER,FOUR_MANAGER,PONS_V1,PONS_V2,ZERO,ORDINARY_RECIPIENT,RouteBlocked,address,type Route,type RouteQuote,type PoolKey,capMap } from './types.js';
 import type { ReadRpc } from './rpc.js';
 import { BPS,WAD,flapReserve,flapSpent,flapVirtualSell,quotePons,units,v2Quote,feeExcludedImpact } from './math.js';
@@ -22,7 +22,7 @@ export class Venues {
  async decimals(token:Address,block?:number){if(token===ZERO)return 18;let d=this.decimalsCache.get(token);if(d===undefined){d=Number(await this.rpc.read(token,ERC20,'decimals',[],block));if(!Number.isInteger(d)||d<0||d>36)throw new RouteBlocked('DECIMALS_UNKNOWN','代币精度不可核实');this.decimalsCache.set(token,d);capMap(this.decimalsCache,2000);}return d;}
  async resolve(token:Address,block:number,poolHint?:string):Promise<Route>{
   if(this.rpc.chain==='bsc'){
-   const s=await this.rpc.read<any>(FLAP,FLAP_ABI,'getTokenV8Safe',[token],block).catch(()=>null);
+   const s=await this.rpc.read<any>(FLAP,FLAP_ABI,'getTokenV8Safe',[token],block).catch(e=>{if(e?.code==='CF_SUBREQUEST_BUDGET')throw e;return null;});
    if(s&&Number(s.status)>0){
     if(![1,4].includes(Number(s.status)))throw new RouteBlocked('FLAP_CLOSED',`Flap 当前状态 ${s.status} 不可交易`);
     const quote=address(s.quoteTokenAddress);
@@ -94,8 +94,9 @@ export class Venues {
   if(route.kind==='v2'){const reserves=await this.rpc.read<any>(route.pool!,V2_ABI,'getReserves',[],block);const tr=BigInt(reserves[token0?0:1]),qr=BigInt(reserves[token0?1:0]);if(!tr||!qr)throw new RouteBlocked('EMPTY_RESERVES','池储备为空');return Number(qr)/Number(tr);}
   const slot=await this.rpc.read<any>(route.pool!,V3_ABI,'slot0',[],block);const rate=(Number(slot[0])/2**96)**2;return token0?rate:1/rate;
  }
- async quote(route:Route,side:Side,input:bigint,block:number,recipient:Address=ORDINARY_RECIPIENT):Promise<RouteQuote>{const result=await this.quoteCore(route,side,input,block,recipient);return {...result,impactPct:feeExcludedImpact(route,side,result),impactQuality:route.kind==='v4'||route.state?.virtualPreview?'estimated':'verified'};}
+ async quote(route:Route,side:Side,input:bigint,block:number,recipient:Address=ORDINARY_RECIPIENT):Promise<RouteQuote>{const result=await this.quoteCore(route,side,input,block,recipient);return {...result,impactPct:feeExcludedImpact(route,side,result),impactQuality:route.kind==='v4'||route.state?.virtualPreview||result.quality==='estimated'?'estimated':'verified'};}
  private async quoteCore(route:Route,side:Side,input:bigint,block:number,recipient:Address=ORDINARY_RECIPIENT):Promise<RouteQuote>{
+  if((route.kind==='flap'||route.state?.platform==='flap')&&route.state?.extensionID&&!/^0x0{64}$/i.test(route.state.extensionID))throw new RouteBlocked('FLAP_EXTENSION_UNVERIFIED','Flap 当前扩展合约尚未核实，拒绝模拟成交');
   const read=(contract:Address,abi:any,name:string,args:readonly unknown[]=[])=>this.rpc.read<any>(contract,abi,name,args,block,recipient);
   if(route.kind==='pons-v2'){
    const names=['getReserves','sellableTokens','readyToGraduate','graduated'];
@@ -129,6 +130,23 @@ export class Venues {
   }
   // A transferred token can liquidate its accrued fees while selling. A quoter
   // does not exercise that transfer, so fail closed instead of inventing a fill.
+  if(route.kind==='v2'&&route.state?.platform==='flap'&&Number(route.state.tokenVersion)===6&&(BigInt(route.state.buyTaxRate)||BigInt(route.state.sellTaxRate))){
+   const [state,pool,buy,sell,threshold,accrued,reserves,t0]=await Promise.all([
+    read(route.token,FLAP_TAX_V3_ABI,'state'),read(route.token,FLAP_TAX_V3_ABI,'mainPool'),
+    read(route.token,FLAP_TAX_V3_ABI,'buyTaxRate'),read(route.token,FLAP_TAX_V3_ABI,'sellTaxRate'),
+    read(route.token,FLAP_TAX_V3_ABI,'liquidationThreshold'),read(route.token,FLAP_TAX_V3_ABI,'balanceOf',[route.token]),
+    read(route.pool!,V2_ABI,'getReserves'),read(route.pool!,V2_ABI,'token0')]);
+   if(![2,3].includes(Number(state))||address(pool)!==route.pool||BigInt(buy)!==BigInt(route.state.buyTaxRate)||BigInt(sell)!==BigInt(route.state.sellTaxRate))throw new RouteBlocked('FLAP_TAX_STATE_UNKNOWN','Flap 毕业后的实际税状态与 Portal 不一致');
+   const token0=address(t0)===route.token,tr=BigInt(reserves[token0?0:1]),qr=BigInt(reserves[token0?1:0]);
+   if(tr<=0n||qr<=0n||BigInt(buy)>=BPS||BigInt(sell)>=BPS)throw new RouteBlocked('FLAP_TAX_STATE_UNKNOWN','Flap 毕业池储备或税率无效');
+   const grossOut=side==='buy'?v2Quote(input,qr,tr):0n,taxTokens=side==='buy'?grossOut*BigInt(buy)/BPS:input*BigInt(sell)/BPS;
+   if(BigInt(threshold)<=0n||BigInt(accrued)+taxTokens>=BigInt(threshold))throw new RouteBlocked('FLAP_TAX_LIQUIDATION','本次交易可能触发 Flap 税款清算，尚不能核实复合成交');
+   const expected=side==='buy'?grossOut-taxTokens:v2Quote(input-taxTokens,tr,qr);
+   const out=BigInt(await read(FLAP,FLAP_ABI,'quoteExactInput',[{inputToken:side==='buy'?route.quote:route.token,outputToken:side==='buy'?route.token:route.quote,inputAmount:input}]));
+   const difference=out>expected?out-expected:expected-out;
+   if(out<=0n||difference>1n)throw new RouteBlocked('FLAP_NET_QUOTE_UNKNOWN','Flap 官方净报价与当前含税池计算不一致');
+   return {out,spent:input,refund:0n,protocol:side==='buy'?input*25n/BPS:(input-taxTokens)*25n/BPS*qr/tr,tax:taxTokens*qr/tr,spot:Number(qr)/Number(tr),quality:'estimated',notes:['Flap Portal 固定区块含税净报价与官方 V2 池整数计算一致；税费已含在输出，不重复扣除','TaxToken V3 实际税状态、主池及清算阈值按当前区块核实；拒绝可能触发清算的订单','模拟未执行真实余额/授权/转账；外盘含税成交质量标为 estimated']};
+  }
   if(['v2','v3'].includes(route.kind)&&(BigInt(route.state?.buyTaxRate||0)||BigInt(route.state?.sellTaxRate||0)))throw new RouteBlocked('TRANSFER_TAX_UNVERIFIED','外盘转账税及自动税款清算尚未核实，拒绝模拟成交');
   if(route.kind==='v2'){
    const [reserves,t0]=await Promise.all([read(route.pool!,V2_ABI,'getReserves'),read(route.pool!,V2_ABI,'token0')]);const token0=address(t0)===route.token;const tr=BigInt(reserves[token0?0:1]),qr=BigInt(reserves[token0?1:0]);const rin=side==='buy'?qr:tr,rout=side==='buy'?tr:qr;

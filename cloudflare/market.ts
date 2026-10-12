@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Venues } from '../paper-terminal/src/server/adapters/venues.js';
 import { ReceiptGas } from '../paper-terminal/src/server/adapters/fees.js';
+import { ERC20, FLAP_ABI } from '../paper-terminal/src/server/adapters/abi.js';
 import {
   CHAIN_CONFIG,
+  FLAP,
   ZERO,
   ORDINARY_RECIPIENT,
   address,
@@ -66,6 +68,7 @@ export class CloudMarket {
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
+    if (memeData?.flap) memeData.flap.market = this;
     for (const m of store.all('cloud-markets')) this.catalog.set(m.address, m);
     for (const m of store.all('cloud-metadata')) this.metadata.set(m.id, m);
     this.fxValue = store.get('cloud-settings', 'native-fx');
@@ -169,6 +172,15 @@ export class CloudMarket {
   async loadMetadata(token: string) {
     const old = this.metadata.get(token);
     if (old && Date.now() - old.at >= 0 && Date.now() - old.at < 90000) return old;
+    if (
+      this.memeData?.flap?.quoteAsset(token) &&
+      ![ZERO, CHAIN_CONFIG.bsc.wrapped].includes(token as any)
+    ) {
+      const next = await this.memeData.flap.quoteMetadata(token);
+      this.metadata.set(token, next);
+      this.store.put('cloud-metadata', next);
+      return next;
+    }
     if (this.memeData?.supports(token)) {
       const next = await this.memeData.metadata(token);
       this.metadata.set(token, next);
@@ -193,7 +205,26 @@ export class CloudMarket {
   }
   async route(chain: string, token: string, block: number) {
     const old = this.routes.get(token);
-    if (old && ['v2', 'v3'].includes(old.route.kind) && block >= old.block) return old.route;
+    if (
+      old &&
+      ['v2', 'v3'].includes(old.route.kind) &&
+      old.route.state?.platform !== 'flap' &&
+      block >= old.block
+    )
+      return old.route;
+    if (old?.route.state?.platform === 'flap' && old.block === block) return old.route;
+    if (old?.route.state?.platform === 'flap' && ['v2', 'v3'].includes(old.route.kind)) {
+      const s = await this.rpc.read(FLAP, FLAP_ABI, 'getTokenV8Safe', [address(token)], block);
+      if (
+        Number(s.status) === 4 &&
+        address(s.pool) === old.route.pool &&
+        address(s.quoteTokenAddress) === old.route.quote
+      ) {
+        const route = { ...old.route, state: { ...s, platform: 'flap' } };
+        this.routes.set(token, { block, route });
+        return route;
+      }
+    }
     const md = await this.loadMetadata(token),
       hint = md.info.biggest_pool_address;
     const revision = this.quoteRevision.bsc,
@@ -218,7 +249,7 @@ export class CloudMarket {
     const s = md.security,
       buy = finite(s.buy_tax),
       sell = finite(s.sell_tax);
-    if (['public-bsc', 'meme-bsc'].includes(md.source) && s.verifiedPool !== r.pool)
+    if (['public-bsc', 'meme-bsc', 'flap-quote'].includes(md.source) && s.verifiedPool !== r.pool)
       throw new RouteBlocked('TAX_UNKNOWN', '买卖税检测与当前池不一致');
     if (buy === null || sell === null) throw new RouteBlocked('TAX_UNKNOWN', '外盘买卖税字段缺失');
     if (buy !== 0 || sell !== 0)
@@ -271,6 +302,7 @@ export class CloudMarket {
       this.verifyExternalTaxes('bsc', token, r);
       if (
         ['v2', 'v3'].includes(r.kind) &&
+        r.state?.platform !== 'flap' &&
         (BigInt(r.state?.buyTaxRate || 0) || BigInt(r.state?.sellTaxRate || 0))
       )
         throw Error('外盘转账税清算尚未核实');
@@ -290,20 +322,51 @@ export class CloudMarket {
         stage: ['flap', 'four'].includes(r.kind) ? 'curve' : 'dex',
         priceUsd,
         nativeUsd: fx.usd,
-        liquidityUsd: statsFresh ? finite(md.info.liquidity) : null,
+        quoteUsd,
+        quoteSymbol:
+          md.flap?.quoteSymbol ??
+          (conversion ? this.metadata.get(conversion.token)?.info.symbol : 'BNB'),
+        progressPct:
+          r.state?.platform === 'flap' || r.kind === 'flap'
+            ? Number(r.state?.progress) / 1e16
+            : null,
+        createdAt: md.flap?.createdAt ?? m.createdAt ?? null,
+        reserveUsd:
+          r.kind === 'flap' ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd : null,
+        liquidityUsd:
+          md.source === 'flap-bsc'
+            ? r.kind === 'flap'
+              ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd
+              : units(
+                  BigInt(
+                    await this.rpc.read(
+                      r.quote === ZERO ? address(CHAIN_CONFIG.bsc.wrapped) : r.quote,
+                      ERC20,
+                      'balanceOf',
+                      [r.pool],
+                      b.number,
+                    ),
+                  ),
+                  qDecimals,
+                ) * quoteUsd
+            : statsFresh
+              ? finite(md.info.liquidity)
+              : null,
         volumeUsd: statsFresh ? finite(md.info.price?.volume_24h) : null,
         buyTaxPct: Number(r.state?.buyTaxRate ?? 0) / 100,
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
         dataSource:
-          md.source === 'meme-bsc'
-            ? 'BSC RPC · Four.meme / Flap · ' +
-              (md.info.chartSource ?? 'independent pool data') +
-              ' · Honeypot.is'
-            : md.source === 'public-bsc'
-              ? statsFresh
-                ? 'BSC RPC · DEX Screener · Honeypot.is'
-                : 'BSC RPC · Honeypot.is'
-              : 'BSC RPC · GMGN',
+          md.source === 'flap-bsc'
+            ? 'Flap Portal · BSC RPC · actual quote conversion'
+            : md.source === 'meme-bsc'
+              ? 'BSC RPC · Four.meme / Flap · ' +
+                (md.info.chartSource ?? 'independent pool data') +
+                ' · Honeypot.is'
+              : md.source === 'public-bsc'
+                ? statsFresh
+                  ? 'BSC RPC · DEX Screener · Honeypot.is'
+                  : 'BSC RPC · Honeypot.is'
+                : 'BSC RPC · GMGN',
         marketDataAt: statsFresh ? statsAt : null,
         priceChange: statsFresh ? (md.info.priceChange ?? null) : null,
         transactions: statsFresh ? (md.info.txns ?? null) : null,
@@ -510,7 +573,7 @@ export class CloudMarket {
           const r = this.store.get('token-risk-reports', m.address);
           return (
             this.isEntryCandidate(m.address) &&
-            r?.policy === 'bsc-meme-paper-v1' &&
+            ['bsc-meme-paper-v1', 'bsc-flap-paper-v1'].includes(r?.policy) &&
             r.buyAllowed === true &&
             Number.isFinite(r.fetchedAt) &&
             Date.now() - r.fetchedAt >= 0 &&
@@ -527,12 +590,18 @@ export class CloudMarket {
     for (const m of selected) {
       try {
         const md = this.metadata.get(m.address);
+        if (md.source === 'flap-bsc') {
+          await this.refreshMarket(m.address);
+          continue;
+        }
         if (Date.now() - md.at >= 120000) continue;
         if (['public-bsc', 'meme-bsc'].includes(md.source) && !this.routes.has(m.address)) continue;
         const v = this.venues.bsc,
           cached = this.routes.get(m.address),
           r =
-            cached && ['v2', 'v3'].includes(cached.route.kind)
+            cached &&
+            ['v2', 'v3'].includes(cached.route.kind) &&
+            cached.route.state?.platform !== 'flap'
               ? cached.route
               : await v.resolve(address(m.address), b.number, md.info.biggest_pool_address);
         const qd = await v.decimals(r.quote, b.number),
@@ -554,6 +623,7 @@ export class CloudMarket {
         this.verifyExternalTaxes('bsc', m.address, r);
         if (
           ['v2', 'v3'].includes(r.kind) &&
+          r.state?.platform !== 'flap' &&
           (BigInt(r.state?.buyTaxRate || 0) || BigInt(r.state?.sellTaxRate || 0))
         )
           continue;
@@ -643,9 +713,8 @@ export class CloudMarket {
     if (
       side === 'sell' &&
       r.kind === 'flap' &&
-      BigInt(r.state!.circulatingSupply) < input &&
       preview?.block === block &&
-      preview.output >= input
+      preview.output === input
     ) {
       r = preview.route;
       counterfactual = true;
@@ -679,7 +748,7 @@ export class CloudMarket {
     let output = core.out,
       spent = core.spent,
       refund = core.refund;
-    if (side === 'buy' && r.kind === 'flap' && !conversion) {
+    if (side === 'buy' && r.kind === 'flap') {
       const s = r.state!,
         cs = {
           reserve: s.reserve,
@@ -693,6 +762,11 @@ export class CloudMarket {
           taxBps: BigInt(s.buyTaxRate),
         };
       const nextSupply = BigInt(s.circulatingSupply) + core.out;
+      if (nextSupply >= BigInt(s.dexSupplyThresh))
+        throw new RouteBlocked(
+          'FLAP_GRADUATION_TRANSITION',
+          '本次虚拟买入会触发毕业，尚不能核实同一复合交易的新池与退款',
+        );
       this.buyPreviews.set(previewKey, {
         block,
         output: core.out,
@@ -702,6 +776,9 @@ export class CloudMarket {
             ...s,
             circulatingSupply: nextSupply,
             reserve: flapReserve(cs, nextSupply),
+            price:
+              (BigInt(s.k) * 10n ** 36n) /
+              (1000000000n * 10n ** 18n + BigInt(s.h) - nextSupply) ** 2n,
             virtualPreview: true,
           },
         },
@@ -776,11 +853,14 @@ export class CloudMarket {
           `原生币美元价格：${fx.source ?? '已核实美元参考'} ${new Date(fx.at).toISOString()}；模拟收款地址 ${recipient}，不继承目标钱包豁免`,
         ],
       },
-      quality: counterfactual ? 'estimated' : 'verified',
+      quality: counterfactual || core.quality === 'estimated' ? 'estimated' : 'verified',
       venue: r.kind,
-      reason: counterfactual
-        ? '虚拟买入后即时反向数量预览；不可用于正式研究启用门槛'
-        : '按固定区块和确切金额的链上报价；Gas 与费用美元归因估计，费用已含在报价内',
+      reason:
+        core.quality === 'estimated'
+          ? 'Flap 含税外盘官方净报价；未执行真实授权和转账，成交为估计模拟'
+          : counterfactual
+            ? '虚拟买入后即时反向数量预览；不可用于正式研究启用门槛'
+            : '按固定区块和确切金额的链上报价；Gas 与费用美元归因估计，费用已含在报价内',
     };
   }
 }
