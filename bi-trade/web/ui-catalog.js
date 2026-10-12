@@ -1,4 +1,9 @@
 window.BI_UI_EN = {
+"服务暂时暂停":"Service temporarily paused",
+"预计恢复时间：":"Expected recovery: ",
+"数据暂时不可用":"Data temporarily unavailable",
+"服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。":"Today's cloud service capacity has been reached. Accounts and trades cannot be read temporarily. The site will retry after capacity resets; funds and history will not be reset.",
+"服务暂时不可用，请稍后重试":"The service is temporarily unavailable. Please try again later.",
 "Flap 模拟 · 有限检测":"Flap paper · limited screening",
 "毕业进度":"Graduation progress",
 "买入税 / 卖出税":"Buy tax / sell tax",

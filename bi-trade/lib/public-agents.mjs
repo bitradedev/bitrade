@@ -38,7 +38,7 @@ export function publicAgent(store, paper, live, agent) {
             ...store.get('showcase-status', agent.id),
             state: 'observing',
             reason: '服务暂处于只读保护，写入额度恢复后自动继续。历史资金与成交已保留。',
-            nextDecisionAt: store.readOnlyUntil,
+            nextDecisionAt: store.protectionUntil ?? store.readOnlyUntil,
           }
         : store.get('showcase-status', agent.id)
       : null;

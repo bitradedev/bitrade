@@ -23,6 +23,23 @@ export class ReadOnlyProbe extends TradingPlatform {
   return super.fetch(request);
  }
 }
+export class BudgetProbe extends TradingPlatform {
+ async fetch(request:Request){
+  const path=new URL(request.url).pathname;
+  if(path==='/__test/exhaust'){
+   await this.initialize();await this.ctx.storage.deleteAlarm();this.store.budget.record(80000);
+   return Response.json({recorded:true});
+  }
+  if(path==='/__test/next-day'){
+   const now=Date.now()+86400000;this.store.now=()=>now;this.store.budget.now=()=>now;
+   return Response.json({advanced:true});
+  }
+  return super.fetch(request);
+ }
+}
+export class QuotaFailure extends DurableObject {
+ async fetch(){throw Error('Exceeded allowed rows written in Durable Objects free tier.');}
+}
 export class SchedulerProbe extends TradingPlatform {
  refreshes=0; watches=0; matches=0; modelCalls=0;
  async arm(){await this.ctx.storage.deleteAlarm();}

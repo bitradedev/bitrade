@@ -11,8 +11,10 @@ function riskDue(host, token) {
   );
 }
 export async function runScheduledRound(host) {
+  if (!host.working && !host.decisionTask) host.store.prepareWriteBudget?.();
   if (host.store.readOnly) return;
   await host.ctx.storage.setAlarm(Date.now() + 20000);
+  host.store.budget?.record(1);
   if (host.importing) return;
   if (host.working) return host.working;
   host.working = (async () => {

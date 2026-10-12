@@ -24,6 +24,14 @@ const TOKEN='0x1111111111111111111111111111111111111111',RECIPIENT='0x2222222222
 function fixture(t){const db=new DatabaseSync(':memory:');t.after(()=>db.close());const sql={exec(query,...args){if(!args.length&&query.split(';').filter(x=>x.trim()).length>1){db.exec(query);return {toArray:()=>[],rowsWritten:0};}const s=db.prepare(query);if(/^(?:CREATE|DELETE|INSERT|UPDATE)/i.test(query.trim())){const r=s.run(...args);return {toArray:()=>[],rowsWritten:r.changes};}const rows=s.all(...args);return {toArray:()=>rows,rowsWritten:0};}};
  const store=new CloudStore({sql,transactionSync(fn){db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}});return {db,store};}
 test('Cloud ledger rolls back all writes and keeps rate limits across repository reconstruction',t=>{const {store}=fixture(t);assert.throws(()=>store.transaction(()=>{store.put('test',{id:'one'});throw Error('abort');}));assert.equal(store.get('test','one'),null);const req={socket:{remoteAddress:'test-ip'}};store.rateLimit(req,'session',1,60000);assert.throws(()=>store.rateLimit(req,'session',1,60000),/频繁/);assert.equal(store.db.prepare('SELECT n FROM rate_limits').get().n,2);});
+
+test('Storage protection waits for a ledger transaction to finish and checkpoints its count before pausing',t=>{
+ const {store}=fixture(t);store.budget.rows=79999;
+ store.transaction(()=>{store.put('test',{id:'first'});assert.equal(store.readOnly,false);store.put('test',{id:'second'});});
+ assert.ok(store.budget.rows>=80001);assert.equal(store.get('test','second').id,'second');
+ store.prepareWriteBudget();assert.equal(store.readOnly,true);assert.ok(store.get('cloud-settings','storage-write-budget').rows>=80000);
+ assert.throws(()=>store.put('test',{id:'third'}),/只读/);assert.equal(store.get('test','first').id,'first');
+});
 test('Cloud wallet binding rolls back ownership and old-session revocation if issuing the replacement session fails',async t=>{
  const {store}=fixture(t),auth=new OwnerAuth(store,'https://bitrade.site'),issued=auth.guest(),req={headers:{cookie:COOKIE+'='+issued.token}},current=auth.session(req),old=store.get('owners',issued.owner.id);
  store.put('paper-fills',{id:'retained-history',agentId:'retained-agent',usd:20,netUsd:-1});
@@ -264,4 +272,23 @@ test('Actual Workerd read-only protection keeps agents and history visible witho
   });
   assert.equal(session.status, 503);
   assert.equal((await get('/api/leaderboard')).entries.length, 3);
+});
+
+test('Actual Workerd checkpoints write protection, preserves accounts and recovers on the next UTC day',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'budget-protection-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PLATFORM:{className:'BudgetProbe',useSQLite:true}},bindings:{SITE_ORIGIN:'https://bitrade.site',BI_TRADE_VAULT_KEY:vaultKey.toString('base64')},outboundService:async()=>{throw Error('No outbound calls during read-only checks');},serviceBindings:{ASSETS:async()=>new Response('unused')}}));t.after(()=>mf.dispose());await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('PLATFORM'),stub=ns.get(ns.idFromName('bitrade-platform-v1'));
+ const get=async path=>{const r=await mf.dispatchFetch('https://bitrade.site'+path);assert.equal(r.status,200);return r.json();};
+ const before=await get('/api/public');await stub.fetch('https://test.example/__test/exhaust');
+ const runtime=await get('/api/runtime');assert.equal(runtime.storageProtection.readOnly,true);assert.ok(runtime.storageProtection.writeBudget.rows>=80000);
+ const readonly=await get('/api/public');assert.deepEqual(readonly.agents.map(a=>[a.id,a.address,a.realizedUsd]),before.agents.map(a=>[a.id,a.address,a.realizedUsd]));
+ await mf.unsafeEvictDurableObject('budget-protection-test','BudgetProbe',{name:'bitrade-platform-v1'});
+ assert.equal((await get('/api/runtime')).storageProtection.readOnly,true);
+ await stub.fetch('https://test.example/__test/next-day');assert.equal((await get('/api/runtime')).storageProtection.readOnly,false);
+ assert.deepEqual((await get('/api/public')).agents.map(a=>[a.id,a.address,a.realizedUsd]),before.agents.map(a=>[a.id,a.address,a.realizedUsd]));
+});
+
+test('Actual Workerd returns an honest 503 and retry time if storage even rejects cold-start reads',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'storage-admission-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PLATFORM:{className:'QuotaFailure',useSQLite:true}},bindings:{SITE_ORIGIN:'https://bitrade.site'},serviceBindings:{ASSETS:async()=>new Response('static page')}}));t.after(()=>mf.dispose());await mf.ready;
+ const r=await mf.dispatchFetch('https://bitrade.site/api/public'),j=await r.json();assert.equal(r.status,503);assert.equal(j.code,'STORAGE_DAILY_QUOTA');assert.ok(j.retryAt>Date.now());assert.ok(Number(r.headers.get('Retry-After'))>0);assert.equal(j.agents,undefined);assert.equal(j.activity,undefined);
+ assert.equal((await mf.dispatchFetch('https://bitrade.site/home')).status,200);
 });

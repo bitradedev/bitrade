@@ -51,7 +51,7 @@ test('public strategy details render saved exit rules in both languages and keep
   const {ui,context}=preferences({'bi-ui-language':language});let shown;
   context.BiUI=ui;context.matchMedia=()=>({matches:false,addEventListener(){}});context.window.addEventListener=()=>{};
   const app=readFileSync(resolve(web,'app.js'),'utf8').split('\n');
-  vm.runInContext(app.slice(1,5).join('\n')+'\n'+app[14],context);
+  vm.runInContext(app.slice(1,5).join('\n')+'\n'+app.find(line=>line.startsWith('const pill=')),context);
   vm.runInContext(readFileSync(resolve(web,'home.js'),'utf8'),context);
   const plan={token:'0x'+'11'.repeat(20),symbol:'<script>bad</script>',costUsd:150.01,state:'active',deadlineAt:Date.now()+3600000,rule:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};
   const agent={id:'showcase-trend',name:'BI 趋势猎手',source:'builtin',mode:'paper',avatar:'trend',address:plan.token,strategy:{name:'趋势动量',description:'策略描述'},realizedUsd:0,returnPct:0,positions:1,settledSales:0,exitPlans:[plan]};
@@ -76,5 +76,22 @@ test('public strategy details render saved exit rules in both languages and keep
   agent.runtime.lastExecution={status:'pending',at:Date.now(),reason:'AI 已提出交易，正在核对当前行情与风险。'};assert.ok(context.executionNote(agent).includes(language==='en'?'Proposal awaiting execution':'提案待执行'));
   agent.riskReviews=[{token:plan.token,buyAllowed:true,policy:'bsc-meme-paper-v1',reasons:[],warnings:['Meme 模拟采用已观测风险筛查；完整捆绑、老鼠仓、同源资金和黑名单能力仍可能未知，不能视为安全保证。'],metrics:{bundlerObservedFloatShare:null,bundlerVolumeShare:null,transferSample:{available:true,fromBlock:100,toBlock:300,clusters:[]}}}];
   await context.publicProfile(agent.id);assert.ok(shown.includes(language==='en'?'Meme paper trading · Limited checks':'Meme 模拟 · 有限检测'));assert.ok(shown.includes(language==='en'?'Unknown':'未知'));assert.match(shown,/100 – 300/);assert.doesNotMatch(context.riskReviewPanel(agent),/0\.00%/);assert.ok(shown.includes(language==='en'?'not a safety guarantee':'不能视为安全保证'));
+ }
+});
+
+test('A storage outage renders an explicit bilingual pause without invented balances and backs off refreshes',async()=>{
+ for(const language of ['zh','en']){
+  const {ui,context}=preferences({'bi-ui-language':language}),app=readFileSync(resolve(web,'app.js'),'utf8'),nodes=new Map();
+  for(const id of ['content','public-wallets','ranking-board','public-ledger'])nodes.set('#'+id,{innerHTML:'',prepend(el){nodes.set('#'+el.id,el);}});
+  context.document.querySelector=id=>nodes.get(id);context.document.createElement=()=>({remove(){nodes.delete('#'+this.id);}});
+  context.location={pathname:'/home',origin:'https://bitrade.site'};context.BiUI=ui;
+  vm.runInContext(app.slice(0,app.indexOf('const docSections=')),context);
+  const retryAt=Date.now()+3600000;let calls=0;context.fetch=async()=>{calls++;return {ok:false,status:503,json:async()=>({error:'服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。',code:'STORAGE_DAILY_QUOTA',retryAt})};};
+  let error;try{await context.api('/api/state');}catch(e){error=e;}
+  assert.equal(error.code,'STORAGE_DAILY_QUOTA');context.serviceFailure(error);
+  const html=nodes.get('#service-status').innerHTML;assert.ok(html.includes(language==='en'?'Service temporarily paused':'服务暂时暂停'));assert.ok(html.includes(language==='en'?'Expected recovery:':'预计恢复时间：'));
+  for(const id of ['public-wallets','ranking-board','public-ledger']){assert.ok(nodes.get('#'+id).innerHTML.includes(language==='en'?'Data temporarily unavailable':'数据暂时不可用'));assert.doesNotMatch(nodes.get('#'+id).innerHTML,/1,000|0\.00%/);}
+  vm.runInContext(app.split('\n').find(line=>line.startsWith('async function refresh()')),context);await context.refresh();assert.equal(calls,1);
+  context.serviceFailure({message:'<script>unsafe</script>'});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/<script>/);context.serviceRecovered();assert.equal(nodes.has('#service-status'),false);
  }
 });

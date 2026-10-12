@@ -5,18 +5,24 @@ import {
   canonicalJson,
   json,
 } from '../bi-trade/lib/database-core.mjs';
+import { StorageWriteBudget } from './write-budget.mjs';
 
 // Consume every cursor synchronously. No cursor survives an event or await.
-export function sqlDatabase(sql) {
+export function sqlDatabase(sql, onWrite = () => {}) {
+  const consume = (cursor) => {
+    const result = cursor.toArray();
+    onWrite(cursor.rowsWritten);
+    return result;
+  };
   return {
-    exec: (query) => sql.exec(query).toArray(),
+    exec: (query) => consume(sql.exec(query)),
     prepare(query) {
       return {
-        get: (...args) => sql.exec(query, ...args).toArray()[0],
-        all: (...args) => sql.exec(query, ...args).toArray(),
+        get: (...args) => consume(sql.exec(query, ...args))[0],
+        all: (...args) => consume(sql.exec(query, ...args)),
         run: (...args) => {
           const cursor = sql.exec(query, ...args);
-          cursor.toArray();
+          consume(cursor);
           return { changes: cursor.rowsWritten };
         },
       };
@@ -24,8 +30,9 @@ export function sqlDatabase(sql) {
   };
 }
 export class CloudStore extends PlatformRepository {
-  constructor(storage, { readOnlyUntil = 0 } = {}) {
-    const db = sqlDatabase(storage.sql),
+  constructor(storage, { readOnlyUntil = 0, now = Date.now } = {}) {
+    const meter = { current: null },
+      db = sqlDatabase(storage.sql, (rows) => meter.current?.record(rows)),
       tables = new Set(
         db
           .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -42,6 +49,13 @@ export class CloudStore extends PlatformRepository {
     ].every((t) => tables.has(t));
     super(db, (fn) => storage.transactionSync(fn), { initializeSchema: !complete });
     this.readOnlyUntil = readOnlyUntil;
+    this.now = now;
+    this.quotaPauseUntil = 0;
+    this.checkpointAt = 0;
+    this.budget = new StorageWriteBudget(this.get('cloud-settings', 'storage-write-budget'), {
+      now,
+    });
+    meter.current = this.budget;
     this.memoryLimits = new Map();
     if (!complete)
       this.db.exec(
@@ -49,7 +63,24 @@ export class CloudStore extends PlatformRepository {
       );
   }
   get readOnly() {
-    return Date.now() < this.readOnlyUntil;
+    return this.now() < this.protectionUntil;
+  }
+  get protectionUntil() {
+    return Math.max(this.readOnlyUntil, this.quotaPauseUntil);
+  }
+  prepareWriteBudget() {
+    if (this.budget.roll()) this.quotaPauseUntil = 0;
+    if (this.now() < this.readOnlyUntil || this.now() < this.quotaPauseUntil) return;
+    const usage = this.budget.snapshot();
+    if (usage.retryAt || this.now() - this.checkpointAt >= 60000) {
+      // Reserve more than the checkpoint's table and index writes. On eviction,
+      // the next instance starts from this conservative count, not from zero.
+      const checkpoint = { ...usage, id: 'storage-write-budget', rows: usage.rows + 8 };
+      this.budget.record(8);
+      super.put('cloud-settings', checkpoint);
+      this.checkpointAt = this.now();
+    }
+    this.quotaPauseUntil = this.budget.snapshot().retryAt ?? 0;
   }
   rateLimit(req, kind, max, ms, scope = 'ip:' + req.socket.remoteAddress) {
     const now = Date.now(),

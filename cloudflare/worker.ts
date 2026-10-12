@@ -65,7 +65,7 @@ export class TradingPlatform extends DurableObject<any> {
     this.io = new IOBudget(45);
   }
   initialize() {
-    if (this.app && this.appReadOnly && !this.store.readOnly) {
+    if (this.app && this.appReadOnly !== this.store.readOnly) {
       this.app = null;
       this.market = null;
       this.risk = null;
@@ -189,8 +189,10 @@ export class TradingPlatform extends DurableObject<any> {
   async arm(delay = 20000) {
     if (this.store.readOnly) return;
     const next = await this.ctx.storage.getAlarm();
-    if (next === null || next > Date.now() + delay)
+    if (next === null || next > Date.now() + delay) {
       await this.ctx.storage.setAlarm(Date.now() + delay);
+      this.store.budget.record(1);
+    }
   }
   async fetch(request: Request) {
     return this.io.run('http', () => this.handleRequest(request));
@@ -201,6 +203,7 @@ export class TradingPlatform extends DurableObject<any> {
       if (url.pathname === '/__admin/import') return await this.importLedger(request);
       if (url.pathname === '/__admin/check-ai') return await this.checkAI(request);
       if (this.importing) return json({ error: '账本正在迁移，请稍后重试' }, 503);
+      if (!this.working && !this.decisionTask) this.store.prepareWriteBudget();
       const app = await this.initialize();
       if (
         this.store.readOnly &&
@@ -210,7 +213,7 @@ export class TradingPlatform extends DurableObject<any> {
         return json(
           {
             error: '服务暂处于只读保护，写入额度恢复后自动继续。历史资金与成交已保留。',
-            retryAt: this.store.readOnlyUntil,
+            retryAt: this.store.protectionUntil,
           },
           503,
         );
@@ -220,7 +223,8 @@ export class TradingPlatform extends DurableObject<any> {
           platform: 'cloudflare',
           storageProtection: {
             readOnly: this.store.readOnly,
-            retryAt: this.store.readOnly ? this.store.readOnlyUntil : null,
+            retryAt: this.store.readOnly ? this.store.protectionUntil : null,
+            writeBudget: this.store.budget.snapshot(),
           },
           liveEnabled: false,
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
@@ -452,7 +456,32 @@ export default {
       url.pathname.startsWith('/__admin/')
     ) {
       const id = env.PLATFORM.idFromName('bitrade-platform-v1');
-      return env.PLATFORM.get(id).fetch(request);
+      try {
+        return await env.PLATFORM.get(id).fetch(request);
+      } catch (e: any) {
+        const quota = /Exceeded allowed rows (written|read) in Durable Objects free tier/.test(
+          String(e?.message ?? ''),
+        );
+        const retryAt = quota
+          ? Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z') + 86400000
+          : null;
+        const response = json(
+          {
+            error: quota
+              ? '服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。'
+              : '服务暂时不可用，请稍后重试',
+            code: quota ? 'STORAGE_DAILY_QUOTA' : 'SERVICE_UNAVAILABLE',
+            retryAt,
+          },
+          503,
+        );
+        if (retryAt)
+          response.headers.set(
+            'Retry-After',
+            String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))),
+          );
+        return response;
+      }
     }
     if (!['GET', 'HEAD'].includes(request.method)) return json({ error: '不支持此请求方法' }, 405);
     const asset = ASSET_ROUTES[url.pathname];
