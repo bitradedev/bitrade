@@ -268,6 +268,20 @@ test('three builtins are permanently public paper Agents; missing key causes no 
  assert.doesNotMatch(JSON.stringify(p),/ownerId|encryptedKey|apiKey|privateKey|agentToken/);
  const {ShowcaseAgents}=await import('../lib/showcase-agents.mjs'),again=new ShowcaseAgents({store:f.app.store,vault:f.app.vault,paper:f.app.paper,gateway:f.g,execute:()=>{},configReader:()=>null});assert.equal(f.app.store.all('agents').length,3);assert.deepEqual(f.app.store.all('agents').map(a=>a.address),p.agents.map(a=>a.address));await again.stop();
 });
+
+test('reconstruction preserves completed decisions and outage states without presenting a lost model task as running',async t=>{
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),at=Date.now()-5000;
+ const completed={id:SHOWCASE_PROFILES[0].id,state:'observing',reason:'已经完成自主退出评估',checkedAt:at,lastDecisionAt:at,nextDecisionAt:Date.now()+60000,decision:{action:'hold',token:null,sizeUsd:null,reason:'继续观察',exit:null}};
+ const waiting={...completed,id:SHOWCASE_PROFILES[1].id,state:'waiting-risk',reason:'风险资料暂不可用'};
+ const interrupted={...completed,id:SHOWCASE_PROFILES[2].id,state:'thinking',reason:'AI 正在评估'};
+ for(const row of [completed,waiting,interrupted])f.app.store.put('showcase-status',row);
+ const accounts=f.app.store.all('paper-accounts'),beforeCalls=f.g.calls;
+ const {ShowcaseAgents}=await import('../lib/showcase-agents-core.mjs');
+ const rebuilt=new ShowcaseAgents({store:f.app.store,vault:f.app.vault,paper:f.app.paper,gateway:f.g,execute:()=>{throw Error('No order during reconstruction');},riskGuard:{close:async()=>{}},configReader:()=>null});
+ assert.deepEqual(f.app.store.get('showcase-status',completed.id),completed);assert.deepEqual(f.app.store.get('showcase-status',waiting.id),waiting);
+ const recovered=f.app.store.get('showcase-status',interrupted.id);assert.equal(recovered.state,'observing');assert.match(recovered.reason,/重启中断/);assert.equal(recovered.lastDecisionAt,at);assert.equal(recovered.nextDecisionAt,interrupted.nextDecisionAt);assert.equal(recovered.checkedAt,at);
+ assert.deepEqual(f.app.store.all('paper-accounts'),accounts);assert.equal(f.app.paper.orders().length,0);assert.equal(f.g.calls,beforeCalls);await rebuilt.stop();
+});
 test('AI proposals execute through paper quotes above 40U and stop/TP checks; no real transport',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:15,dailyCalls:1}),planner:{async decide(c,strategy,context){calls++;assert.equal(context.account.initialUsd,1000);assert.doesNotMatch(JSON.stringify(context),/encryptedKey|ownerId|agentToken|apiKey/);return {action:'buy',token:TOKEN,sizeUsd:150,reason:'测试模型依据采样提出模拟决策',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
  await f.app.showcase.tick();assert.equal(calls,1);assert.equal(f.app.paper.orders().length,1);assert.equal(f.app.paper.fills().length,0);assert.equal(f.app.store.get('showcase-status',SHOWCASE_PROFILES[1].id).state,'quota');

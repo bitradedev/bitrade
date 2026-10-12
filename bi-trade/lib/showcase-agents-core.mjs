@@ -92,8 +92,11 @@ export class ShowcaseAgents {
         store.put('showcase-status', {
           ...previous,
           id: a.id,
-          state: 'observing',
-          reason: '等待核对行情与 AI 配置',
+          state: previous?.state === 'thinking' ? 'observing' : (previous?.state ?? 'observing'),
+          reason:
+            previous?.state === 'thinking'
+              ? '上轮 AI 评估因服务重启中断，等待重新评估。'
+              : (previous?.reason ?? '等待核对行情与 AI 配置'),
           nextDecisionAt: previous?.nextDecisionAt ?? 0,
         });
       }

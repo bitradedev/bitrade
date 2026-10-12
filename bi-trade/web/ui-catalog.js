@@ -751,6 +751,7 @@ window.BI_UI_EN = {
 };
 
 Object.assign(window.BI_UI_EN,{
+  "上轮 AI 评估因服务重启中断，等待重新评估。": "The previous AI evaluation was interrupted by a service restart. Waiting for a new evaluation.",
   "当前退出计划": "Current exit plan",
   "AI 自主决定退出方式，可明确修改条件或继续持有。自动条件按整仓扣除退出费用后的收益判断；卖出仍需重新核价成交。": "AI chooses how to exit and can explicitly revise conditions or continue holding. Automated conditions use whole-position returns after exit costs. Sales still require a fresh execution quote.",
   "AI 自选条件 · 可调整": "AI-selected conditions · Adjustable",
