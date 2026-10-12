@@ -31,7 +31,18 @@ test('configured compatible endpoint gets strict decisions without redirects, se
 test('OpenAI Responses uses strict structured decisions, does not send the key as context, and permits sizes above 40U',async()=>{
  let payload;const planner=new OpenAIPlanner({fetchImpl:async(url,options)=>{assert.equal(url,'https://api.openai.com/v1/responses');assert.equal(options.redirect,'manual');assert.equal(options.headers.Authorization,'Bearer '+config.apiKey);payload=JSON.parse(options.body);return {ok:true,json:async()=>({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(buy())}]}]})};}});
  const result=await planner.decide(config,{description:'测试真实采样'},context);assert.equal(result.sizeUsd,150);assert.equal(payload.text.format.strict,true);assert.equal(payload.text.format.schema.additionalProperties,false);assert.equal(payload.store,false);assert.doesNotMatch(JSON.stringify(payload.input),/test-secret-key/);assert.equal(payload.model,DEFAULT_MODEL);
- assert.match(payload.input[0].content,/exitPlan 是当前实际生效/);assert.match(payload.input[0].content,/hold 和 sell 的 exit 字段不更新已有规则/);assert.match(payload.input[0].content,/state=missing/);
+ assert.match(payload.input[0].content,/exitPlan 是当前实际生效/);assert.match(payload.input[0].content,/不要求固定止盈、止损/);assert.match(payload.input[0].content,/action=manage/);assert.match(payload.input[0].content,/state=missing/);
+});
+
+test('AI can omit fixed exits, select large targets or explicitly revise only a held position',()=>{
+ const held={...context,at:Date.now(),account:{...context.account,positions:[{token:TOKEN}]}};
+ assert.equal(validateDecision({...buy(),exit:null},context).exit,null);
+ const optional={takeProfitPct:1000,stopLossPct:null,maxHoldMinutes:43200};
+ assert.deepEqual(validateDecision({...buy(),exit:optional},context).exit,optional);
+ assert.equal(validateDecision({...buy(),action:'manage',sizeUsd:null,exit:null},held).action,'manage');
+ assert.throws(()=>validateDecision({...buy(),action:'manage',sizeUsd:null,exit:null},context),/持仓/);
+ for(const exit of [{takeProfitPct:0,stopLossPct:null,maxHoldMinutes:null},{takeProfitPct:null,stopLossPct:Infinity,maxHoldMinutes:null},{takeProfitPct:null,stopLossPct:null,maxHoldMinutes:1e100},{takeProfitPct:null}])assert.throws(()=>validateDecision({...buy(),exit},held));
+ assert.throws(()=>validateDecision({...buy(),action:'manage',sizeUsd:1,exit:null},held),/持仓/);
 });
 test('invalid, unaffordable, non-candidate and unowned AI decisions do not become trades',()=>{
  assert.throws(()=>validateDecision({...buy(),sizeUsd:1000},context),/余额不足/);

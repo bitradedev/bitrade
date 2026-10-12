@@ -58,10 +58,15 @@ test('public strategy details render saved exit rules in both languages and keep
   context.api=async()=>({agent,activity:[]});context.modal=(_title,html)=>{shown=html;};context.avatarSrc=()=>'/agent-trend-v1.png';context.avatarNames={trend:'Trend'};context.activityTable=()=>'';
   await context.publicProfile(agent.id);
   assert.match(shown,/exit-plans/);assert.match(shown,/\+10%/);assert.match(shown,/−5%/);assert.match(shown,/&lt;script&gt;bad&lt;\/script&gt;/);assert.doesNotMatch(shown,/<script>bad/);
-  assert.ok(shown.includes(language==='en'?'Active exit rules':'当前生效的退出规则'));
+  assert.ok(shown.includes(language==='en'?'Current exit plan':'当前退出计划'));
   assert.ok(shown.includes(language==='en'?'60 minutes':'60 分钟'));
   agent.exitPlans=[{...plan,state:'missing',rule:null,deadlineAt:null}];const missing=context.exitPlanPanel(agent);
   assert.doesNotMatch(missing,/\+10%|−5%/);assert.ok(missing.includes(language==='en'?'Automatic exit rules unavailable':'未取得自动退出规则'));
+  agent.exitPlans=[{...plan,state:'ai-managed',rule:{takeProfitPct:null,stopLossPct:null,maxHoldMinutes:null},previousRule:plan.rule,deadlineAt:null}];const managed=context.exitPlanPanel(agent);
+  assert.ok(managed.includes(language==='en'?'AI-managed exit':'AI 自主退出'));assert.doesNotMatch(managed,/\+10%|−5%|null|0 minutes/);
+  assert.ok(managed.includes(language==='en'?'historical context':'历史参考'));
+  agent.exitPlans=[{...plan,rule:{takeProfitPct:null,stopLossPct:5,maxHoldMinutes:null},deadlineAt:null}];const optional=context.exitPlanPanel(agent);
+  assert.ok(optional.includes(language==='en'?'No fixed condition':'未设置固定条件'));assert.match(optional,/−5%/);assert.doesNotMatch(optional,/\+0%|null/);
   assert.equal(context.exitPlanPanel({...agent,source:'user'}),'');assert.equal(context.exitPlanPanel({...agent,exitPlans:[]}),'');
   agent.runtime={state:'observing',reason:'等待退出报价',exitFailures:[{token:plan.token,at:Date.now()}]};await context.publicProfile(agent.id);
   assert.match(shown,/exit-failures/);assert.ok(shown.includes(language==='en'?'Exit quote awaiting retry':'退出报价待重试'));

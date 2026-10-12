@@ -751,6 +751,17 @@ window.BI_UI_EN = {
 };
 
 Object.assign(window.BI_UI_EN,{
+  "当前退出计划": "Current exit plan",
+  "AI 自主决定退出方式，可明确修改条件或继续持有。自动条件按整仓扣除退出费用后的收益判断；卖出仍需重新核价成交。": "AI chooses how to exit and can explicitly revise conditions or continue holding. Automated conditions use whole-position returns after exit costs. Sales still require a fresh execution quote.",
+  "AI 自选条件 · 可调整": "AI-selected conditions · Adjustable",
+  "AI 自主退出": "AI-managed exit",
+  "未设置固定条件": "No fixed condition",
+  "未设固定止盈、止损或持仓期限；由 AI 根据后续行情评估继续持有或卖出。": "No fixed take-profit, stop-loss or holding deadline. AI evaluates later market data to decide whether to hold or sell.",
+  "原入场参数保留为历史参考，已不作为自动退出条件。": "Original entry parameters remain as historical context and no longer trigger automatic exits.",
+  "AI 自主退出依赖行情与模型服务；服务中断可能延迟决策。暂停或报价不可用时不会假定已成交。": "AI-managed exits depend on market data and model availability; interruptions can delay decisions. Pauses or unavailable quotes do not imply a fill.",
+  "可以从趋势和动量出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Trend and momentum offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
+  "可以从回撤与企稳迹象出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Pullbacks and stabilization offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
+  "可以从相对强弱和资金轮动出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Relative strength and rotation offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
   "你的下一笔交易，": "Your next trade.",
   "让": "Let ",
   "智能先行。": "intelligence lead.",

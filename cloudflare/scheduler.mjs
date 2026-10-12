@@ -59,6 +59,17 @@ export async function runScheduledRound(host) {
         await runProposalRound(host, app, proposal);
         return;
       }
+      const heldDecision = !host.decisionTask && app.showcase.heldDecisionDue?.();
+      if (heldDecision) {
+        // A held position needs AI exit evaluation even when no new buy is allowed.
+        const started = await runDecisionRound(
+          host,
+          app,
+          { address: heldDecision.token },
+          heldDecision,
+        );
+        if (started || host.io.exhausted) return;
+      }
       if (
         !host.decisionTask &&
         app.showcase.decisionDue?.() &&

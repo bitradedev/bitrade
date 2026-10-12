@@ -4,6 +4,17 @@ import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
 
+test('AI-managed held positions get fresh evaluation without new-buy permission or unrelated risk starvation',async()=>{
+ const token='0x'+'11'.repeat(20),rows=new Map(),kept=[],io=new IOBudget(45,async()=>Response.json({}));let decided=0,held=true,quote=null,riskCalls=0;
+ const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,structuredClone(v)),prune(){}};
+ store.put('cloud-settings',{id:'risk-priority-round',tokens:['0x'+'22'.repeat(20)]});
+ const app={paper:{orders:()=>[],async tick(){}},showcase:{exitCandidates:()=>[],heldDecisionDue:()=>held?{agentId:'showcase-rebound',token}:null,freshMarkets:()=>[],async tick(options){assert.deepEqual(options,{agentId:'showcase-rebound'});decided++;held=false;await io.fetch('https://model.example');}}};
+ const host={io,store,initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil:p=>kept.push(p)},risk:{snapshot:()=>({buyAllowed:false}),async tick(){riskCalls++;}},market:{isEntryCandidate:()=>true,getMarket:()=>quote,async updateHead(){},async fx(){},async refresh(tokens,options){assert.deepEqual(tokens,[token]);assert.equal(options.onlyRequested,true);await io.fetch('https://held.example');quote={quality:'verified',updatedAt:Date.now()};}}};
+ await io.run('alarm',()=>runScheduledRound(host));await Promise.all(kept);assert.equal(decided,1);assert.equal(riskCalls,0);assert.equal(io.lastAlarm.used,2);assert.equal(store.get('cloud-settings','risk-priority-round').tokens.length,1);
+ held=true;quote={quality:'verified',updatedAt:Date.now()-16000};host.market.refresh=async()=>{};
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(decided,1,'Old held prices do not start a fresh assessment');assert.equal(riskCalls,1,'An unavailable held quote cannot pin all other work');assert.equal(store.get('cloud-settings','scheduler').phase,'risk');
+});
+
 test('a permitted Meme is evaluated before unrelated pending risk can consume its price and risk freshness window',async()=>{
  const good='0x'+'11'.repeat(20),bad='0x'+'22'.repeat(20),rows=new Map(),io=new IOBudget(45,async()=>Response.json({})),kept=[];let decisions=0,riskCalls=0,due=true;
  const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,structuredClone(v)),prune(){}};store.put('cloud-settings',{id:'risk-priority-round',tokens:[bad]});

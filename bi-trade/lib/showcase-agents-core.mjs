@@ -2,7 +2,12 @@ import { identifier, fail } from './database-core.mjs';
 import { readAIConfig, OpenAIPlanner, validateDecision, reserveAICall } from './ai-provider.mjs';
 import { viem } from './dependencies.mjs';
 import { v2Abi, ROUTER_V2, WBNB } from './bsc-rpc.mjs';
-import { showcasePositions } from './showcase-exits.mjs';
+import {
+  showcasePositions,
+  EXIT_POLICY_VERSION,
+  exitRule,
+  hasAutomaticExit,
+} from './showcase-exits.mjs';
 
 export const SHOWCASE_PROFILES = [
   {
@@ -11,8 +16,8 @@ export const SHOWCASE_PROFILES = [
     strategy: {
       name: '趋势动量',
       description:
-        '比较实际价格采样的方向和持续性，寻找趋势机会；结合可用流动性、费用和退出条件决定仓位。数据不足时观察。',
-      version: 1,
+        '可以从趋势和动量出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。',
+      version: 2,
     },
   },
   {
@@ -21,8 +26,8 @@ export const SHOWCASE_PROFILES = [
     strategy: {
       name: '回撤反弹',
       description:
-        '研究实际采样中的回撤与企稳迹象，避免仅因价格下跌买入；为每笔入场设定止损、止盈与最长持有时间。',
-      version: 1,
+        '可以从回撤与企稳迹象出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。',
+      version: 2,
     },
   },
   {
@@ -31,8 +36,8 @@ export const SHOWCASE_PROFILES = [
     strategy: {
       name: '相对强弱轮动',
       description:
-        '比较候选市场的实际价格表现与可用深度，研究资金轮动；评估持仓退出成本后决定买入、卖出或保持观察。',
-      version: 1,
+        '可以从相对强弱和资金轮动出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。',
+      version: 2,
     },
   },
 ];
@@ -201,6 +206,12 @@ export class ShowcaseAgents {
       a.nativeRaw,
       a.realizedNativeRaw,
       this.paper.lots(id).map((lot) => [lot.id, lot.remainingRaw, lot.usdCost]),
+      showcasePositions(this.store, this.paper.lots(id)).map((p) => [
+        p.token,
+        p.exitPlan.entryOrderId,
+        p.exitPlan.rule,
+        p.exitPlan.updatedAt,
+      ]),
       this.paper
         .orders(id)
         .filter((o) => ['preparing', 'queued', 'quoting'].includes(o.status))
@@ -231,7 +242,9 @@ export class ShowcaseAgents {
         !a.paused &&
         a.mode === 'paper' &&
         !this.paper.view(a.id).pending &&
-        this.paper.lots(a.id).length &&
+        showcasePositions(this.store, this.paper.lots(a.id)).some((p) =>
+          hasAutomaticExit(p.exitPlan.rule),
+        ) &&
         (!onlyFailures || this.store.get('showcase-status', a.id)?.exitFailures?.length) &&
         !this.checkingExits.has(a.id) &&
         this.now() - (this.exitChecks.get(a.id) ?? 0) >= 30000,
@@ -265,7 +278,7 @@ export class ShowcaseAgents {
       if (this.accountBasis(a.id) !== basis) throw fail('持仓在核价期间改变，稍后重新检查');
       const { token, amountRaw, costUsd, exitPlan } = position,
         rule = exitPlan.rule;
-      if (!rule) continue;
+      if (!hasAutomaticExit(rule)) continue;
       const head = this.paper.head();
       let q;
       try {
@@ -284,11 +297,11 @@ export class ShowcaseAgents {
         pct = (proceeds / costUsd - 1) * 100,
         age = (this.now() - exitPlan.openedAt) / 60000;
       const trigger =
-        pct >= rule.takeProfitPct
+        rule.takeProfitPct !== null && pct >= rule.takeProfitPct
           ? '止盈'
-          : pct <= -rule.stopLossPct
+          : rule.stopLossPct !== null && pct <= -rule.stopLossPct
             ? '止损'
-            : age >= rule.maxHoldMinutes
+            : rule.maxHoldMinutes !== null && age >= rule.maxHoldMinutes
               ? '持有时间到期'
               : null;
       if (trigger) {
@@ -324,6 +337,24 @@ export class ShowcaseAgents {
       );
     });
   }
+  heldDecisionDue() {
+    for (const p of SHOWCASE_PROFILES) {
+      const a = this.store.get('agents', p.id);
+      if (
+        !a ||
+        a.closedAt ||
+        a.paused ||
+        a.mode !== 'paper' ||
+        this.paper.view(a.id).pending ||
+        this.store.get('showcase-proposals', a.id)?.state === 'pending' ||
+        this.now() < (this.store.get('showcase-status', a.id)?.nextDecisionAt ?? 0)
+      )
+        continue;
+      const held = this.paper.lots(a.id)[0];
+      if (held) return { agentId: a.id, token: held.token };
+    }
+    return null;
+  }
   validateProposal(proposal) {
     const saved = this.store.get('showcase-proposals', proposal.id),
       agent = this.store.get('agents', proposal.agentId);
@@ -332,6 +363,8 @@ export class ShowcaseAgents {
     const reset = this.store.get('cloud-settings', 'showcase-paper-reset');
     if (reset?.agentIds?.includes(proposal.agentId) && proposal.createdAt < reset.completedAt)
       reason = '账户轮次已变化，AI 提案已取消。';
+    else if (proposal.policyVersion !== EXIT_POLICY_VERSION)
+      reason = 'AI 决策方式已更新，旧提案已取消，等待重新评估。';
     else if (this.now() >= proposal.expiresAt) reason = 'AI 提案已过期，等待重新评估。';
     else if (!agent || agent.closedAt || agent.paused || agent.mode !== 'paper')
       reason = '账户已暂停或状态变化，AI 提案已取消。';
@@ -365,7 +398,9 @@ export class ShowcaseAgents {
         id: order.id,
         agentId: agent.id,
         token: decision.token,
-        ...decision.exit,
+        ...exitRule(decision.exit),
+        policyVersion: EXIT_POLICY_VERSION,
+        updatedAt: this.now(),
         orderId: order.id,
       });
     } else order = await this.sell(agent, decision.token, decision.reason, requestKey);
@@ -403,17 +438,45 @@ export class ShowcaseAgents {
     });
     this.status(proposal.agentId, { state: 'observing', reason });
   }
-  tick() {
+  manageExit(agent, decision) {
+    const held = showcasePositions(this.store, this.paper.lots(agent.id)).find(
+      (p) => p.token === decision.token,
+    );
+    if (!held) throw fail('AI 只能管理当前已知模拟持仓');
+    const at = this.now(),
+      rule = exitRule(decision.exit);
+    this.store.transaction(() => {
+      this.store.put('showcase-exit-updates', {
+        id: identifier(),
+        agentId: agent.id,
+        token: held.token,
+        entryOrderId: held.exitPlan.entryOrderId,
+        at,
+        reason: decision.reason,
+        previousPlan: held.exitPlan,
+        rule,
+      });
+      this.store.put('showcase-exit-plan', {
+        id: held.exitPlan.entryOrderId,
+        agentId: agent.id,
+        token: held.token,
+        ...rule,
+        policyVersion: EXIT_POLICY_VERSION,
+        updatedAt: at,
+      });
+    });
+  }
+  tick(options = {}) {
     if (this.task || this.stopped || this.now() - this.tickAt < 5000) return this.task;
     this.tickAt = this.now();
-    this.task = this.run()
+    this.task = this.run(options)
       .catch(() => {})
       .finally(() => {
         this.task = null;
       });
     return this.task;
   }
-  async run() {
+  async run({ agentId = null } = {}) {
     this.sample();
     const held = SHOWCASE_PROFILES.flatMap((p) => this.paper.lots(p.id).map((l) => l.token));
     if (!this.deferExecution)
@@ -438,10 +501,13 @@ export class ShowcaseAgents {
       return;
     }
     const cursor = this.store.get('showcase-cursor', 'platform')?.next ?? 0;
-    const profiles = Array.from(
-      { length: this.maxAgentsPerRun },
-      (_, i) => SHOWCASE_PROFILES[(cursor + i) % SHOWCASE_PROFILES.length],
-    );
+    const profiles =
+      agentId && SHOWCASE_PROFILES.some((p) => p.id === agentId)
+        ? SHOWCASE_PROFILES.filter((p) => p.id === agentId)
+        : Array.from(
+            { length: this.maxAgentsPerRun },
+            (_, i) => SHOWCASE_PROFILES[(cursor + i) % SHOWCASE_PROFILES.length],
+          );
     if (this.maxAgentsPerRun < SHOWCASE_PROFILES.length)
       this.store.put('showcase-cursor', {
         id: 'platform',
@@ -578,6 +644,10 @@ export class ShowcaseAgents {
           reason: decision.reason,
           state: 'observing',
         });
+        if (decision.action === 'manage') {
+          this.manageExit(current, decision);
+          continue;
+        }
         if (decision.action === 'hold') continue;
         if (this.deferExecution) {
           this.store.put('showcase-proposals', {
@@ -589,6 +659,7 @@ export class ShowcaseAgents {
             expiresAt: Math.min(context.at + 180000, this.now() + 120000),
             basis,
             decision,
+            policyVersion: EXIT_POLICY_VERSION,
             requestKey: 'ai-' + identifier(),
           });
           this.status(a.id, {

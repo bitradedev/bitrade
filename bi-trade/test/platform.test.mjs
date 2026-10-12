@@ -294,13 +294,57 @@ test('hold proposals cannot replace active entry rules; model context, public de
  assert.equal(f.app.paper.lots(a.id).length,0);assert.equal(f.app.paper.check(a.id),true);assert.deepEqual((await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans,[]);assert.equal(f.app.live.orders().length,0);
 });
 
+test('AI can replace a legacy 4/2 exit, remove fixed conditions and later sell through the real isolated paper executor',async t=>{
+ let phase='buy',seen;
+ const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(_c,_s,context){seen=context;
+  if(phase==='buy')return {action:'buy',token:TOKEN,sizeUsd:100,reason:'隔离入场',exit:{takeProfitPct:4,stopLossPct:2,maxHoldMinutes:240}};
+  if(phase==='target')return {action:'manage',token:TOKEN,sizeUsd:null,reason:'根据新证据自主扩大收益目标，不设固定时限',exit:{takeProfitPct:1000,stopLossPct:null,maxHoldMinutes:null}};
+  if(phase==='clear')return {action:'manage',token:TOKEN,sizeUsd:null,reason:'由后续行情评估退出，不设固定涨幅',exit:null};
+  if(phase==='sell')return {action:'sell',token:TOKEN,sizeUsd:null,reason:'自主决定退出，仍须核价',exit:null};
+  return {action:'hold',token:null,sizeUsd:null,reason:'继续持有，不强制小幅止盈',exit:null};
+ }}}});
+ const a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),run=async()=>{f.app.showcase.status(a.id,{nextDecisionAt:0});f.app.showcase.exitChecks.clear();await f.app.showcase.run({agentId:a.id});};
+ await run();const buy=f.app.paper.orders(a.id)[0];buy.dueAt=Date.now()-1;f.app.store.put('paper-orders',buy);f.g.advance();await f.app.paper.tick();
+ const legacy={...f.app.store.get('showcase-exits',buy.id),policyVersion:1};f.app.store.put('showcase-exits',legacy);const originalLots=f.app.paper.lots(a.id);
+ f.g.fx=1200;phase='target';await run();assert.equal(seen.account.positions[0].exitPlan.state,'ai-managed');assert.equal(seen.account.positions[0].exitPlan.previousRule.takeProfitPct,4);
+ let plan=(await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans[0];assert.equal(plan.rule.takeProfitPct,1000);assert.equal(plan.rule.stopLossPct,null);assert.equal(plan.deadlineAt,null);assert.equal(f.app.paper.orders(a.id).length,1);
+ phase='clear';await run();plan=(await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans[0];assert.equal(plan.state,'ai-managed');assert.equal(plan.rule.takeProfitPct,null);assert.equal(f.app.store.all('showcase-exit-updates').length,2);
+ assert.deepEqual(f.app.store.get('showcase-exits',buy.id),legacy);assert.deepEqual(f.app.paper.lots(a.id),originalLots);
+ f.g.fx=2000;phase='hold';const quotes=f.g.calls;await run();assert.equal(f.g.calls,quotes);assert.equal(f.app.paper.orders(a.id).length,1,'A price rise above the legacy 4% does not force a sale');
+ phase='sell';await run();const sale=f.app.paper.orders(a.id).find(o=>o.side==='sell');assert.ok(sale);assert.equal(sale.status,'queued');assert.equal(f.app.paper.fills(a.id).length,1);
+ sale.dueAt=Date.now()-1;f.app.store.put('paper-orders',sale);f.g.advance();await f.app.paper.tick();assert.equal(f.app.paper.fills(a.id).length,2);assert.equal(f.app.paper.lots(a.id).length,0);assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);
+});
+
+test('nullable take-profit and deadline do not accidentally trigger at zero; AI-selected stop remains executable',async t=>{
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+ const o=await f.app.paper.submit(a,{id:'optional-stop',token:TOKEN,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+ f.app.store.put('showcase-exits',{id:o.id,agentId:a.id,token:TOKEN,policyVersion:2,takeProfitPct:null,stopLossPct:5,maxHoldMinutes:null});
+ f.g.fx=1200;assert.equal(await f.app.showcase.exits(a),false);assert.equal(f.app.paper.orders(a.id).length,1);
+ f.g.fx=940;assert.equal(await f.app.showcase.exits(a),true);assert.match(f.app.paper.orders(a.id).find(o=>o.side==='sell').reason,/止损/);assert.equal(f.app.live.orders().length,0);
+});
+
+test('a buy without fixed exits stays AI-managed and a paused or stale model cannot revise its plan',async t=>{
+ let phase='buy',release,started;
+ const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){
+  if(phase==='buy')return {action:'buy',token:TOKEN,sizeUsd:50,reason:'自主选择入场，后续评估退出',exit:null};
+  started();return new Promise(r=>{release=()=>r({action:'manage',token:TOKEN,sizeUsd:null,reason:'模型待完成的修改',exit:{takeProfitPct:1000,stopLossPct:null,maxHoldMinutes:null}});});
+ }}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+ await f.app.showcase.run({agentId:a.id});const o=f.app.paper.orders(a.id)[0];o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
+ assert.equal((await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans[0].state,'ai-managed');const lots=f.app.paper.lots(a.id),saved=f.app.store.get('showcase-exits',o.id);
+ phase='manage';f.app.showcase.status(a.id,{nextDecisionAt:0});const ready=new Promise(r=>started=r),task=f.app.showcase.run({agentId:a.id});await ready;
+ f.app.store.put('agents',{...a,paused:true});release();await task;assert.equal(f.app.store.all('showcase-exit-updates').length,0);assert.deepEqual(f.app.store.get('showcase-exits',o.id),saved);
+ f.app.store.put('agents',a);f.app.showcase.status(a.id,{nextDecisionAt:0});const again=new Promise(r=>started=r),pending=f.app.showcase.run({agentId:a.id});await again;
+ f.app.showcase.manageExit(a,{token:TOKEN,exit:{takeProfitPct:null,stopLossPct:10,maxHoldMinutes:null},reason:'先到的另一份明确计划'});release();await pending;
+ assert.equal(f.app.store.all('showcase-exit-updates').length,1);assert.equal((await f.call('/api/public/agent?id='+a.id)).value.agent.exitPlans[0].rule.takeProfitPct,null);assert.deepEqual(f.app.paper.lots(a.id),lots);assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);
+});
+
 test('a pending model cannot block other exits or buy back a position already closed by the exit watcher',async t=>{
  let release,started,calls=0;const ready=new Promise(r=>release=r),begin=new Promise(r=>started=r);
  const f=await fixture(t,{showcase:true,showcaseOptions:{maxAgentsPerRun:1,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;started();await ready;return {action:'buy',token:TOKEN,sizeUsd:100,reason:'过期提案不得买回',exit:{takeProfitPct:20,stopLossPct:10,maxHoldMinutes:60}};}}}});
  const agents=SHOWCASE_PROFILES.slice(0,2).map(p=>f.app.store.get('agents',p.id));
  for(const [i,a] of agents.entries()){
   const id='watch-entry-'+i,o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
-  f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+  f.app.store.put('showcase-exits',{policyVersion:2,id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  }
  const pending=f.app.showcase.tick();await begin;assert.equal(f.app.showcase.tick(),pending);
  try{
@@ -319,7 +363,7 @@ test('a pending model cannot block other exits or buy back a position already cl
 test('a real paper stop is checked and matched before a pending Meme risk continuation, without model calls',async t=>{
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='risk-wait-stop';
  const entry=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});entry.dueAt=Date.now()-1;f.app.store.put('paper-orders',entry);f.g.advance();await f.app.paper.tick();
- f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ f.app.store.put('showcase-exits',{policyVersion:2,id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  f.app.store.put('cloud-settings',{id:'risk-priority-round',tokens:[TOKEN]});
  const calls=[],io=new IOBudget(45,async url=>{calls.push(url);return Response.json({});});
  const host={io,store:f.app.store,app:f.app,initialize:async()=>f.app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},risk:{tick(){throw Error('Stop checks and matching must precede pending risk work');}},market:{async updateHead(){await io.fetch('https://head.example');f.g.advance();},async fx(){await io.fetch('https://fx.example');},refresh(){throw Error('Do not spend exit budget on discovery');}}};
@@ -362,7 +406,7 @@ test('an account change during an exit quote discards the entire old position sn
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
  for(const [id,token] of [['snapshot-first',TOKEN],['snapshot-second',other]]){
   const o=await f.app.paper.submit(a,{id,token,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
-  f.app.store.put('showcase-exits',{id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+  f.app.store.put('showcase-exits',{policyVersion:2,id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  }
  let release,started;const ready=new Promise(r=>release=r),begin=new Promise(r=>started=r),quote=f.g.quote.bind(f.g),attempts=[];
  f.g.fx=940;f.g.advance();f.g.quote=async p=>{if(p.side==='sell'){attempts.push(p.token);if(p.token===TOKEN){started();await ready;}}return quote(p);};
@@ -378,7 +422,7 @@ test('an account change during an exit quote discards the entire old position sn
 
 test('the exit watcher respects pause, quote failures and stale heads without changing inventory',async t=>{
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='watch-unavailable',o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});
- o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();f.app.store.put('showcase-exits',{id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();f.app.store.put('showcase-exits',{policyVersion:2,id,orderId:id,agentId:a.id,token:TOKEN,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  const lots=f.app.paper.lots(a.id),balance=f.app.paper.account(a.id),quotes=f.g.calls;
  f.app.store.put('agents',{...a,paused:true});await f.app.showcase.watchExits();assert.equal(f.g.calls,quotes);
  f.app.store.put('agents',a);f.g.headAt=0;await f.app.showcase.watchExits();assert.equal(f.g.calls,quotes);
@@ -391,7 +435,7 @@ for(const [trigger,fx,maxHoldMinutes] of [['止盈',1200,60],['止损',940,60],[
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>null}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),other='0x'+'22'.repeat(20);
  for(const [id,token] of [['unavailable-entry',TOKEN],['working-entry',other]]){
   const o=await f.app.paper.submit(a,{id,token,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
-  f.app.store.put('showcase-exits',{id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes});
+  f.app.store.put('showcase-exits',{policyVersion:2,id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes});
  }
  assert.equal(f.app.paper.fills(a.id).length,2);
  for(const l of f.app.paper.lots(a.id))f.app.store.put('paper-lots',{...l,at:Date.now()-(l.token===TOKEN?120000:61000)});
@@ -408,7 +452,7 @@ test('a failed exit quote keeps AI deferred throughout the retry interval and re
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'重新核价后观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id),id='retry-window-entry';
  for(const p of SHOWCASE_PROFILES.slice(1))f.app.store.put('agents',{...f.app.store.get('agents',p.id),paused:true});
  const o=await f.app.paper.submit(a,{id,token:TOKEN,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
- f.app.store.put('showcase-exits',{id,agentId:a.id,token:TOKEN,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+ f.app.store.put('showcase-exits',{policyVersion:2,id,agentId:a.id,token:TOKEN,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  f.app.showcase.now=()=>now;const inventory=f.app.paper.lots(a.id),account=f.app.paper.account(a.id);
  f.g.failure=Error('isolated unavailable exit');await f.app.showcase.run();assert.equal(calls,0);
  const quotes=f.g.calls;f.g.failure=null;now+=1000;f.g.advance();await f.app.showcase.run();
@@ -423,7 +467,7 @@ test('unavailable exits keep all inventory, defer AI, and clear retry notices af
  for(const p of SHOWCASE_PROFILES.slice(1))f.app.store.put('agents',{...f.app.store.get('agents',p.id),paused:true});
  for(const [id,token] of [['missing-first',TOKEN],['missing-second',other]]){
   const o=await f.app.paper.submit(a,{id,token,side:'buy',amount:'100000000000000000'});o.dueAt=Date.now()-1;f.app.store.put('paper-orders',o);f.g.advance();await f.app.paper.tick();
-  f.app.store.put('showcase-exits',{id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
+  f.app.store.put('showcase-exits',{policyVersion:2,id,agentId:a.id,token,orderId:id,takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60});
  }
  const lots=f.app.paper.lots(a.id),balance=f.app.paper.account(a.id).nativeRaw;f.g.failure=Error('isolated provider body must not be published');
  await f.app.showcase.run();assert.equal(calls,0);assert.deepEqual(f.app.paper.lots(a.id),lots);assert.equal(f.app.paper.account(a.id).nativeRaw,balance);assert.equal(f.app.paper.orders(a.id).filter(o=>o.side==='sell').length,0);
