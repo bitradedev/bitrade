@@ -41,6 +41,10 @@ export class MarketWriteProbe extends DurableObject {
     frames.push({at:clock,live:market.getMarket('bsc',token),saved:this.store.get('cloud-markets',token),liveFx:market.fxValue,savedFx:this.store.get('cloud-settings','native-fx')});
    }
    const profile={marketWrites:this.marketWrites,fxWrites:this.fxWrites};
+   clock+=1000;const cold=new CloudMarket(this.store,{rpc,memeData:data,memeOnly:true,gmgn:{status:()=>({limited:true})}});
+   cold.metadata.set(token,market.metadata.get(token));cold.nativePrice=market.nativePrice;cold.route=market.route;cold.venues.bsc=market.venues.bsc;
+   this.marketWrites=0;this.fxWrites=0;await cold.pulse(1);await cold.discover();
+   const afterRebuild={marketWrites:this.marketWrites,fxWrites:this.fxWrites,live:cold.getMarket('bsc',token),saved:this.store.get('cloud-markets',token)};
    clock+=1000;fail=true;metadata();await market.refreshMarket(token);const rejected=this.store.get('cloud-markets',token);
    fail=false;clock+=1000;metadata();await market.refreshMarket(token);const recovered=this.store.get('cloud-markets',token);
    graduated=true;clock+=1000;metadata();await market.refreshMarket(token);const migration=this.store.get('cloud-markets',token);
@@ -48,7 +52,7 @@ export class MarketWriteProbe extends DurableObject {
    const other={...migration,id:'0x'+'15'.repeat(20),address:'0x'+'15'.repeat(20)};market.persistMarket(other);const added=this.store.get('cloud-markets',other.id);
    clock+=1000;market.fxValue=null;market.nativePrice={read:async()=>({id:'native-fx',usd:fx,at:clock,readAt:clock,source:'isolated-backup-feed'})};await market.fx();const changedFeed=this.store.get('cloud-settings','native-fx');
    const rebuilt=new CloudMarket(this.store,{rpc,memeData:data,memeOnly:true});
-   return Response.json({start,profile,frames,rejected,recovered,migration,excluded,added,changedFeed,rebuilt:rebuilt.getMarket('bsc',token),retained:this.store.get('paper-fills','preserved-fill'),risk:this.store.get('token-risk-reports',token)});
+   return Response.json({start,profile,frames,afterRebuild,rejected,recovered,migration,excluded,added,changedFeed,rebuilt:rebuilt.getMarket('bsc',token),retained:this.store.get('paper-fills','preserved-fill'),risk:this.store.get('token-risk-reports',token)});
   }finally{Date.now=originalNow;}
  }
 }

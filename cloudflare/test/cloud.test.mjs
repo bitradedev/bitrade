@@ -321,6 +321,8 @@ test('Actual Workerd Flap pulses and discovery share bounded price checkpoints w
  for(const [i,f] of value.frames.entries()){assert.equal(f.live.updatedAt,f.at);assert.equal(f.liveFx.readAt,f.at);assert.equal(f.liveFx.usd,751+i);assert.ok(f.saved.updatedAt<=f.at);assert.ok(f.savedFx.readAt<=f.at);}
  assert.equal(value.frames[0].saved.updatedAt,value.start);assert.equal(value.frames[0].savedFx.readAt,value.start);
  assert.equal(value.frames[2].saved.updatedAt,value.frames[2].at);assert.equal(value.frames[2].savedFx.readAt,value.frames[2].at);
+ assert.equal(value.afterRebuild.marketWrites,0,'Reconstruction must retain the saved sample checkpoint');assert.equal(value.afterRebuild.fxWrites,0,'Reconstruction must retain the saved USD checkpoint');
+ assert.ok(value.afterRebuild.live.updatedAt>value.afterRebuild.saved.updatedAt);
  assert.equal(value.rejected.quality,'unavailable');assert.equal(value.recovered.quality,'verified');assert.equal(value.migration.stage,'dex');assert.equal(value.migration.venue,'v2');
  assert.equal(value.excluded.entryActive,false);assert.equal(value.excluded.sellTaxPct,3);assert.equal(value.excluded.quoteProofMode,'scoped-transfers');assert.equal(value.added.address,'0x'+'15'.repeat(20));assert.equal(value.changedFeed.source,'isolated-backup-feed');assert.ok(value.changedFeed.readAt>value.migration.updatedAt);
  assert.deepEqual(value.rebuilt,value.excluded);assert.deepEqual(value.retained,{id:'preserved-fill',agentId:'preserved-agent',netUsd:-3});assert.equal(value.risk.fetchedAt,value.start);

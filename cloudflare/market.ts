@@ -96,9 +96,15 @@ export class CloudMarket {
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
     if (memeData?.flap) memeData.flap.market = this;
-    for (const m of store.all('cloud-markets')) this.catalog.set(m.address, m);
+    for (const m of store.all('cloud-markets')) {
+      this.catalog.set(m.address, m);
+      if (Number.isFinite(m.updatedAt) && m.updatedAt > 0)
+        this.persistAt.set(m.id ?? m.address, m.updatedAt);
+    }
     for (const m of store.all('cloud-metadata')) this.metadata.set(m.id, m);
     this.fxValue = store.get('cloud-settings', 'native-fx');
+    const fxAt = this.fxValue?.readAt ?? this.fxValue?.at;
+    if (Number.isFinite(fxAt) && fxAt > 0) this.fxPersistAt = fxAt;
     this.discoveryAt = store.get('cloud-settings', 'discovery')?.at ?? 0;
     this.cursor = store.get('cloud-settings', 'market-cursor')?.next ?? 0;
   }
