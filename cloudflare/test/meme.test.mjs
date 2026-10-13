@@ -130,6 +130,22 @@ test('Meme screening runs through the buy guard without GMGN and keeps unavailab
  const {store,data}=sourceFixture(t);let gmgn=0;const guard=new TokenRiskGuard(store,{source:{riskReport:token=>data.riskReport(token),info:()=>{gmgn++;throw Error();}}});t.after(()=>guard.close());
  const r=await guard.assertBuy(TOKEN,{sizeUsd:20,marketPrice:1});assert.equal(r.policy,'bsc-meme-paper-v1');assert.equal(r.state,'screened-limited');assert.equal(r.metrics.bundlerVolumeShare,null);assert.equal(r.metrics.linkedFunding,null);assert.equal(r.metrics.transferSample.available,true);assert.equal(gmgn,0);await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:201}),/1%/);
 });
+
+test('Meme discovery does not give expired, missing or future screening a higher priority than current risk evidence',async t=>{
+ for(const platform of ['flap','four']){
+  const store=fixture(t),now=Date.now(),data=new MemeBscData(store,rpcFixture(),{now:()=>now}),tokens=Array.from({length:5},(_,i)=>'0x'+(10000+i).toString(16).padStart(40,'0'));
+  for(const [i,token] of tokens.entries()){
+   store.put('cloud-meme-candidates',{id:token,address:token,category:'meme',platform,active:true,entryRank:i,symbol:'fixture'});
+   if(platform==='flap')store.put('cloud-flap-evidence',{id:token,originVerified:true});
+   else store.put('cloud-meme-pools',{id:token,codeHash:'0x'+'ab'.repeat(32),pair:{...pair(),baseToken:{address:token}}});
+   store.put('token-risk-reports',{id:token,token,buyAllowed:true,fetchedAt:i===0?now-121000:i===1?undefined:i===2?now+1:i===3?String(now):now});
+  }
+  const before=store.all('token-risk-reports');data.flap.discover=async()=>[];data.scanMigrations=async()=>[];data.read=async()=>{throw Error('Sources unavailable');};
+  const rows=await data.discover();assert.equal(rows[0].address,tokens[4],platform+' should prioritize current verified-time evidence');
+  assert.deepEqual(store.all('token-risk-reports'),before,'Discovery must not rewrite or refresh risk evidence');
+  assert.equal(store.all('paper-fills').length,0);
+ }
+});
 test('Chart failure retains verified Meme exits, but stale chart evidence cannot authorize new entries',async t=>{
  const {store,rpc,data}=sourceFixture(t);await data.metadata(TOKEN);store.put('cloud-public-cache',{id:'meme-trading:'+TOKEN,at:Date.now()-121000});const binding=store.get('cloud-meme-pools',TOKEN);store.put('cloud-meme-pools',{...binding,marketDataAt:Date.now()-121000});data.chart=async()=>{throw Error('Chart cooling down');};
  const md=await data.metadata(TOKEN);assert.ok(Date.now()-md.at<1000);assert.ok(Date.now()-md.marketDataAt>120000);

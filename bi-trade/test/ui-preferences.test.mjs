@@ -31,6 +31,7 @@ test('user-authored names, strategies, and unrecognized decision summaries stay 
  assert.equal(ui.systemMessage('等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。'),'Waiting for the administrator to configure the OpenAI API key. AI decisions have not started.');
  assert.equal(ui.systemMessage('AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。'),'The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.');
  assert.equal(ui.systemMessage('持仓在核价期间改变，稍后重新检查'),'Positions changed during quote verification. They will be checked again.');
+ assert.equal(ui.systemMessage('持仓风险资料时间未核实，需要重新核查'),'The holder-risk timestamp was not verified. A fresh check is required');
 });
 test('Paper account UI offers browser sessions and hides wallet/live controls in both languages while retaining account actions',()=>{
  for(const language of ['zh','en']){

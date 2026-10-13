@@ -2,6 +2,7 @@ import { fail } from './database-core.mjs';
 import { avatarFor } from './agent-avatars.mjs';
 import { showcasePositions } from './showcase-exits.mjs';
 import { showcaseAttempt } from './showcase-attempt.mjs';
+import { currentRiskEvidence } from './token-risk-core.mjs';
 
 export function strategyDto(agent) {
   const s = agent.strategy ?? {};
@@ -63,12 +64,16 @@ export function publicAgent(store, paper, live, agent) {
               reasons: ['尚未取得持仓和捆绑风险资料'],
               metrics: null,
             };
-          return Date.now() - report.fetchedAt > 120000
+          return !currentRiskEvidence(report)
             ? {
                 ...report,
                 state: 'unknown',
                 buyAllowed: false,
-                reasons: ['持仓风险资料已过期，需要重新核查'],
+                reasons: [
+                  Number.isFinite(report.fetchedAt)
+                    ? '持仓风险资料已过期，需要重新核查'
+                    : '持仓风险资料时间未核实，需要重新核查',
+                ],
               }
             : report;
         })

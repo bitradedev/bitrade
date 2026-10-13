@@ -746,6 +746,7 @@ window.BI_UI_EN = {
  ,"尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。":"No candidate currently passes holder-risk screening. Missing data or excessive risk prevents new entries."
  ,"尚未取得持仓和捆绑风险资料":"Holder and bundler risk data has not been fetched"
  ,"持仓风险资料已过期，需要重新核查":"Holder-risk data has expired and needs a fresh check"
+ ,"持仓风险资料时间未核实，需要重新核查":"The holder-risk timestamp was not verified. A fresh check is required"
  ,"风险资料的合约地址未核实":"The contract address in the risk data was not verified"
  ,"持仓列表缺失":"The holder list is missing"
  ,"持仓地址、占比或地址类型未核实":"Holder addresses, percentages, or address types were not verified"

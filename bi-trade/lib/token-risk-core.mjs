@@ -28,6 +28,14 @@ export const RISK_POLICY = {
   maxPriceGapPct: 20,
   maxOrderLiquidityShare: 0.01,
 };
+export function currentRiskEvidence(report, now = Date.now()) {
+  return (
+    Boolean(report) &&
+    Number.isFinite(report.fetchedAt) &&
+    now >= report.fetchedAt &&
+    now - report.fetchedAt <= RISK_POLICY.maxAgeMs
+  );
+}
 
 // A screening report, not a guarantee or a rug probability. Missing data never passes.
 export function evaluateTokenRisk(token, { info, holders, security }, fetchedAt = Date.now()) {
@@ -173,7 +181,14 @@ export class TokenRiskGuard {
         reasons: ['尚未取得持仓和捆绑风险资料'],
         metrics: null,
       };
-    if (this.now() < saved.fetchedAt || this.now() - saved.fetchedAt > RISK_POLICY.maxAgeMs)
+    if (!Number.isFinite(saved.fetchedAt))
+      return {
+        ...saved,
+        state: 'unknown',
+        buyAllowed: false,
+        reasons: ['持仓风险资料时间未核实，需要重新核查'],
+      };
+    if (!currentRiskEvidence(saved, this.now()))
       return {
         ...saved,
         state: 'unknown',
@@ -201,7 +216,7 @@ export class TokenRiskGuard {
     const cached = this.store.get('token-risk-reports', token);
     if (
       cached &&
-      this.now() - cached.fetchedAt >= 0 &&
+      currentRiskEvidence(cached, this.now()) &&
       this.now() - cached.fetchedAt < RISK_POLICY.maxAgeMs
     )
       return Promise.resolve(this.snapshot(token));

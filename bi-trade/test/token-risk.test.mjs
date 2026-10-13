@@ -4,6 +4,7 @@ import {mkdirSync,mkdtempSync,rmSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {PlatformStore} from '../lib/database.mjs';
 import {evaluateTokenRisk,TokenRiskGuard,RISK_POLICY} from '../lib/token-risk.mjs';
+import {publicAgent} from '../lib/public-agents.mjs';
 
 const TOKEN='0x'+'11'.repeat(20),POOL='0x'+'22'.repeat(20),CREATOR='0x'+'33'.repeat(20);
 const wallet=i=>'0x'+String(i+100).padStart(40,'0');
@@ -21,6 +22,20 @@ test('Local invocation exhaustion preserves expired risk evidence and retries ne
 test('holder risk screening keeps missing/partial fields unknown rather than treating them as zeros',()=>{
  assert.equal(evaluateTokenRisk(TOKEN,evidence()).state,'screened');
  for(const mutate of [d=>{delete d.info.stat.top_bundler_trader_percentage;},d=>{d.holders.list=[];},d=>{d.holders.list=d.holders.list.slice(0,8);},d=>{d.holders.list[1].amount_percentage=true;},d=>{delete d.holders.list[1].maker_token_tags;},d=>{delete d.security.is_honeypot;},d=>{d.security.address=POOL;}]){const d=evidence();mutate(d);const r=evaluateTokenRisk(TOKEN,d);assert.equal(r.buyAllowed,false);assert.equal(r.state,'unknown');assert.ok(r.reasons.length);}
+});
+
+test('A stored report without a verified numeric timestamp never permits entry or renews its evidence age',async t=>{
+ const now=Date.now(),{store,guard}=fixture(t,{now:()=>now,source:{}}),report=evaluateTokenRisk(TOKEN,evidence(),now);
+ const paper={view:()=>({balanceWei:'0',balanceUsd:1000,realizedNativeRaw:'0',initialUsd:1000,positions:[]}),fills:()=>[{side:'buy',token:TOKEN,at:now}],lots:()=>[]},agent={id:'isolated',source:'builtin',mode:'paper'};
+ for(const at of [undefined,null,String(now),{},[],now+60000,now-121000]){
+  store.put('token-risk-reports',{...report,fetchedAt:at});const before=store.get('token-risk-reports',TOKEN);
+  assert.equal(guard.snapshot(TOKEN).buyAllowed,false,'Invalid or stale evidence must not permit buying');
+  const publicRisk=publicAgent(store,paper,null,agent).riskReviews[0];assert.equal(publicRisk.buyAllowed,false);assert.equal(publicRisk.state,'unknown');
+  await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:10,refresh:false}),/风险/);
+  assert.deepEqual(store.get('token-risk-reports',TOKEN),before);
+ }
+ store.put('token-risk-reports',report);assert.equal(guard.snapshot(TOKEN).buyAllowed,true);
+ assert.equal(publicAgent(store,paper,null,agent).riskReviews[0].buyAllowed,true);
 });
 test('a failed independent risk source keeps its provider label, blocks entry and recovers without calling GMGN',async t=>{
  let now=Date.now(),unavailable=true,fallbackCalls=0;

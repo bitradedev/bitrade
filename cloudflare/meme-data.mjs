@@ -4,6 +4,7 @@ import { FlapBscData } from './flap-data.mjs';
 import { evaluateMemeRisk } from '../bi-trade/lib/meme-risk.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 import { readTurnoverHistory } from './turnover-history.mjs';
+import { currentRiskEvidence } from '../bi-trade/lib/token-risk-core.mjs';
 import {
   FOUR_HELPER,
   FOUR_MANAGER,
@@ -347,6 +348,10 @@ export class MemeBscData extends PublicBscData {
     for (let i = 0; i < 8; i++) for (const list of lists) if (list[i]) rows.push(list[i]);
     const hasFourRows = rows.length > 0,
       previous = this.candidates(),
+      recentlyScreened = (c) => {
+        const r = this.store.get('token-risk-reports', c.address);
+        return r?.buyAllowed === true && currentRiskEvidence(r, this.now());
+      },
       known = previous
         .filter((c) => {
           const binding = this.store.get('cloud-meme-pools', c.address);
@@ -357,11 +362,7 @@ export class MemeBscData extends PublicBscData {
             selectDexPair([binding.pair], c.address)
           );
         })
-        .sort((a, b) => {
-          const permitted = (c) =>
-            this.store.get('token-risk-reports', c.address)?.buyAllowed === true;
-          return Number(permitted(b)) - Number(permitted(a));
-        })
+        .sort((a, b) => Number(recentlyScreened(b)) - Number(recentlyScreened(a)))
         .slice(0, 4);
     if (!rows.length) {
       try {
@@ -422,11 +423,7 @@ export class MemeBscData extends PublicBscData {
           this.flap.supports(c.address) &&
           this.store.get('cloud-flap-evidence', c.address)?.originVerified === true,
       )
-      .sort(
-        (a, b) =>
-          Number(this.store.get('token-risk-reports', b.address)?.buyAllowed === true) -
-          Number(this.store.get('token-risk-reports', a.address)?.buyAllowed === true),
-      )
+      .sort((a, b) => Number(recentlyScreened(b)) - Number(recentlyScreened(a)))
       .slice(0, 4);
     const flapCursor = Number.isInteger(current?.flapCursor) ? current.flapCursor : 0;
     const freshFlap = launches.length
