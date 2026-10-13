@@ -57,6 +57,8 @@ export class TradingPlatform extends DurableObject<any> {
   riskRequestReserve = 32;
   importing = false;
   appReadOnly = false;
+  wakeStatus: any = null;
+  wakeRecovery: any = null;
   constructor(ctx: any, env: any) {
     super(ctx, env);
     this.store = new CloudStore(ctx.storage, {
@@ -188,11 +190,22 @@ export class TradingPlatform extends DurableObject<any> {
   }
   async arm(delay = 20000) {
     if (this.store.readOnly) return;
-    const next = await this.ctx.storage.getAlarm();
-    if (next === null || next > Date.now() + delay) {
-      await this.ctx.storage.setAlarm(Date.now() + delay);
+    const next = await this.ctx.storage.getAlarm(),
+      now = Date.now(),
+      overdue = next !== null && next <= now,
+      rearmed = next === null || overdue || next > now + delay;
+    if (rearmed) {
+      await this.ctx.storage.setAlarm(now + delay);
       this.store.budget.record(1);
     }
+    if (overdue) this.wakeRecovery = { at: now, previousAt: next, nextAt: now + delay };
+    this.wakeStatus = {
+      checkedAt: now,
+      previousAt: next,
+      nextAt: rearmed ? now + delay : next,
+      rearmed,
+      lastRecovery: this.wakeRecovery,
+    };
   }
   async fetch(request: Request) {
     return this.io.run('http', () => this.handleRequest(request));
@@ -221,6 +234,7 @@ export class TradingPlatform extends DurableObject<any> {
       if (url.pathname === '/api/runtime')
         return json({
           platform: 'cloudflare',
+          wakeup: this.wakeStatus,
           storageProtection: {
             readOnly: this.store.readOnly,
             retryAt: this.store.readOnly ? this.store.protectionUntil : null,

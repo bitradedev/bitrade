@@ -40,6 +40,20 @@ export class BudgetProbe extends TradingPlatform {
 export class QuotaFailure extends DurableObject {
  async fetch(){throw Error('Exceeded allowed rows written in Durable Objects free tier.');}
 }
+export class OverdueWakeProbe extends TradingPlatform {
+ async fetch(request:Request){
+  const original=this.ctx.storage.getAlarm.bind(this.ctx.storage);
+  if(new URL(request.url).pathname==='/recover'){
+   const previousAt=Date.now()-3600000;
+   this.ctx.storage.getAlarm=async()=>previousAt;
+   try{await this.arm(1000);}finally{this.ctx.storage.getAlarm=original;}
+   return Response.json({previousAt,nextAt:await original()});
+  }
+  const previousAt=Date.now()+10000;await this.ctx.storage.setAlarm(previousAt);await this.arm(20000);
+  return Response.json({previousAt,nextAt:await original()});
+ }
+ async alarm(){await this.ctx.storage.deleteAlarm();}
+}
 export class SchedulerProbe extends TradingPlatform {
  refreshes=0; watches=0; matches=0; modelCalls=0;
  async arm(){await this.ctx.storage.deleteAlarm();}

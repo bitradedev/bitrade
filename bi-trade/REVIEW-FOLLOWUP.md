@@ -431,3 +431,7 @@ RWA补证提交7dc7e6ead221c3027e3519f5dd20c7b1c708ef86已上传，[GitHub完整
 2026-10-13T00:28Z遵守5分钟退避后，简化查询为当日durableObjectsPeriodicGroups limit1的sum，Cloudflare GraphQL成功返回已记录rowsRead=0、rowsWritten=0；保留到recovery-20261013-cloud-usage.json。该报表可能有计量延迟，不能据此断言平台配额缓存是根因，但没有取得新一天重新耗尽100,000行的证据。随后同一数据库仍拒绝读取，资金/指纹/自然成交验收继续受外部存储服务阻碍。
 
 修复提交e4c0a98ef6ace7178da1f8a50692089a8e7c23bc已上传，部署成功2d4dd743-78dc-48fd-868c-029b210e962a，保持原命名空间和5分钟Cron。线上/home与ui-catalog.js200且字节一致，/api/runtime与/api/public实际503/STORAGE_DAILY_QUOTA、retryAt=null、Retry-After300，不再显示虚构的下一天恢复时间。产品102、云端116、构建、格式和233文件发布扫描通过。没有重建对象身份、清空记录、开通付费服务或制造成交；当前只能继续观察云端存储恢复，不能声称上线交易已恢复。
+
+2026-10-13T00:51Z首次读到/runtime和/public200，保护readOnly=false，当日估算113行；当前GraphQL已记录11,098行读/12行写。保存真实恢复快照。只读身份/历史核验通过：同3个钱包地址和创建时间、每Agent initialUsd1000、一次性重置操作ID/完成时间/归档指纹不变，旧新轮成交ID均保留；成交数6/10/4，已实现USD分别-3.201063485542889/-4.0846862679654805/-1.4531440675473277，没有持仓；实盘关闭，匿名无Owner。此时行情head0/connectedfalse，networkBudget=null，scheduler及决策时间仍为昨日，余额USD未取得新FX时明确null，因此只确认读取恢复，未确认交易循环恢复。
+
+发现并复现唤醒缺陷：arm只处理空或太晚的alarm，不重新设置已过期的alarm；[Cloudflare官方说明](https://developers.cloudflare.com/durable-objects/api/alarms/)长时间故障可耗尽6次自动重试，需要新的setAlarm。真实Workerd测试模拟存储仍返回过期时间而无待执行任务，原代码失败（无新唤醒），修复后写入新未来alarm，保留原有更早且尚未来临的任务。加入仅内存的wakeStatus/lastRecovery诊断，不改财务记录或持久增加每轮诊断写入。云端117项通过，构建、格式和发布扫描通过；后续用线上previousAt/lastRecovery、行情及决策时间复核，不先宣称Flap成交。

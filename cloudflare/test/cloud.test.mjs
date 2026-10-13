@@ -294,3 +294,10 @@ test('Actual Workerd reports only a known future protection deadline and does no
   assert.equal((await mf.dispatchFetch('https://bitrade.site/home')).status,200);
  }
 });
+
+test('An overdue wake after a prolonged outage gets a new persisted alarm while an upcoming alarm is retained',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'overdue-wake-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PROBE:{className:'OverdueWakeProbe',useSQLite:true}}}));t.after(()=>mf.dispose());await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('PROBE'),stub=ns.get(ns.idFromName('existing-ledger'));
+ const recovered=await(await stub.fetch('https://probe.example/recover')).json();assert.ok(recovered.previousAt<Date.now());assert.ok(recovered.nextAt>Date.now(),'Expired storage metadata must not permanently suppress the next wake');
+ const pending=await(await stub.fetch('https://probe.example/upcoming')).json();assert.equal(pending.nextAt,pending.previousAt,'An upcoming earlier wake must keep its deadline');
+});
