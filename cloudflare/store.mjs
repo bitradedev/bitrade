@@ -6,21 +6,27 @@ import {
   json,
 } from '../bi-trade/lib/database-core.mjs';
 import { StorageWriteBudget } from './write-budget.mjs';
+import { EntityReads } from './entity-reads.mjs';
 
 // Consume every cursor synchronously. No cursor survives an event or await.
-export function sqlDatabase(sql, onWrite = () => {}) {
+export function sqlDatabase(sql, onWrite = () => {}, onMutation = () => {}) {
   const consume = (cursor) => {
     const result = cursor.toArray();
+    if (cursor.rowsWritten > 0) onMutation();
     onWrite(cursor.rowsWritten);
     return result;
   };
   return {
-    exec: (query) => consume(sql.exec(query)),
+    exec: (query) => {
+      onMutation();
+      return consume(sql.exec(query));
+    },
     prepare(query) {
       return {
         get: (...args) => consume(sql.exec(query, ...args))[0],
         all: (...args) => consume(sql.exec(query, ...args)),
         run: (...args) => {
+          onMutation();
           const cursor = sql.exec(query, ...args);
           consume(cursor);
           return { changes: cursor.rowsWritten };
@@ -31,8 +37,12 @@ export function sqlDatabase(sql, onWrite = () => {}) {
 }
 export class CloudStore extends PlatformRepository {
   constructor(storage, { readOnlyUntil = 0, now = Date.now } = {}) {
-    const meter = { current: null },
-      db = sqlDatabase(storage.sql, (rows) => meter.current?.record(rows)),
+    const meter = { current: null, reads: null },
+      db = sqlDatabase(
+        storage.sql,
+        (rows) => meter.current?.record(rows),
+        () => meter.reads?.clear(),
+      ),
       tables = new Set(
         db
           .prepare("SELECT name FROM sqlite_master WHERE type='table'")
@@ -56,6 +66,8 @@ export class CloudStore extends PlatformRepository {
       now,
     });
     meter.current = this.budget;
+    this.entityReads = new EntityReads({ now: () => this.now() });
+    meter.reads = this.entityReads;
     this.memoryLimits = new Map();
     if (!complete)
       this.db.exec(
@@ -64,6 +76,30 @@ export class CloudStore extends PlatformRepository {
   }
   get readOnly() {
     return this.now() < this.protectionUntil;
+  }
+  entityRead(method, args, load) {
+    if (!this.entityReads || args.some((v) => typeof v !== 'string')) return load();
+    return this.entityReads.read(JSON.stringify([method, ...args]), load);
+  }
+  get(kind, id) {
+    return this.entityRead('get', [kind, id], () => super.get(kind, id));
+  }
+  all(kind) {
+    return this.entityRead('all', [kind], () => super.all(kind));
+  }
+  forAgent(kind, id) {
+    return this.entityRead('agent', [kind, id], () => super.forAgent(kind, id));
+  }
+  byOwner(kind, id) {
+    return this.entityRead('owner', [kind, id], () => super.byOwner(kind, id));
+  }
+  transaction(fn) {
+    try {
+      return super.transaction(fn);
+    } finally {
+      // A rolled-back transaction may have populated reads of uncommitted data.
+      this.entityReads?.clear();
+    }
   }
   get protectionUntil() {
     return Math.max(this.readOnlyUntil, this.quotaPauseUntil);

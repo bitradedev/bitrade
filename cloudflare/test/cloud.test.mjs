@@ -301,3 +301,13 @@ test('An overdue wake after a prolonged outage gets a new persisted alarm while 
  const recovered=await(await stub.fetch('https://probe.example/recover')).json();assert.ok(recovered.previousAt<Date.now());assert.ok(recovered.nextAt>Date.now(),'Expired storage metadata must not permanently suppress the next wake');
  const pending=await(await stub.fetch('https://probe.example/upcoming')).json();assert.equal(pending.nextAt,pending.previousAt,'An upcoming earlier wake must keep its deadline');
 });
+
+test('Actual Workerd reuses duplicate entity reads without changing public ledger, ranking or risk evidence',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'entity-read-profile',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PROBE:{className:'EntityReadProbe',useSQLite:true}}}));t.after(()=>mf.dispose());await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('PROBE'),stub=ns.get(ns.idFromName('isolated-profile'));
+ const value=await(await stub.fetch('https://probe.example/profile')).json();
+ assert.deepEqual(value.cached,value.baseline);
+ assert.equal(value.uncachedWrites,0);assert.equal(value.cachedWrites,0);
+ assert.ok(value.cachedRows<value.uncachedRows*0.65,`Repeated SQLite reads should be reduced: ${value.cachedRows}/${value.uncachedRows}`);
+ console.log(JSON.stringify({profile:'public-ledger-and-meme-screening',uncachedRows:value.uncachedRows,cachedRows:value.cachedRows}));
+});
