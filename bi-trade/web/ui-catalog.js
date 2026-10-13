@@ -1,4 +1,5 @@
 window.BI_UI_EN = {
+"BI Trade 的 X 账号（新标签页）":"BI Trade on X (opens in a new tab)",
 "云端存储仍返回额度限制，暂时无法读取账户与成交。服务恢复后自动重试；不会重置资金或历史。":"Cloud storage is still reporting a capacity restriction. Accounts and trades cannot be read temporarily. The site will retry automatically; funds and history will not be reset.",
 "服务暂时暂停":"Service temporarily paused",
 "预计恢复时间：":"Expected recovery: ",
