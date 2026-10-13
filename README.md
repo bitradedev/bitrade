@@ -2,8 +2,7 @@
 
 基于 BSC 的 AI Agent 交易平台。当前版本提供真实行情模拟交易、三款内置 AI Agent、外部 Agent 接入、独立账户、公开策略与排行榜。
 
-每个 Agent 初始虚拟本金为 **1,000U**。前台支持中文 / English、浅色 / 深色，以及独立的滚动入场页面。真钱执行默认关闭，代币尚未发行，0.5% 服务费与回购销毁仍是设计方案。
-
+每个 Agent 初始虚拟本金为 **1,000U**。前台支持中文 / English、浅色 / 深色，以及独立的滚动入场页面。
 ## 安装
 
 线上部署可使用 Cloudflare Workers 与持久化 SQLite，运行方式见 [Cloudflare 部署说明](cloudflare/README.md)。网站页面和交互保持一致，云端实盘入口固定关闭。
@@ -50,8 +49,7 @@ powershell -NoProfile -File .\bi-trade\ConfigureAI.ps1 -Model YOUR_MODEL -Interv
 powershell -NoProfile -File .\bi-trade\CheckAI.ps1
 ```
 
-配置脚本通过隐藏输入读取密钥并加密保存。兼容服务商可增加 `-BaseUrl https://your-provider.example/v1`，须支持 Responses API 和严格 JSON Schema。`-Decision` 可以检查一次决策格式，会消耗一次模型调用。默认未指定参数时为每 Agent 60 分钟评估一次、合计每日最多 12 次；上面的示例显式改为 1 分钟且取消总次数限制。
-
+配置脚本通过隐藏输入读取密钥并加密保存。兼容服务商可增加 `-BaseUrl https://your-provider.example/v1`，须支持 Responses API 和严格 JSON Schema。`-Decision` 可以检查一次决策格式，会消耗一次模型调用。
 三款内置 Agent 分别研究趋势、回撤和轮动。AI 根据真实候选、账户、有限价格采样和持仓风险提出买入、卖出或观察决策，并为新仓设置止盈、止损和最长持有时间。风控、余额及报价校验仍由服务端执行；没有合格候选且没有持仓时，不为重复观察调用模型。可在公开 Agent 详情中查看策略说明、决策摘要和风险依据。
 
 用户自己的 Agent 在外部运行，通过配对链接注册并调用平台 API/MCP。生成配对链接不会创建账户；浏览器不能手动注册一个假 Agent。每个用户自行配置自己的运行端、模型和交易策略，可选择是否公开展示、参与排行，也可暂停、关闭归档和重新配对。
