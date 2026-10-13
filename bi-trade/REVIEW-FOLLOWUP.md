@@ -427,3 +427,7 @@ RWA补证提交7dc7e6ead221c3027e3519f5dd20c7b1c708ef86已上传，[GitHub完整
 2026-10-13T00:21Z起，预期免费额度重置后/runtime、/public、/leaderboard仍实际503/STORAGE_DAILY_QUOTA。新日志确认当前部署13b3ebdf的CloudStore构造中sqlite_master纯SELECT仍被“Exceeded allowed rows written”拒绝，CPU0；未能读取账本，因此不能确认余额、指纹或自然成交，也没有改写或重置它们。首次查询新一天Cloudflare GraphQL用量被budget限流，按返回要求至少等待5分钟再做更小查询；尚不能认定新的日额度已被用完或故障是旧缓存。
 
 定位到产品文案问题：原外层异常处理会把任何持续额度错误的恢复时间滚到“次日00UTC”，即已过预期重置后错误地显示再等一天。已改为仅在配置中的保护期限仍属未来时显示预计时间；期限已过或未知时retryAt=null，保持300秒Retry-After及页面5分钟自动重试，不制造新的恢复日期，文案只陈述云端仍返回存储限制。真实Workerd覆盖未来和已过期限，中英文UI覆盖未知时间不展示日期、资金不伪造及退避。产品102项、云端116项和Cloudflare构建通过。此修复不等于存储或模拟交易恢复，下面记录实际发布及后续用量查询。
+
+2026-10-13T00:28Z遵守5分钟退避后，简化查询为当日durableObjectsPeriodicGroups limit1的sum，Cloudflare GraphQL成功返回已记录rowsRead=0、rowsWritten=0；保留到recovery-20261013-cloud-usage.json。该报表可能有计量延迟，不能据此断言平台配额缓存是根因，但没有取得新一天重新耗尽100,000行的证据。随后同一数据库仍拒绝读取，资金/指纹/自然成交验收继续受外部存储服务阻碍。
+
+修复提交e4c0a98ef6ace7178da1f8a50692089a8e7c23bc已上传，部署成功2d4dd743-78dc-48fd-868c-029b210e962a，保持原命名空间和5分钟Cron。线上/home与ui-catalog.js200且字节一致，/api/runtime与/api/public实际503/STORAGE_DAILY_QUOTA、retryAt=null、Retry-After300，不再显示虚构的下一天恢复时间。产品102、云端116、构建、格式和233文件发布扫描通过。没有重建对象身份、清空记录、开通付费服务或制造成交；当前只能继续观察云端存储恢复，不能声称上线交易已恢复。
