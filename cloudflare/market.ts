@@ -29,6 +29,32 @@ const raw = (x: any) => {
   return BigInt(x);
 };
 const key = (_chain: string, token: string) => token.toLowerCase();
+// Pricing samples may checkpoint once a minute. Eligibility, route identity,
+// execution quality and taxes must become durable immediately when they change.
+const MARKET_STATE_FIELDS = [
+  'id',
+  'address',
+  'chain',
+  'category',
+  'symbol',
+  'name',
+  'decimals',
+  'entryActive',
+  'active',
+  'entryRank',
+  'platform',
+  'stage',
+  'venue',
+  'quoteSymbol',
+  'quoteProofMode',
+  'buyTaxPct',
+  'sellTaxPct',
+  'createdAt',
+  'discoveredAt',
+  'discoverySource',
+  'quality',
+  'reason',
+];
 
 export class CloudMarket {
   rpc: any;
@@ -45,6 +71,7 @@ export class CloudMarket {
   buyPreviews = new Map<string, any>();
   quoteRevision: any = { bsc: 0 };
   fxValue: any = null;
+  fxPersistAt = 0;
   head: any = { chain: 'bsc', connected: false, head: 0, headAt: 0, chainTime: 0 };
   refreshTask: any = null;
   discoveryAt = 0;
@@ -146,6 +173,23 @@ export class CloudMarket {
     };
     return b;
   }
+  persistMarket(m: any) {
+    const id = m.id ?? m.address,
+      value = m.id ? m : { ...m, id },
+      old = this.store.get('cloud-markets', id),
+      at = Date.now(),
+      savedAt = this.persistAt.get(id) ?? 0;
+    if (
+      !old ||
+      MARKET_STATE_FIELDS.some((field) => old[field] !== value[field]) ||
+      at < savedAt ||
+      at - savedAt >= 60000
+    ) {
+      this.store.put('cloud-markets', value);
+      this.persistAt.set(id, at);
+      capMap(this.persistAt, 100);
+    }
+  }
   async fx() {
     if (
       this.fxValue &&
@@ -166,7 +210,17 @@ export class CloudMarket {
         throw Error('BNB 美元行情未核实');
       this.fxValue = { id: 'native-fx', usd, at, readAt: at, source: 'GMGN WBNB/USD' };
     }
-    this.store.put('cloud-settings', this.fxValue);
+    const old = this.store.get('cloud-settings', 'native-fx'),
+      at = Date.now();
+    if (
+      !old ||
+      old.source !== this.fxValue.source ||
+      at < this.fxPersistAt ||
+      at - this.fxPersistAt >= 60000
+    ) {
+      this.store.put('cloud-settings', this.fxValue);
+      this.fxPersistAt = at;
+    }
     return this.fxValue;
   }
   async loadMetadata(token: string) {
@@ -383,7 +437,7 @@ export class CloudMarket {
       m = { ...m, quality: 'unavailable', reason: String(e.message).slice(0, 260) };
     }
     this.catalog.set(token, m);
-    this.store.put('cloud-markets', m);
+    this.persistMarket(m);
     return m;
   }
   async discover() {
@@ -403,13 +457,13 @@ export class CloudMarket {
           entryActive: true,
         };
         this.catalog.set(m.address, m);
-        this.store.put('cloud-markets', m);
+        this.persistMarket(m);
       }
       for (const [token, m] of this.catalog)
         if (m.category === 'meme' && !active.has(token)) {
           const next = { ...m, entryActive: false };
           this.catalog.set(token, next);
-          this.store.put('cloud-markets', next);
+          this.persistMarket(next);
         }
       const held = new Set(
         this.store
@@ -441,7 +495,7 @@ export class CloudMarket {
           discoveredAt: Date.now(),
         };
         this.catalog.set(item.address, m);
-        this.store.put('cloud-markets', m);
+        this.persistMarket(m);
       }
     }
     if (this.gmgn.status?.().limited) return;
@@ -472,7 +526,7 @@ export class CloudMarket {
             discoveredAt: Date.now(),
           };
           this.catalog.set(token, m);
-          this.store.put('cloud-markets', m);
+          this.persistMarket(m);
         }
       }
     }
@@ -656,10 +710,7 @@ export class CloudMarket {
           quality: 'verified',
         };
         this.catalog.set(m.address, next);
-        if (Date.now() - (this.persistAt.get(m.address) ?? 0) > 60000) {
-          this.store.put('cloud-markets', next);
-          this.persistAt.set(m.address, Date.now());
-        }
+        this.persistMarket(next);
       } catch {
         /* Failed reads never refresh a market timestamp. */
       }

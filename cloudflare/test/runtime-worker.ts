@@ -10,6 +10,48 @@ import {PaperDesk} from '../../bi-trade/lib/paper-desk.mjs';
 import {publicAgent,leaderboard} from '../../bi-trade/lib/public-agents.mjs';
 import {MemeBscData} from '../meme-data.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
+import {CloudMarket} from '../market.js';
+export class MarketWriteProbe extends DurableObject {
+ store:any; marketWrites=0; fxWrites=0;
+ constructor(ctx:any,env:any){
+  super(ctx,env);
+  this.store=new CloudStore({transactionSync:ctx.storage.transactionSync.bind(ctx.storage),sql:{exec:(...args:any[])=>{
+   const c=ctx.storage.sql.exec(...args);
+   return {toArray:()=>{const rows=c.toArray();if(/^INSERT INTO entities/.test(args[0])){if(args[1]==='cloud-markets')this.marketWrites+=c.rowsWritten;if(args[1]==='cloud-settings'&&args[2]==='native-fx')this.fxWrites+=c.rowsWritten;}return rows;},get rowsWritten(){return c.rowsWritten;}};
+  }}});
+ }
+ async fetch(){
+  const originalNow=Date.now,start=originalNow(),token='0x'+'13'.repeat(20),wrapped='0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c';let clock=start,block=100,fail=false,graduated=false,fx=750;
+  Date.now=()=>clock;
+  try{
+   const candidate={id:token,address:token,category:'meme',symbol:'Flap fixture',at:start,active:true,entryRank:0};
+   const rpc={block:async()=>({number:++block,time:clock,hash:'same-canonical'}),read:async()=>1000n*10n**18n};
+   const data={candidates:()=>[candidate],discover:async()=>[candidate],supports:()=>true};
+   const market=new CloudMarket(this.store,{rpc,memeData:data,memeOnly:true,gmgn:{status:()=>({limited:true})}});
+   market.nativePrice={read:async()=>({id:'native-fx',usd:fx,at:clock,readAt:clock,source:'isolated-price-feed'})};
+   const metadata=()=>market.metadata.set(token,{at:clock,source:'flap-bsc',info:{symbol:candidate.symbol,name:'fixture',price:{volume_24h:10}},flap:{createdAt:start,quoteSymbol:'BNB'}});
+   market.route=async()=>({kind:graduated?'v2':'flap',pool:'0x'+'14'.repeat(20),quote:wrapped,state:{platform:'flap',reserve:1000n*10n**18n,progress:10n**18n,buyTaxRate:0,sellTaxRate:0}});
+   market.venues.bsc={decimals:async()=>18,spot:async()=>{if(fail)throw Error('read unavailable');return .001+(clock-start)/1e9;},conversion:async()=>null};
+   this.store.put('paper-fills',{id:'preserved-fill',agentId:'preserved-agent',netUsd:-3});
+   this.store.put('token-risk-reports',{id:token,token,fetchedAt:start,buyAllowed:true,policy:'bsc-flap-paper-v1'});
+   metadata();await market.discover();await market.refreshMarket(token);
+   this.marketWrites=0;this.fxWrites=0;const frames=[];
+   for(const ms of [20000,40000,60000,80000]){
+    clock=start+ms;fx++;metadata();await market.pulse(1);await market.discover();
+    frames.push({at:clock,live:market.getMarket('bsc',token),saved:this.store.get('cloud-markets',token),liveFx:market.fxValue,savedFx:this.store.get('cloud-settings','native-fx')});
+   }
+   const profile={marketWrites:this.marketWrites,fxWrites:this.fxWrites};
+   clock+=1000;fail=true;metadata();await market.refreshMarket(token);const rejected=this.store.get('cloud-markets',token);
+   fail=false;clock+=1000;metadata();await market.refreshMarket(token);const recovered=this.store.get('cloud-markets',token);
+   graduated=true;clock+=1000;metadata();await market.refreshMarket(token);const migration=this.store.get('cloud-markets',token);
+   clock+=1000;market.persistMarket({...migration,entryActive:false,sellTaxPct:3,quoteProofMode:'scoped-transfers'});const excluded=this.store.get('cloud-markets',token);
+   const other={...migration,id:'0x'+'15'.repeat(20),address:'0x'+'15'.repeat(20)};market.persistMarket(other);const added=this.store.get('cloud-markets',other.id);
+   clock+=1000;market.fxValue=null;market.nativePrice={read:async()=>({id:'native-fx',usd:fx,at:clock,readAt:clock,source:'isolated-backup-feed'})};await market.fx();const changedFeed=this.store.get('cloud-settings','native-fx');
+   const rebuilt=new CloudMarket(this.store,{rpc,memeData:data,memeOnly:true});
+   return Response.json({start,profile,frames,rejected,recovered,migration,excluded,added,changedFeed,rebuilt:rebuilt.getMarket('bsc',token),retained:this.store.get('paper-fills','preserved-fill'),risk:this.store.get('token-risk-reports',token)});
+  }finally{Date.now=originalNow;}
+ }
+}
 export class EntityReadProbe extends DurableObject {
  store:any; rowsRead=0; rowsWritten=0;
  constructor(ctx:any,env:any){

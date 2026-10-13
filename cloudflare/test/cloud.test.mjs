@@ -311,3 +311,17 @@ test('Actual Workerd reuses duplicate entity reads without changing public ledge
  assert.ok(value.cachedRows<value.uncachedRows*0.65,`Repeated SQLite reads should be reduced: ${value.cachedRows}/${value.uncachedRows}`);
  console.log(JSON.stringify({profile:'public-ledger-and-meme-screening',uncachedRows:value.uncachedRows,cachedRows:value.cachedRows}));
 });
+
+test('Actual Workerd Flap pulses and discovery share bounded price checkpoints while invalidation and graduation persist immediately',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'market-write-profile',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PROBE:{className:'MarketWriteProbe',useSQLite:true}}}));t.after(()=>mf.dispose());await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('PROBE'),value=await(await ns.get(ns.idFromName('isolated-price-profile')).fetch('https://probe.example/profile')).json();
+ console.log(JSON.stringify({profile:'flap-pulse-discovery-and-fx',...value.profile}));
+ assert.ok(value.profile.marketWrites<=2,`Repeated Flap pulses must not bypass minute checkpoints: ${value.profile.marketWrites}`);
+ assert.ok(value.profile.fxWrites<=2,`USD feed polls must not force a checkpoint every 20 seconds: ${value.profile.fxWrites}`);
+ for(const [i,f] of value.frames.entries()){assert.equal(f.live.updatedAt,f.at);assert.equal(f.liveFx.readAt,f.at);assert.equal(f.liveFx.usd,751+i);assert.ok(f.saved.updatedAt<=f.at);assert.ok(f.savedFx.readAt<=f.at);}
+ assert.equal(value.frames[0].saved.updatedAt,value.start);assert.equal(value.frames[0].savedFx.readAt,value.start);
+ assert.equal(value.frames[2].saved.updatedAt,value.frames[2].at);assert.equal(value.frames[2].savedFx.readAt,value.frames[2].at);
+ assert.equal(value.rejected.quality,'unavailable');assert.equal(value.recovered.quality,'verified');assert.equal(value.migration.stage,'dex');assert.equal(value.migration.venue,'v2');
+ assert.equal(value.excluded.entryActive,false);assert.equal(value.excluded.sellTaxPct,3);assert.equal(value.excluded.quoteProofMode,'scoped-transfers');assert.equal(value.added.address,'0x'+'15'.repeat(20));assert.equal(value.changedFeed.source,'isolated-backup-feed');assert.ok(value.changedFeed.readAt>value.migration.updatedAt);
+ assert.deepEqual(value.rebuilt,value.excluded);assert.deepEqual(value.retained,{id:'preserved-fill',agentId:'preserved-agent',netUsd:-3});assert.equal(value.risk.fetchedAt,value.start);
+});
