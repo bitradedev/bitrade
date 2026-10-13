@@ -287,8 +287,10 @@ test('Actual Workerd checkpoints write protection, preserves accounts and recove
  assert.deepEqual((await get('/api/public')).agents.map(a=>[a.id,a.address,a.realizedUsd]),before.agents.map(a=>[a.id,a.address,a.realizedUsd]));
 });
 
-test('Actual Workerd returns an honest 503 and retry time if storage even rejects cold-start reads',async t=>{
- const mf=new Miniflare(convertV4MiniflareOptions({name:'storage-admission-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PLATFORM:{className:'QuotaFailure',useSQLite:true}},bindings:{SITE_ORIGIN:'https://bitrade.site'},serviceBindings:{ASSETS:async()=>new Response('static page')}}));t.after(()=>mf.dispose());await mf.ready;
- const r=await mf.dispatchFetch('https://bitrade.site/api/public'),j=await r.json();assert.equal(r.status,503);assert.equal(j.code,'STORAGE_DAILY_QUOTA');assert.ok(j.retryAt>Date.now());assert.ok(Number(r.headers.get('Retry-After'))>0);assert.equal(j.agents,undefined);assert.equal(j.activity,undefined);
- assert.equal((await mf.dispatchFetch('https://bitrade.site/home')).status,200);
+test('Actual Workerd reports only a known future protection deadline and does not invent a new reset date after it passes',async t=>{
+ for(const until of [Date.now()+3600000,Date.now()-3600000]){
+  const mf=new Miniflare(convertV4MiniflareOptions({name:'storage-admission-test',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PLATFORM:{className:'QuotaFailure',useSQLite:true}},bindings:{SITE_ORIGIN:'https://bitrade.site',BI_TRADE_STORAGE_READ_ONLY_UNTIL:new Date(until).toISOString()},serviceBindings:{ASSETS:async()=>new Response('static page')}}));t.after(()=>mf.dispose());await mf.ready;
+  const r=await mf.dispatchFetch('https://bitrade.site/api/public'),j=await r.json();assert.equal(r.status,503);assert.equal(j.code,'STORAGE_DAILY_QUOTA');assert.equal(j.retryAt,until>Date.now()?until:null);assert.ok(Number(r.headers.get('Retry-After'))>0);if(until<Date.now())assert.equal(r.headers.get('Retry-After'),'300');assert.equal(j.agents,undefined);assert.equal(j.activity,undefined);
+  assert.equal((await mf.dispatchFetch('https://bitrade.site/home')).status,200);
+ }
 });

@@ -462,23 +462,24 @@ export default {
         const quota = /Exceeded allowed rows (written|read) in Durable Objects free tier/.test(
           String(e?.message ?? ''),
         );
-        const retryAt = quota
-          ? Date.parse(new Date().toISOString().slice(0, 10) + 'T00:00:00Z') + 86400000
-          : null;
+        const knownDeadline = Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '');
+        // A quota error after the expected reset does not establish a new daily
+        // allowance or recovery time. Keep retrying without promising tomorrow.
+        const retryAt = quota && knownDeadline > Date.now() ? knownDeadline : null;
         const response = json(
           {
             error: quota
-              ? '服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。'
+              ? '云端存储仍返回额度限制，暂时无法读取账户与成交。服务恢复后自动重试；不会重置资金或历史。'
               : '服务暂时不可用，请稍后重试',
             code: quota ? 'STORAGE_DAILY_QUOTA' : 'SERVICE_UNAVAILABLE',
             retryAt,
           },
           503,
         );
-        if (retryAt)
+        if (quota)
           response.headers.set(
             'Retry-After',
-            String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))),
+            retryAt ? String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))) : '300',
           );
         return response;
       }

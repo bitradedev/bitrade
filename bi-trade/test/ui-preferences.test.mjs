@@ -86,12 +86,12 @@ test('A storage outage renders an explicit bilingual pause without invented bala
   context.document.querySelector=id=>nodes.get(id);context.document.createElement=()=>({remove(){nodes.delete('#'+this.id);}});
   context.location={pathname:'/home',origin:'https://bitrade.site'};context.BiUI=ui;
   vm.runInContext(app.slice(0,app.indexOf('const docSections=')),context);
-  const retryAt=Date.now()+3600000;let calls=0;context.fetch=async()=>{calls++;return {ok:false,status:503,json:async()=>({error:'服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。',code:'STORAGE_DAILY_QUOTA',retryAt})};};
+  const retryAt=Date.now()+3600000;let calls=0;context.fetch=async()=>{calls++;return {ok:false,status:503,json:async()=>({error:'云端存储仍返回额度限制，暂时无法读取账户与成交。服务恢复后自动重试；不会重置资金或历史。',code:'STORAGE_DAILY_QUOTA',retryAt})};};
   let error;try{await context.api('/api/state');}catch(e){error=e;}
   assert.equal(error.code,'STORAGE_DAILY_QUOTA');context.serviceFailure(error);
   const html=nodes.get('#service-status').innerHTML;assert.ok(html.includes(language==='en'?'Service temporarily paused':'服务暂时暂停'));assert.ok(html.includes(language==='en'?'Expected recovery:':'预计恢复时间：'));
   for(const id of ['public-wallets','ranking-board','public-ledger']){assert.ok(nodes.get('#'+id).innerHTML.includes(language==='en'?'Data temporarily unavailable':'数据暂时不可用'));assert.doesNotMatch(nodes.get('#'+id).innerHTML,/1,000|0\.00%/);}
   vm.runInContext(app.split('\n').find(line=>line.startsWith('async function refresh()')),context);await context.refresh();assert.equal(calls,1);
-  context.serviceFailure({message:'<script>unsafe</script>'});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/<script>/);context.serviceRecovered();assert.equal(nodes.has('#service-status'),false);
+  context.serviceFailure({...error,retryAt:null});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/Expected recovery|预计恢复时间/);context.serviceFailure({message:'<script>unsafe</script>'});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/<script>/);context.serviceRecovered();assert.equal(nodes.has('#service-status'),false);
  }
 });
