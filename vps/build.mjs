@@ -1,4 +1,8 @@
-import { build } from 'esbuild';
+import { createRequire } from 'node:module';
+import { realpathSync } from 'node:fs';
+
+const requireTool = createRequire(realpathSync('node_modules/wrangler/package.json'));
+const { build } = requireTool('esbuild');
 
 await build({
   entryPoints: ['cloudflare/worker.ts'],
