@@ -19,7 +19,9 @@ test('self-hosted context completes a background AI decision and clears its in-f
     ctx: context,
     io: { trackDecision: (task) => task },
     decisionTask: null,
-    arm: async () => { armed++; },
+    arm: async () => {
+      armed++;
+    },
   };
   const app = { showcase: { tick: () => Promise.resolve({ action: 'hold' }) } };
   assert.equal(startShowcaseDecision(host, app), true);
@@ -51,7 +53,10 @@ test('online SQLite backup includes committed paper records and passes integrity
     );
     saved = new DatabaseSync(join(dir, 'backups', files[0]), { readOnly: true });
     assert.equal(saved.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
-    assert.equal(saved.prepare("SELECT count(*) AS n FROM entities WHERE kind='paper-fills'").get().n, 1);
+    assert.equal(
+      saved.prepare("SELECT count(*) AS n FROM entities WHERE kind='paper-fills'").get().n,
+      1,
+    );
   } finally {
     saved?.close();
     storage?.close();
@@ -79,6 +84,61 @@ test('self-hosted store persists a fresh paper ledger without Cloudflare quota p
     });
     second.close();
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('fresh self-hosted database creates every account and housekeeping table', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bitrade-vps-schema-'));
+  let storage;
+  try {
+    storage = new SqliteStorage(join(dir, 'paper.sqlite'));
+    const store = new SelfHostedStore(storage);
+    const tables = new Set(
+      storage.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all()
+        .map(({ name }) => name),
+    );
+    for (const name of ['entities', 'credentials', 'challenges', 'intents', 'audit', 'rate_limits'])
+      assert.ok(tables.has(name), `missing ${name}`);
+    const indexes = new Set(
+      storage.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='index'")
+        .all()
+        .map(({ name }) => name),
+    );
+    assert.ok(indexes.has('entities_by_agent'));
+    assert.ok(indexes.has('entities_by_owner'));
+    assert.doesNotThrow(() => store.prune());
+  } finally {
+    storage?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('incomplete self-hosted schema is repaired without changing existing paper records', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bitrade-vps-schema-repair-'));
+  let storage;
+  try {
+    storage = new SqliteStorage(join(dir, 'paper.sqlite'));
+    storage.db.exec(
+      'CREATE TABLE entities(kind TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(kind,id));' +
+        'CREATE TABLE rate_limits(id TEXT PRIMARY KEY,at INTEGER NOT NULL,n INTEGER NOT NULL);',
+    );
+    storage.db
+      .prepare('INSERT INTO entities VALUES(?,?,?)')
+      .run('paper-fills', 'preserved', JSON.stringify({ id: 'preserved', netUsd: -2 }));
+    const store = new SelfHostedStore(storage);
+    assert.deepEqual(store.get('paper-fills', 'preserved'), { id: 'preserved', netUsd: -2 });
+    assert.doesNotThrow(() => store.prune());
+    assert.equal(
+      storage.db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name='credentials'").get()
+        .n,
+      1,
+    );
+  } finally {
+    storage?.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

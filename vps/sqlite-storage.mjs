@@ -15,6 +15,13 @@ export class SqliteStorage {
   }
 
   exec(query, bindings) {
+    // DatabaseSync.prepare accepts the first statement of a DDL script without
+    // reporting the remaining statements. Schema setup uses such scripts, so
+    // execute them as a whole before any account or housekeeping query runs.
+    if (!bindings.length && /^\s*(?:CREATE|ALTER|DROP)\b/i.test(query)) {
+      this.db.exec(query);
+      return { toArray: () => [], rowsWritten: 0 };
+    }
     let statement;
     try {
       statement = this.db.prepare(query);
