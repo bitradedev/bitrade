@@ -8,29 +8,42 @@ import {
 import { StorageWriteBudget } from './write-budget.mjs';
 import { EntityReads } from './entity-reads.mjs';
 
+const ENTITY_UPSERT =
+  'INSERT INTO entities VALUES(?,?,?) ON CONFLICT(kind,id) DO UPDATE SET payload=excluded.payload';
+const LEDGER_KINDS = new Set([
+  'paper-orders',
+  'paper-fills',
+  'paper-lots',
+  'paper-accounts',
+  'paper-ledger',
+  'requests',
+]);
+
 // Consume every cursor synchronously. No cursor survives an event or await.
 export function sqlDatabase(sql, onWrite = () => {}, onMutation = () => {}) {
-  const consume = (cursor) => {
+  const consume = (cursor, query, args) => {
     const result = cursor.toArray();
-    if (cursor.rowsWritten > 0) onMutation();
+    if (cursor.rowsWritten > 0) onMutation(query, args);
     onWrite(cursor.rowsWritten);
     return result;
   };
-  return {
-    exec: (query) => {
+  const execute = (query, args) => {
+    try {
+      const cursor = sql.exec(query, ...args);
+      return { result: consume(cursor, query, args), changes: cursor.rowsWritten };
+    } catch (error) {
+      // Failed SQL and rollbacks must never leave uncommitted or stale reuse.
       onMutation();
-      return consume(sql.exec(query));
-    },
+      throw error;
+    }
+  };
+  return {
+    exec: (query) => execute(query, []).result,
     prepare(query) {
       return {
-        get: (...args) => consume(sql.exec(query, ...args))[0],
-        all: (...args) => consume(sql.exec(query, ...args)),
-        run: (...args) => {
-          onMutation();
-          const cursor = sql.exec(query, ...args);
-          consume(cursor);
-          return { changes: cursor.rowsWritten };
-        },
+        get: (...args) => execute(query, args).result[0],
+        all: (...args) => execute(query, args).result,
+        run: (...args) => ({ changes: execute(query, args).changes }),
       };
     },
   };
@@ -41,7 +54,11 @@ export class CloudStore extends PlatformRepository {
       db = sqlDatabase(
         storage.sql,
         (rows) => meter.current?.record(rows),
-        () => meter.reads?.clear(),
+        (query, args) => {
+          if (query === ENTITY_UPSERT && typeof args?.[0] === 'string')
+            meter.reads?.invalidate(args[0], args[1]);
+          else meter.reads?.clear();
+        },
       ),
       tables = new Set(
         db
@@ -79,7 +96,9 @@ export class CloudStore extends PlatformRepository {
   }
   entityRead(method, args, load) {
     if (!this.entityReads || args.some((v) => typeof v !== 'string')) return load();
-    return this.entityReads.read(JSON.stringify([method, ...args]), load);
+    return this.entityReads.read(JSON.stringify([method, ...args]), load, {
+      ledger: LEDGER_KINDS.has(args[0]),
+    });
   }
   get(kind, id) {
     return this.entityRead('get', [kind, id], () => super.get(kind, id));
@@ -96,9 +115,10 @@ export class CloudStore extends PlatformRepository {
   transaction(fn) {
     try {
       return super.transaction(fn);
-    } finally {
+    } catch (error) {
       // A rolled-back transaction may have populated reads of uncommitted data.
       this.entityReads?.clear();
+      throw error;
     }
   }
   get protectionUntil() {

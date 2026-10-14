@@ -1,5 +1,6 @@
-// One-second, instance-local memoization of repository reads only. Values keep
-// their original evidence times and every caller receives an independent copy.
+// Instance-local repository reuse. Evidence still expires after one second;
+// ledger rows may be reused until a known mutation invalidates their kind.
+// Every caller receives an independent copy with original evidence times.
 export class EntityReads {
   constructor({ now = Date.now, ttl = 1000, maxEntries = 256, maxCharacters = 1000000 } = {}) {
     Object.assign(this, { now, ttl, maxEntries, maxCharacters });
@@ -15,10 +16,17 @@ export class EntityReads {
     this.entries.clear();
     this.characters = 0;
   }
-  read(key, load) {
+  invalidate(kind, id) {
+    for (const key of this.entries.keys()) {
+      const parts = JSON.parse(key);
+      if (parts[1] === kind && (parts[0] !== 'get' || id === undefined || parts[2] === id))
+        this.remove(key);
+    }
+  }
+  read(key, load, { ledger = false } = {}) {
     const at = this.now(),
       old = this.entries.get(key);
-    if (old && at >= old.at && at - old.at < this.ttl) return JSON.parse(old.payload);
+    if (old && at >= old.at && (ledger || at - old.at < this.ttl)) return JSON.parse(old.payload);
     this.remove(key);
     const value = load(),
       payload = JSON.stringify(value);

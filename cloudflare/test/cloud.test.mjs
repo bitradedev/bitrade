@@ -312,6 +312,16 @@ test('Actual Workerd reuses duplicate entity reads without changing public ledge
  console.log(JSON.stringify({profile:'public-ledger-and-meme-screening',uncachedRows:value.uncachedRows,cachedRows:value.cachedRows}));
 });
 
+test('Actual Workerd retains ledger reuse across market writes without changing funds, risk age or history',async t=>{
+ const mf=new Miniflare(convertV4MiniflareOptions({name:'ledger-read-profile',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PROBE:{className:'LedgerReadProbe',useSQLite:true}}}));t.after(()=>mf.dispose());await mf.ready;
+ const ns=await mf.getDurableObjectNamespace('PROBE'),value=await(await ns.get(ns.idFromName('isolated-ledger-profile')).fetch('https://probe.example/profile')).json();
+ assert.deepEqual(value.revised.frames,value.baseline.frames);
+ assert.equal(value.revised.rowsWritten,value.baseline.rowsWritten);
+ assert.ok(value.revised.rowsRead<value.baseline.rowsRead*0.25,`Historical reads should not repeat each market round: ${value.revised.rowsRead}/${value.baseline.rowsRead}`);
+ assert.equal(value.updated,-93);assert.equal(value.removed,-100);assert.equal(value.rebuiltCount,300);
+ console.log(JSON.stringify({profile:'ledger-between-market-writes',baselineReads:value.baseline.rowsRead,revisedReads:value.revised.rowsRead,writes:value.revised.rowsWritten}));
+});
+
 test('Actual Workerd Flap pulses and discovery share bounded price checkpoints while invalidation and graduation persist immediately',async t=>{
  const mf=new Miniflare(convertV4MiniflareOptions({name:'market-write-profile',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],durableObjects:{PROBE:{className:'MarketWriteProbe',useSQLite:true}}}));t.after(()=>mf.dispose());await mf.ready;
  const ns=await mf.getDurableObjectNamespace('PROBE'),value=await(await ns.get(ns.idFromName('isolated-price-profile')).fetch('https://probe.example/profile')).json();

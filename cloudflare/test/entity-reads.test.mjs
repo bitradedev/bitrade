@@ -218,3 +218,55 @@ test('Entity memoization is bounded, bypasses oversized results and rereads afte
   assert.equal(memo.characters, 0);
   assert.equal(memo.entries.size, 0);
 });
+
+test('Ledger reuse survives time and unrelated market writes, but every ledger update is immediately visible', (t) => {
+  const f = fixture(t), s = f.store;
+  s.put('paper-fills', { id: 'fill', agentId: 'alice-agent', ownerId: 'alice', netUsd: -2 });
+  assert.equal(s.forAgent('paper-fills', 'alice-agent')[0].netUsd, -2);
+  const before = f.reads();
+  for (let i = 0; i < 20; i++) {
+    f.advance(10000);
+    s.put('cloud-markets', { id: 'token', updatedAt: f.now(), priceUsd: i + 1 });
+    const afterMarket = f.reads();
+    assert.equal(s.forAgent('paper-fills', 'alice-agent')[0].netUsd, -2);
+    assert.equal(f.reads(), afterMarket);
+  }
+  assert.ok(f.reads() > before);
+  s.put('paper-fills', { id: 'fill', agentId: 'bob-agent', ownerId: 'bob', netUsd: -3 });
+  assert.deepEqual(s.forAgent('paper-fills', 'alice-agent'), []);
+  assert.equal(s.forAgent('paper-fills', 'bob-agent')[0].netUsd, -3);
+  assert.equal(s.byOwner('paper-fills', 'bob')[0].netUsd, -3);
+  s.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run('paper-fills', 'fill');
+  assert.deepEqual(s.forAgent('paper-fills', 'bob-agent'), []);
+});
+
+test('Unrelated market writes cannot refresh expired risk evidence or suppress source failures', (t) => {
+  const f = fixture(t), s = f.store;
+  const token = '0x' + '45'.repeat(20);
+  s.put('token-risk-reports', { id: token, token, fetchedAt: f.now(), buyAllowed: true });
+  const initial = s.get('token-risk-reports', token);
+  s.put('paper-accounts', { id: 'account', nativeRaw: '1000' });
+  const before = f.reads();
+  assert.deepEqual(s.get('token-risk-reports', token), initial);
+  assert.equal(f.reads(), before);
+  f.advance(1000);
+  f.fail(true);
+  assert.throws(() => s.get('token-risk-reports', token), /unavailable/);
+  f.fail(false);
+  assert.equal(s.get('token-risk-reports', token).fetchedAt, initial.fetchedAt);
+});
+
+test('Successful no-op pruning and committed unrelated transactions preserve ledger reuse', (t) => {
+  const f = fixture(t), s = f.store;
+  s.put('paper-accounts', { id: 'one', nativeRaw: '1000' });
+  s.get('paper-accounts', 'one');
+  f.advance(10000);
+  s.db.prepare('DELETE FROM entities WHERE kind=?').run('missing-kind');
+  let before = f.reads();
+  assert.equal(s.get('paper-accounts', 'one').nativeRaw, '1000');
+  assert.equal(f.reads(), before);
+  s.transaction(() => s.put('cloud-markets', { id: 'token', priceUsd: 1 }));
+  before = f.reads();
+  assert.equal(s.get('paper-accounts', 'one').nativeRaw, '1000');
+  assert.equal(f.reads(), before);
+});

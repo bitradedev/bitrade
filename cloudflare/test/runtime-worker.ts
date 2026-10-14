@@ -83,6 +83,50 @@ export class EntityReadProbe extends DurableObject {
   return Response.json({baseline,cached,uncachedRows,cachedRows,uncachedWrites,cachedWrites});
  }
 }
+export class LedgerReadProbe extends DurableObject {
+ store:any; rowsRead=0; rowsWritten=0; clock=Date.now();
+ constructor(ctx:any,env:any){
+  super(ctx,env);
+  this.store=new CloudStore({transactionSync:ctx.storage.transactionSync.bind(ctx.storage),sql:{exec:(...args:any[])=>{
+   const c=ctx.storage.sql.exec(...args);
+   return {toArray:()=>{const rows=c.toArray();this.rowsRead+=c.rowsRead;this.rowsWritten+=c.rowsWritten;return rows;},get rowsWritten(){return c.rowsWritten;}};
+  }}},{now:()=>this.clock});
+ }
+ async fetch(){
+  const token='0x'+'36'.repeat(20),start=this.clock;
+  for(let i=0;i<300;i++){
+   this.store.put('paper-fills',{id:'fill-'+i,agentId:'agent-'+i%3,netUsd:-1,at:i});
+   this.store.put('paper-orders',{id:'order-'+i,agentId:'agent-'+i%3,status:'filled',at:i});
+  }
+  this.store.put('token-risk-reports',{id:token,fetchedAt:start,buyAllowed:true});
+  this.store.put('cloud-markets',{id:token,updatedAt:start+190000,priceUsd:20});
+  this.store.put('cloud-settings',{id:'scheduler',at:start+190000,ok:true});
+  const cache=this.store.entityReads,originalRead=cache.read.bind(cache),originalInvalidate=cache.invalidate.bind(cache);
+  const run=()=>{
+   this.rowsRead=0;this.rowsWritten=0;this.clock=start;cache.clear();const frames=[];
+   for(let i=0;i<20;i++){
+    this.clock=start+i*10000;
+    this.store.put('cloud-markets',{id:token,updatedAt:this.clock,priceUsd:i+1});
+    this.store.transaction(()=>this.store.put('cloud-settings',{id:'scheduler',at:this.clock,ok:true}));
+    this.store.db.prepare('DELETE FROM entities WHERE kind=?').run('unused-fixture-kind');
+    frames.push({orders:this.store.all('paper-orders').length,totals:Array.from({length:3},(_,agent)=>this.store.forAgent('paper-fills','agent-'+agent).reduce((n:any,f:any)=>n+f.netUsd,0)),riskAt:this.store.get('token-risk-reports',token).fetchedAt});
+   }
+   return {frames,rowsRead:this.rowsRead,rowsWritten:this.rowsWritten};
+  };
+  // Reproduce the previous one-second reuse and global invalidation policy.
+  cache.read=(key:any,load:any)=>originalRead(key,load);
+  cache.invalidate=()=>cache.clear();
+  const baseline=run();
+  cache.read=originalRead;cache.invalidate=originalInvalidate;
+  const revised=run();
+  this.store.put('paper-fills',{id:'new-fill',agentId:'agent-0',netUsd:7});
+  const updated=this.store.forAgent('paper-fills','agent-0').reduce((n:any,f:any)=>n+f.netUsd,0);
+  this.store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run('paper-fills','new-fill');
+  const removed=this.store.forAgent('paper-fills','agent-0').reduce((n:any,f:any)=>n+f.netUsd,0);
+  const rebuilt=new CloudStore(this.ctx.storage);
+  return Response.json({baseline,revised,updated,removed,rebuiltCount:rebuilt.all('paper-fills').length});
+ }
+}
 export class NetworkProbe extends DurableObject{
  async fetch(){const info=await new GmgnHTTP('dummy-api').info('bsc','0x1111111111111111111111111111111111111111');const chain=await new CloudRpc('https://rpc.example.com').request('eth_chainId');
   const decision=await new OpenAIPlanner().decide({apiKey:'dummy-api',model:'test',baseUrl:'https://ai.example.com/v1'},{description:'test'},{account:{balanceUsd:1000,positions:[]},markets:[]});
