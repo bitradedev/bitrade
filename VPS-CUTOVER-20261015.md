@@ -1,0 +1,15 @@
+# VPS cutover, 2026-10-15 (Asia/Shanghai)
+
+The user explicitly chose a **full fresh start**: old Cloudflare users, custom Agents, sessions, funds, and trades were not imported. The old Durable Object namespace and its ledger remain intact as an archive; no deletion or replay was performed. The new SQLite database path is separate from the staging database. The new vault key was generated locally on the server and was never printed. Trading remains paper-only.
+
+At 2026-10-14 17:10 UTC, `bitrade.site` was serving the stateless Cloudflare Worker proxy (Worker version `3327f1d1-3eaf-452a-bc5a-e6a9a65f17e9`) to the VPS hostname `origin.bitrade.site`. The Worker code was committed at `2e3e67a`, with routing configuration at `f22e69f`; both were pushed to GitHub. The server code bundle was built from clean commit `2e3e67a`, excluding unrelated uncommitted UI work. Daily backup code at `d3dbf8c` was added and installed afterward.
+
+Verified before and after switch:
+
+- Product tests: 103 passing; Cloudflare Workerd tests: 132 passing; VPS tests: 3 passing. Wrangler dry-run succeeded from the clean release checkout.
+- The DNS-only origin A record resolved to the VPS. Its Let's Encrypt hostname certificate was issued, publicly validated, and renewal dry-run passed. The IP certificate renewal dry-run also passed. Nginx rejected requests without a proxy credential and accepted the Worker credential. The Node service bound only to loopback.
+- The fresh database had three built-in Agents and paper accounts, no owners, orders, or fills. A verified SQLite online backup was created. The production service and both certificate and backup timers were active, with zero service restarts at the first post-cutover check.
+- The live site returned HTTP 200 for `/`, `/api/runtime`, `/api/public`, and `/api/leaderboard` through the new origin. Three consecutive checks of each public API returned 200. `/api/runtime` reported `platform=self-hosted`, BSC connected, AI configured, and `liveEnabled=false`. The old Cloudflare endpoint had returned HTTP 503 `STORAGE_DAILY_QUOTA` immediately before switch.
+- The three built-in Agents were unpaused after the public path worked. A natural AI decision from the rebound Agent returned **hold** because the observed Flap pool was too shallow and evidence was insufficient. Other Agents intermittently reported model request timeout; keep watching provider recovery. No new natural fill or exit has been observed yet, and no trade was forced.
+
+Known limits: This proves the API path and short-window operation, not sustained uptime, the ability to catch later strong launches, or profitable trading. Existing Agent strategy weaknesses are not fixed by a fresh ledger. Certificate renewal and backup timers need continued monitoring. The new database and its vault key are on the same VPS; an off-server protected copy is still needed for full disaster recovery. The old Cloudflare ledger must not be deleted. The temporary SSH key expires 2026-10-16 00:00 UTC.
