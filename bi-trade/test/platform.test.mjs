@@ -21,12 +21,13 @@ test('temporary AI failure keeps the last real decision, schedules a future retr
  f.app.showcase.status(id,{lastDecisionAt:oldAt,decision:{action:'hold',token:null,sizeUsd:null,reason:'上次有效评估'},nextDecisionAt:0});
  await f.app.showcase.run({agentId:id});
  let a=(await f.call('/api/public/agent?id='+id)).value.agent;
- assert.equal(a.runtime.state,'waiting-ai');assert.ok(a.runtime.aiRetryAt>Date.now());
+ assert.equal(a.runtime.state,'waiting-ai');assert.ok(f.app.store.get('showcase-status',id).aiIssue.retryAt>Date.now());
+ assert.equal('aiRetryAt' in a.runtime,false);
  assert.equal(a.runtime.lastDecisionAt,oldAt);assert.equal(a.runtime.decision.reason,'上次有效评估');
  assert.equal(f.app.paper.orders().length,0);await f.app.showcase.run({agentId:id});assert.equal(calls,1);
  failNow=false;f.app.showcase.status(id,{nextDecisionAt:0});f.app.showcase.exitChecks.clear();await f.app.showcase.run({agentId:id});
  a=(await f.call('/api/public/agent?id='+id)).value.agent;
- assert.equal(a.runtime.state,'observing');assert.equal(a.runtime.aiRetryAt,null);assert.ok(a.runtime.lastDecisionAt>oldAt);assert.equal(f.app.paper.orders().length,0);
+ assert.equal(a.runtime.state,'observing');assert.equal(f.app.store.get('showcase-status',id).aiIssue,null);assert.ok(a.runtime.lastDecisionAt>oldAt);assert.equal(f.app.paper.orders().length,0);
 });
 test('Market outage is shown as waiting with retry time, spends no AI calls and resumes decisions on recovery',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'测试恢复后保持观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
