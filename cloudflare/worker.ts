@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { timingSafeEqual, createHash } from 'node:crypto';
 import { CloudStore } from './store.mjs';
+import { SelfHostedStore } from '../vps/store.mjs';
 import { EncryptedVault } from '../bi-trade/lib/vault-core.mjs';
 import { createPlatformCore } from '../bi-trade/platform-core.mjs';
 import { TokenRiskGuard } from '../bi-trade/lib/token-risk-core.mjs';
@@ -61,7 +62,8 @@ export class TradingPlatform extends DurableObject<any> {
   wakeRecovery: any = null;
   constructor(ctx: any, env: any) {
     super(ctx, env);
-    this.store = new CloudStore(ctx.storage, {
+    const Store = env.BI_TRADE_SELF_HOSTED === 'true' ? SelfHostedStore : CloudStore;
+    this.store = new Store(ctx.storage, {
       readOnlyUntil: Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '') || 0,
     });
     this.io = new IOBudget(45);
@@ -233,12 +235,13 @@ export class TradingPlatform extends DurableObject<any> {
       await this.arm();
       if (url.pathname === '/api/runtime')
         return json({
-          platform: 'cloudflare',
+          platform: this.env.BI_TRADE_SELF_HOSTED === 'true' ? 'self-hosted' : 'cloudflare',
           wakeup: this.wakeStatus,
           storageProtection: {
             readOnly: this.store.readOnly,
             retryAt: this.store.readOnly ? this.store.protectionUntil : null,
-            writeBudget: this.store.budget.snapshot(),
+            writeBudget:
+              this.env.BI_TRADE_SELF_HOSTED === 'true' ? null : this.store.budget.snapshot(),
           },
           liveEnabled: false,
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
@@ -443,6 +446,7 @@ export class TradingPlatform extends DurableObject<any> {
 
 export default {
   async scheduled(_controller: any, env: any, ctx: any) {
+    if (env.BI_TRADE_ORIGIN_URL) return;
     const id = env.PLATFORM.idFromName('bitrade-platform-v1');
     ctx.waitUntil(
       env.PLATFORM.get(id)
@@ -469,6 +473,43 @@ export default {
       url.pathname === '/mcp' ||
       url.pathname.startsWith('/__admin/')
     ) {
+      if (env.BI_TRADE_ORIGIN_URL) {
+        if (url.pathname.startsWith('/__admin/')) return json({ error: 'Not found' }, 404);
+        if (!env.BI_TRADE_ORIGIN_PROXY_TOKEN)
+          return json({ error: '服务暂时不可用，请稍后重试', code: 'ORIGIN_UNAVAILABLE' }, 503);
+        try {
+          const upstreamBase = new URL(env.BI_TRADE_ORIGIN_URL);
+          if (
+            upstreamBase.protocol !== 'https:' ||
+            upstreamBase.hostname !== 'origin.bitrade.site' ||
+            upstreamBase.username ||
+            upstreamBase.password
+          )
+            return json({ error: '服务暂时不可用，请稍后重试', code: 'ORIGIN_UNAVAILABLE' }, 503);
+          const upstream = new URL(url.pathname + url.search, upstreamBase);
+          const headers = new Headers(request.headers);
+          headers.delete('Host');
+          headers.delete('X-BI-Proxy-Key');
+          headers.delete('X-BI-Client-IP');
+          headers.set('X-BI-Proxy-Key', env.BI_TRADE_ORIGIN_PROXY_TOKEN);
+          const clientIp = request.headers.get('CF-Connecting-IP');
+          if (clientIp && clientIp.length <= 64) headers.set('X-BI-Client-IP', clientIp);
+          const response = await fetch(
+            new Request(upstream, {
+              method: request.method,
+              headers,
+              body: ['GET', 'HEAD'].includes(request.method) ? undefined : request.body,
+              redirect: 'manual',
+            } as any),
+          );
+          return new Response(response.body, {
+            status: response.status,
+            headers: response.headers,
+          });
+        } catch {
+          return json({ error: '服务暂时不可用，请稍后重试', code: 'ORIGIN_UNAVAILABLE' }, 503);
+        }
+      }
       const id = env.PLATFORM.idFromName('bitrade-platform-v1');
       try {
         return await env.PLATFORM.get(id).fetch(request);

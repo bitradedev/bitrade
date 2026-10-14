@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew BI Trade IP certificate
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/bitrade/certbot/bin/certbot renew --quiet --deploy-hook "systemctl reload nginx"

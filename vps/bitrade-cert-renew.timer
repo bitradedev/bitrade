@@ -1,0 +1,11 @@
+[Unit]
+Description=Check BI Trade IP certificate twice daily
+
+[Timer]
+OnCalendar=*-*-* 01,13:00:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+Unit=bitrade-cert-renew.service
+
+[Install]
+WantedBy=timers.target
