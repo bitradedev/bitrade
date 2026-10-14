@@ -1,13 +1,43 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { createServer } from 'node:net';
+import { DatabaseSync } from 'node:sqlite';
 import { SqliteStorage } from '../sqlite-storage.mjs';
 import { SelfHostedStore } from '../store.mjs';
+
+test('online SQLite backup includes committed paper records and passes integrity verification', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bitrade-vps-backup-'));
+  let storage;
+  let saved;
+  try {
+    const path = join(dir, 'ledger.sqlite');
+    storage = new SqliteStorage(path);
+    new SelfHostedStore(storage).put('paper-fills', { id: 'preserved-fill', netUsd: -2 });
+    const result = spawnSync(process.execPath, [resolve('vps/backup.mjs')], {
+      env: { ...process.env, BI_TRADE_DB_PATH: path },
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const files = readdirSync(join(dir, 'backups')).filter((name) => name.endsWith('.sqlite'));
+    assert.equal(files.length, 1);
+    assert.equal(
+      readdirSync(join(dir, 'backups')).filter((name) => name.includes('.pending')).length,
+      0,
+    );
+    saved = new DatabaseSync(join(dir, 'backups', files[0]), { readOnly: true });
+    assert.equal(saved.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
+    assert.equal(saved.prepare("SELECT count(*) AS n FROM entities WHERE kind='paper-fills'").get().n, 1);
+  } finally {
+    saved?.close();
+    storage?.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('self-hosted store persists a fresh paper ledger without Cloudflare quota protection', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bitrade-vps-store-'));

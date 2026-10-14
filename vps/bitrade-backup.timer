@@ -1,0 +1,11 @@
+[Unit]
+Description=Back up BI Trade paper ledger daily
+
+[Timer]
+OnCalendar=*-*-* 03:15:00 UTC
+RandomizedDelaySec=15m
+Persistent=true
+Unit=bitrade-backup.service
+
+[Install]
+WantedBy=timers.target
