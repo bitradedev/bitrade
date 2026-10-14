@@ -207,6 +207,15 @@ test('loopback server serves the site and keeps the new paper accounts across re
     const publicData = await publicResponse.json();
     assert.equal(publicData.agents.length, 3);
     assert.equal(publicData.activity.length, 0);
+    const sessionResponse = await fetch(origin + '/api/session', {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(sessionResponse.status, 200);
+    const session = await sessionResponse.json();
+    assert.equal(session.owner.kind, 'demo');
+    const sessionCookie = sessionResponse.headers.getSetCookie()[0].split(';')[0];
     await stop(child);
     child = await start();
     const reopened = await (await fetch(origin + '/api/public')).json();
@@ -214,6 +223,9 @@ test('loopback server serves the site and keeps the new paper accounts across re
       reopened.agents.map((agent) => agent.id),
       publicData.agents.map((agent) => agent.id),
     );
+    const resumed = await fetch(origin + '/api/state', { headers: { Cookie: sessionCookie } });
+    assert.equal(resumed.status, 200);
+    assert.equal((await resumed.json()).owner.id, session.owner.id);
     const storage = new SqliteStorage(env.BI_TRADE_DB_PATH);
     const store = new SelfHostedStore(storage);
     assert.equal(store.all('paper-fills').length, 0);
