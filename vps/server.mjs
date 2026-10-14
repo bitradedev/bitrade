@@ -4,6 +4,7 @@ import { resolve, sep } from 'node:path';
 import { Readable } from 'node:stream';
 import { isIP } from 'node:net';
 import worker, { TradingPlatform } from './dist/worker.mjs';
+import { localDurableContext } from './context.mjs';
 import { SqliteStorage } from './sqlite-storage.mjs';
 
 process.umask(0o077);
@@ -65,7 +66,8 @@ const env = {
   ASSETS: assets,
   PLATFORM: { idFromName: () => 'local', get: () => platform },
 };
-platform = new TradingPlatform({ storage, blockConcurrencyWhile: (fn) => fn() }, env);
+const context = localDurableContext(storage);
+platform = new TradingPlatform(context, env);
 
 async function scheduleAlarm() {
   clearTimeout(timer);
@@ -144,6 +146,7 @@ async function shutdown() {
   await Promise.all([closed, activeAlarm]);
   await platform.app?.close();
   await Promise.all([platform.working, platform.decisionTask]);
+  await Promise.allSettled([...context.pendingTasks]);
   storage.close();
 }
 for (const signal of ['SIGTERM', 'SIGINT']) {

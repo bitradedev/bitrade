@@ -9,6 +9,26 @@ import { createServer } from 'node:net';
 import { DatabaseSync } from 'node:sqlite';
 import { SqliteStorage } from '../sqlite-storage.mjs';
 import { SelfHostedStore } from '../store.mjs';
+import { localDurableContext } from '../context.mjs';
+import { startShowcaseDecision } from '../../cloudflare/decision-round.mjs';
+
+test('self-hosted context completes a background AI decision and clears its in-flight marker', async () => {
+  const context = localDurableContext({});
+  let armed = 0;
+  const host = {
+    ctx: context,
+    io: { trackDecision: (task) => task },
+    decisionTask: null,
+    arm: async () => { armed++; },
+  };
+  const app = { showcase: { tick: () => Promise.resolve({ action: 'hold' }) } };
+  assert.equal(startShowcaseDecision(host, app), true);
+  assert.ok(host.decisionTask);
+  await Promise.all([...context.pendingTasks]);
+  assert.equal(host.decisionTask, null);
+  assert.equal(context.pendingTasks.size, 0);
+  assert.equal(armed, 1);
+});
 
 test('online SQLite backup includes committed paper records and passes integrity verification', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bitrade-vps-backup-'));
