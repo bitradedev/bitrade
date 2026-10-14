@@ -18,9 +18,11 @@ export async function runScheduledRound(host) {
   if (host.importing) return;
   if (host.working) return host.working;
   host.working = (async () => {
+    let phase = 'initialize';
     try {
       const app = await host.initialize();
       if (app.paper.orders().some((o) => o.status === 'queued')) {
+        phase = 'matching';
         await host.market.updateHead();
         await host.market.fx();
         await app.paper.tick();
@@ -40,6 +42,7 @@ export async function runScheduledRound(host) {
         (failedExits || dueExits) &&
         Date.now() - (retry?.at ?? 0) >= 30000
       ) {
+        phase = 'priority-exits';
         host.store.put('cloud-settings', { id: 'exit-priority-round', at: Date.now() });
         await host.market.updateHead();
         await host.market.fx();
@@ -59,11 +62,13 @@ export async function runScheduledRound(host) {
       }
       const proposal = app.showcase.pendingProposal?.();
       if (proposal && !host.decisionTask) {
+        phase = 'proposal';
         await runProposalRound(host, app, proposal);
         return;
       }
       const heldDecision = !host.decisionTask && app.showcase.heldDecisionDue?.();
       if (heldDecision) {
+        phase = 'held-decision';
         // A held position needs AI exit evaluation even when no new buy is allowed.
         const started = await runDecisionRound(
           host,
@@ -86,6 +91,7 @@ export async function runScheduledRound(host) {
               host.risk.snapshot(m.address, m.priceUsd).buyAllowed,
           );
         if (permitted) {
+          phase = 'entry-decision';
           // Refresh and evaluate a currently permitted token before unrelated
           // risk continuations spend its short evidence-validity window.
           await runDecisionRound(host, app, permitted);
@@ -102,6 +108,7 @@ export async function runScheduledRound(host) {
       ];
       const pendingRisk = host.store.get?.('cloud-settings', 'risk-priority-round');
       if (pendingRisk?.tokens?.length && !host.decisionTask) {
+        phase = 'priority-risk';
         const requested = pendingRisk.tokens.filter(
           (token) =>
             /^0x[0-9a-f]{40}$/i.test(token) &&
@@ -130,9 +137,12 @@ export async function runScheduledRound(host) {
         });
         return;
       }
+      phase = 'market-refresh';
       await host.market.refresh(tokens, { limit: 1 });
+      phase = 'paper-matching';
       await app.paper.tick();
       if (!host.decisionTask) {
+        phase = 'risk-screening';
         const fresh = app.showcase.freshMarkets();
         const riskTokens =
           host.market.marketScope?.()?.kind === 'meme'
@@ -164,17 +174,23 @@ export async function runScheduledRound(host) {
         }
         await host.risk.tick(riskTokens);
       }
+      phase = 'market-pulse';
       await host.market.pulse(1);
+      phase = 'decision-or-exits';
       if (host.decisionTask) await app.showcase.watchExits();
       else startShowcaseDecision(host, app);
+      phase = 'risk-completion';
       await host.risk.task;
+      phase = 'housekeeping';
       host.store.prune();
       host.store.put('cloud-settings', { id: 'scheduler', at: Date.now(), ok: true });
-    } catch {
+    } catch (error) {
       host.store.put('cloud-settings', {
         id: 'scheduler',
         at: Date.now(),
         ok: false,
+        diagnosticPhase: phase,
+        errorName: typeof error?.name === 'string' ? error.name.slice(0, 40) : 'Error',
         reason: '本轮行情或模拟调度未完成，将自动重试',
       });
     } finally {
