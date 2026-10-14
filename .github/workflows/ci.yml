@@ -23,6 +23,12 @@ jobs:
         run: pnpm check:format
       - name: Build server and client
         run: pnpm build
+      - name: Verify Agent scene and self-hosted service
+        run: |
+          pnpm build:agent-desk
+          git diff --exit-code -- bi-trade/web/agent-desk.js
+          node vps/build.mjs
+          node --test --test-isolation=none vps/test/*.test.mjs
       - name: Test product, Cloudflare runtime and research terminal
         run: pnpm test:all
       - name: Verify Cloudflare deployment bundle

@@ -1,4 +1,5 @@
 import { fields, fail } from './database-core.mjs';
+import { aiHttpFailure, aiRequestFailure } from './ai-errors.mjs';
 
 export const DEFAULT_MODEL = 'gpt-5.4-mini';
 export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -163,11 +164,46 @@ export function validateDecision(d, context) {
   return d;
 }
 export class OpenAIPlanner {
-  constructor({ fetchImpl = (...args) => fetch(...args), timeoutMs = 45000 } = {}) {
+  constructor({
+    fetchImpl = (...args) => fetch(...args),
+    timeoutMs = 45000,
+    onDiagnostic = () => {},
+  } = {}) {
     this.fetch = fetchImpl;
     this.timeoutMs = timeoutMs;
+    this.onDiagnostic = onDiagnostic;
   }
   async decide(config, strategy, context, signal) {
+    const startedAt = Date.now();
+    const report = (result) => {
+      try {
+        this.onDiagnostic({
+          at: Date.now(),
+          durationMs: Date.now() - startedAt,
+          contextBytes: new TextEncoder().encode(JSON.stringify(context)).length,
+          ...result,
+        });
+      } catch {
+        /* Diagnostics must not change an otherwise valid decision. */
+      }
+    };
+    try {
+      const decision = await this.requestDecision(config, strategy, context, signal);
+      report({ ok: true, code: null, networkCode: null, httpStatus: 200 });
+      return decision;
+    } catch (error) {
+      report({
+        ok: false,
+        ...(error.aiDiagnostic ?? {
+          code: 'AI_INVALID_DECISION',
+          networkCode: null,
+          httpStatus: null,
+        }),
+      });
+      throw error;
+    }
+  }
+  async requestDecision(config, strategy, context, signal) {
     let response;
     try {
       response = await this.fetch(normalizeAIBaseUrl(config.baseUrl) + '/responses', {
@@ -205,18 +241,17 @@ export class OpenAIPlanner {
         }),
       });
     } catch (e) {
-      throw fail(
-        /too many subrequests|subrequest limit/i.test(String(e?.message))
-          ? '云端单轮请求上限已到，下一轮自动重试'
-          : 'OpenAI 请求超时或网络不可用',
-        503,
-      );
+      if (/too many subrequests|subrequest limit/i.test(String(e?.message)))
+        throw fail('云端单轮请求上限已到，下一轮自动重试', 503);
+      throw aiRequestFailure(e, { cancelled: signal?.aborted === true });
     }
-    if (!response.ok) throw fail('OpenAI 请求失败：HTTP ' + response.status, 503);
+    if (!response.ok) throw aiHttpFailure(response.status);
     let body;
     try {
       body = await response.json();
-    } catch {
+    } catch (error) {
+      if (error?.name !== 'SyntaxError')
+        throw aiRequestFailure(error, { cancelled: signal?.aborted === true });
       throw fail('OpenAI 返回内容不可解析', 503);
     }
     if (

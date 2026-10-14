@@ -15,9 +15,15 @@ importers:
         specifier: 2.57.3
         version: 2.57.3
     devDependencies:
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       prettier:
         specifier: ^3.9.9
         version: 3.9.9
+      three:
+        specifier: 0.186.1
+        version: 0.186.1
       wrangler:
         specifier: ^4.149.0
         version: 4.149.0
@@ -555,6 +561,9 @@ packages:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
     engines: {node: '>=18'}
 
+  three@0.186.1:
+    resolution: {integrity: sha512-blFeqb49wRCSGUGj7gtpfnSGHy2lwDk94RhUmS1c/hTby70kvChbWpkJ4Pm1390LqzzvTmzgXKHPEafJwCb8jA==}
+
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -1013,6 +1022,8 @@ snapshots:
       smart-buffer: 4.2.0
 
   supports-color@10.2.2: {}
+
+  three@0.186.1: {}
 
   tslib@2.8.1:
     optional: true

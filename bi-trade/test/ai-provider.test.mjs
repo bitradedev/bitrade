@@ -52,7 +52,20 @@ test('invalid, unaffordable, non-candidate and unowned AI decisions do not becom
  assert.throws(()=>validateDecision({...buy(),action:'hold'},context),/观察决策/);
 });
 test('provider failures and refusals are safe status messages, never leaked provider bodies or key',async()=>{
- const failure=new OpenAIPlanner({fetchImpl:async()=>({ok:false,status:401,json:async()=>({error:config.apiKey})})});await assert.rejects(failure.decide(config,{},context),e=>e.message==='OpenAI 请求失败：HTTP 401');
+ const failure=new OpenAIPlanner({fetchImpl:async()=>({ok:false,status:401,json:async()=>({error:config.apiKey})})});await assert.rejects(failure.decide(config,{},context),e=>e.code==='AI_AUTH'&&!e.message.includes(config.apiKey));
  const refuse=new OpenAIPlanner({fetchImpl:async()=>({ok:true,json:async()=>({status:'completed',output:[{content:[{type:'refusal',refusal:'no'}]}]})})});await assert.rejects(refuse.decide(config,{},context),/未完成/);
  const incomplete=new OpenAIPlanner({fetchImpl:async()=>({ok:true,json:async()=>({status:'incomplete',output:[]})})});await assert.rejects(incomplete.decide(config,{},context),/未完成/);
+});
+
+test('AI transport failures retain bounded diagnostic categories without exposing secrets and distinguish timeouts from DNS',async()=>{
+ for(const [error,expected] of [
+  [Object.assign(Error(config.apiKey),{name:'TimeoutError'}),'AI_TIMEOUT'],
+  [Object.assign(Error(config.apiKey),{cause:{code:'ENOTFOUND',message:config.apiKey}}),'AI_DNS'],
+  [Object.assign(Error(config.apiKey),{cause:{code:'ECONNRESET'}}),'AI_CONNECTION'],
+ ]){
+  const reports=[],planner=new OpenAIPlanner({onDiagnostic:x=>reports.push(x),fetchImpl:async()=>{throw error;}});
+  await assert.rejects(planner.decide(config,{},context),e=>e.code===expected&&e.retryable===true);
+  assert.equal(reports[0].code,expected);assert.ok(reports[0].durationMs>=0);
+  assert.doesNotMatch(JSON.stringify(reports),/test-secret-key|Authorization|https:/);
+ }
 });

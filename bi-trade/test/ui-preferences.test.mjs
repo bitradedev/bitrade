@@ -28,7 +28,7 @@ test('user-authored names, strategies, and unrecognized decision summaries stay 
  assert.equal(ui.agentName(user),user.name);assert.equal(ui.strategyName(user),user.strategy.name);assert.equal(ui.strategyDescription(user),user.strategy.description);
  const builtin={...user,source:'builtin'};assert.equal(ui.agentName(builtin),'BI Trend Hunter');assert.equal(ui.strategyName(builtin),'Trend momentum');
  assert.equal(ui.systemMessage('这是 Agent 原始决策：等待下一根 K 线。'),'这是 Agent 原始决策：等待下一根 K 线。');
- assert.equal(ui.systemMessage('等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。'),'Waiting for the administrator to configure the OpenAI API key. AI decisions have not started.');
+ assert.equal(ui.systemMessage('等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。'),'This evaluation has not been updated yet.');
  assert.equal(ui.systemMessage('AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。'),'The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.');
  assert.equal(ui.systemMessage('持仓在核价期间改变，稍后重新检查'),'Positions changed during quote verification. They will be checked again.');
  assert.equal(ui.systemMessage('持仓风险资料时间未核实，需要重新核查'),'The holder-risk timestamp was not verified. A fresh check is required');
@@ -72,11 +72,13 @@ test('public strategy details render saved exit rules in both languages and keep
   agent.runtime={state:'observing',reason:'等待退出报价',exitFailures:[{token:plan.token,at:Date.now()}]};await context.publicProfile(agent.id);
   assert.match(shown,/exit-failures/);assert.ok(shown.includes(language==='en'?'Exit quote awaiting retry':'退出报价待重试'));
   agent.runtime.exitFailures=[];await context.publicProfile(agent.id);assert.doesNotMatch(shown,/exit-failures/);assert.equal(context.exitFailurePanel({...agent,source:'user',runtime:{exitFailures:[{token:plan.token,at:Date.now()}]}}),'');
-  agent.runtime.lastExecution={status:'failed',at:Date.now(),reason:'请求预算不足，本次未完成模拟下单。'};await context.publicProfile(agent.id);
-  assert.ok(shown.includes(language==='en'?'Latest execution:':'最近下单结果：'));assert.ok(shown.includes(language==='en'?'request budget was insufficient':'请求预算不足'));assert.ok(shown.includes(language==='en'?'Order not submitted':'下单未完成'));
+  agent.runtime.lastExecution={status:'failed',at:Date.now(),reason:'本次未成交，等待后续评估。'};await context.publicProfile(agent.id);
+  assert.ok(shown.includes(language==='en'?'Latest execution:':'最近下单结果：'));assert.ok(shown.includes(language==='en'?'No fill was created':'本次未成交'));assert.ok(shown.includes(language==='en'?'Order not submitted':'下单未完成'));
   agent.runtime.lastExecution={status:'pending',at:Date.now(),reason:'AI 已提出交易，正在核对当前行情与风险。'};assert.ok(context.executionNote(agent).includes(language==='en'?'Proposal awaiting execution':'提案待执行'));
   agent.riskReviews=[{token:plan.token,buyAllowed:true,policy:'bsc-meme-paper-v1',reasons:[],warnings:['Meme 模拟采用已观测风险筛查；完整捆绑、老鼠仓、同源资金和黑名单能力仍可能未知，不能视为安全保证。'],metrics:{bundlerObservedFloatShare:null,bundlerVolumeShare:null,transferSample:{available:true,fromBlock:100,toBlock:300,clusters:[]}}}];
   await context.publicProfile(agent.id);assert.ok(shown.includes(language==='en'?'Meme paper trading · Limited checks':'Meme 模拟 · 有限检测'));assert.ok(shown.includes(language==='en'?'Unknown':'未知'));assert.match(shown,/100 – 300/);assert.doesNotMatch(context.riskReviewPanel(agent),/0\.00%/);assert.ok(shown.includes(language==='en'?'not a safety guarantee':'不能视为安全保证'));
+  agent.runtime={state:'waiting-ai',model:'gpt-internal-model',reason:'OpenAI 请求超时或网络不可用',lastDecisionAt:Date.now()-120000,aiRetryAt:Date.now()+60000,decision:{action:'hold',reason:'上次真实评估结论'}};
+  await context.publicProfile(agent.id);assert.match(shown,/上次真实评估结论/);assert.doesNotMatch(shown,/OpenAI|gpt-internal|连接|Waiting for the AI|等待 AI/);
  }
 });
 

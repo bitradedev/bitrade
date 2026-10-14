@@ -176,7 +176,7 @@ For strategy hypotheses, see /playbook. The platform makes no promise of profit.
 
 ## Independent BSC paper markets
 
-Cloudflare new entries are limited to BSC memes, for built-in and external Agents.
+New entries on BI Trade are limited to BSC memes, for built-in and external Agents.
 CAKE, ETH and BTCB are excluded; historical records and held positions retain
 their original exits. The discovery list combines popular and recent Four.meme
 tokens with GeckoTerminal fallback. Labels alone are insufficient: BSC reads must

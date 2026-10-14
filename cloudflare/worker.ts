@@ -6,6 +6,7 @@ import { EncryptedVault } from '../bi-trade/lib/vault-core.mjs';
 import { createPlatformCore } from '../bi-trade/platform-core.mjs';
 import { TokenRiskGuard } from '../bi-trade/lib/token-risk-core.mjs';
 import { OpenAIPlanner, validateConfig, reserveAICall } from '../bi-trade/lib/ai-provider.mjs';
+import { recordAIHealth } from './ai-health.mjs';
 import { CloudMarket } from './market.js';
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
@@ -137,7 +138,11 @@ export class TradingPlatform extends DurableObject<any> {
               close: () => source.close(),
             },
           }),
-          planner = new OpenAIPlanner({ timeoutMs: 90000, fetchImpl: this.io.fetch });
+          planner = new OpenAIPlanner({
+            timeoutMs: 90000,
+            fetchImpl: this.io.fetch,
+            onDiagnostic: (sample: any) => recordAIHealth(this.store, sample),
+          });
         const configReader = () =>
           this.env.BI_TRADE_AI_API_KEY
             ? validateConfig({

@@ -10,6 +10,7 @@
   "scripts": {
     "setup": "pnpm install --frozen-lockfile && pnpm --dir paper-terminal install --frozen-lockfile",
     "build": "pnpm --dir paper-terminal build",
+    "build:agent-desk": "esbuild bi-trade/web-src/agent-desk.js --bundle --minify --format=esm --target=es2022 --outfile=bi-trade/web/agent-desk.js",
     "test": "node --test --test-isolation=none bi-trade/test/*.test.mjs",
     "start": "node bi-trade/server.mjs",
     "start:market": "pnpm --dir paper-terminal start",
@@ -26,7 +27,9 @@
     "viem": "2.57.3"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
     "prettier": "^3.9.9",
+    "three": "0.186.1",
     "wrangler": "^4.149.0"
   }
 }

@@ -789,6 +789,12 @@ Object.assign(window.BI_UI_EN,{
   "给 Agent 一个独立账户，给策略一个真实的检验场。": "An independent account for your Agent. A real proving ground for its strategy.",
   "从 BNB Chain 模拟交易开始，看见每一步决策与表现。": "Start with BNB Chain paper trading. See every decision and result.",
   "三个视角。一个市场。": "Three perspectives. One market.",
+  "三个 Agent，": "Three Agents.",
+  "各有自己的判断。": "Each with its own perspective.",
+  "趋势、回弹、轮动，各自在交易桌前观察市场、研究下一步。": "Trend, rebound and rotation: each studies the market at its own desk before deciding what comes next.",
+  "认识三位 Agent ↗": "Meet the three Agents ↗",
+  "趋势、回弹、轮动三位 Agent 在交易室各自的电脑前研究行情的动态场景": "Animated scene of the trend, rebound and rotation Agents studying charts at their own desks",
+  "动态场景为示意；屏幕曲线不是实时行情，成交以交易记录为准。": "Illustrative animation. Screen charts are not live market data; consult the trade journal for actual fills.",
   "趋势 · 回撤 · 轮动": "Trend · Rebound · Rotation",
   "体验品牌故事": "Explore our story",
   "三款 Agent 围绕 bi trade 品牌的动态示意": "An animated illustration of the three Agents around bi trade",
@@ -811,3 +817,40 @@ Object.assign(window.BI_UI_EN,{
   "真实行情 · 独立账本 · 可随时暂停": "Real market data · Independent ledger · Pause anytime",
   "向下滚动探索 · 随时进入主页": "Scroll to explore · Enter the platform anytime"
 });
+Object.assign(window.BI_UI_EN,{
+ "平台 Agent":"Platform Agents",
+ "选择交易 Agent":"Select a trading Agent",
+ "最近成交":"Recent fills",
+ "场景动作仅为示意；成交与收益来自模拟账本。":"The scene is illustrative. Fills and returns come from the paper ledger.",
+ "策略与完整记录 ↗":"Strategy and full journal ↗",
+ "还没有成交":"No fills yet",
+ "通过评估与核价后，模拟成交会记录在这里。":"Paper fills appear here after a decision passes execution checks.",
+ "等待 AI 服务恢复":"Waiting for the AI service",
+ "等待下一轮评估":"Waiting for the next evaluation",
+ "最近 AI 评估":"Latest AI evaluation",
+ "上次有效评估":"Last valid evaluation",
+ "尚无有效评估":"No valid evaluation yet",
+ "正在等待真实行情与有效评估，尚未发起交易。":"Waiting for live market evidence and a valid evaluation. No trade has been proposed.",
+ "本轮暂未完成，恢复后自动继续；未生成新的交易。":"This round did not finish. Evaluation will resume automatically; no new trade was created.",
+ "下次评估：":"Next evaluation: ",
+ "最近一次未成交尝试":"Most recent unfilled attempt",
+ "正在准备 Agent 工位…":"Preparing the Agent desk…",
+ " 个公开账户":" public accounts",
+ "当前持仓":"Open positions",
+ "已实现收益率":"Realized return",
+ "AI 服务响应较慢，本轮未生成决策，稍后自动重试。":"The AI service is responding slowly. This round produced no decision; it will retry automatically.",
+ "AI 服务连接暂时不稳定，本轮未生成决策，稍后自动重试。":"The AI connection is temporarily unstable. This round produced no decision; it will retry automatically.",
+ "AI 服务暂时繁忙，本轮未生成决策，稍后自动重试。":"The AI service is temporarily busy. This round produced no decision; it will retry automatically.",
+ "AI 服务配置需要维护，本轮暂停评估。":"The AI service configuration needs attention. Evaluation is temporarily paused.",
+ "本轮评估已中止。":"This evaluation was interrupted."
+});
+Object.assign(window.BI_UI_EN,{"本轮评估暂未更新。":"This evaluation has not been updated yet."});
+Object.assign(window.BI_UI_EN,{
+ "本次未成交，等待后续评估。":"No fill was created. A later evaluation will reassess the opportunity.",
+ "市场条件已变化，本次未成交。":"Market conditions changed. No fill was created.",
+ "本次暂未取得可用报价，未发生成交。":"An executable quote was unavailable. No fill was created."
+});
+
+Object.assign(window.BI_UI_EN,{"评估时间：":"Evaluation time: "});
+
+Object.assign(window.BI_UI_EN,{"数据暂时无法更新，请稍后再试。已保存的账户和记录会保留。":"Data is temporarily unavailable. Please try again later. Your saved accounts and records are retained.","还没有社区 Agent，来创建第一位。":"Be the first to publish a community Agent."});

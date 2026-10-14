@@ -13,6 +13,7 @@
  }
  function systemMessage(value){
   const input=String(value??'');
+  if(/^(?:等待站点管理员配置 OpenAI|OpenAI |AI 服务(?:响应|连接|暂时|配置))/.test(input))return phrase('本轮评估暂未更新。');
   if(language==='zh'&&input==='The operation was aborted due to timeout')return '请求超时，本轮未成交；等待下一轮评估。';
   return phrase(input);
  }

@@ -660,6 +660,9 @@ export class ShowcaseAgents {
           );
         this.status(a.id, {
           lastDecisionAt: this.now(),
+          nextDecisionAt: this.now() + config.intervalMinutes * 60000,
+          aiIssue: null,
+          aiFailures: 0,
           decision,
           reason: decision.reason,
           state: 'observing',
@@ -688,15 +691,31 @@ export class ShowcaseAgents {
           });
         } else await this.submitDecision(current, decision, 'ai-' + identifier());
       } catch (e) {
+        const failures = (state.aiFailures ?? 0) + 1;
+        const aiRetryAt = e.aiDiagnostic
+          ? this.now() +
+            Math.max(
+              config.intervalMinutes * 60000,
+              Math.min(300000, 60000 * 2 ** Math.min(failures - 1, 3)),
+            )
+          : null;
         if (!this.stopped)
           this.status(a.id, {
-            state:
-              e.code === 'STALE_AI_ACCOUNT'
+            state: e.aiDiagnostic
+              ? 'waiting-ai'
+              : e.code === 'STALE_AI_ACCOUNT'
                 ? this.paper.view(a.id).pending
                   ? 'queued'
                   : 'observing'
                 : 'error',
             reason: e.status ? e.message : 'AI 决策本轮未执行，请检查本机服务。',
+            ...(e.aiDiagnostic
+              ? {
+                  aiIssue: { ...e.aiDiagnostic, at: this.now(), retryAt: aiRetryAt },
+                  aiFailures: failures,
+                  nextDecisionAt: aiRetryAt,
+                }
+              : {}),
           });
       } finally {
         this.controller = null;

@@ -11,8 +11,23 @@ import {SHOWCASE_PROFILES} from '../lib/showcase-agents.mjs';
 import {publicAgent} from '../lib/public-agents.mjs';
 import {runScheduledRound} from '../../cloudflare/scheduler.mjs';
 import {IOBudget} from '../../cloudflare/io-budget.mjs';
+import {aiRequestFailure} from '../lib/ai-errors.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
+test('temporary AI failure keeps the last real decision, schedules a future retry and recovers without a trade',async t=>{
+ let failNow=true,calls=0;
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;if(failNow)throw aiRequestFailure({name:'TimeoutError'});return {action:'hold',token:null,sizeUsd:null,exit:null,reason:'真实恢复后继续观察'};}}}});
+ const id=SHOWCASE_PROFILES[0].id,oldAt=Date.now()-300000;
+ f.app.showcase.status(id,{lastDecisionAt:oldAt,decision:{action:'hold',token:null,sizeUsd:null,reason:'上次有效评估'},nextDecisionAt:0});
+ await f.app.showcase.run({agentId:id});
+ let a=(await f.call('/api/public/agent?id='+id)).value.agent;
+ assert.equal(a.runtime.state,'waiting-ai');assert.ok(a.runtime.aiRetryAt>Date.now());
+ assert.equal(a.runtime.lastDecisionAt,oldAt);assert.equal(a.runtime.decision.reason,'上次有效评估');
+ assert.equal(f.app.paper.orders().length,0);await f.app.showcase.run({agentId:id});assert.equal(calls,1);
+ failNow=false;f.app.showcase.status(id,{nextDecisionAt:0});f.app.showcase.exitChecks.clear();await f.app.showcase.run({agentId:id});
+ a=(await f.call('/api/public/agent?id='+id)).value.agent;
+ assert.equal(a.runtime.state,'observing');assert.equal(a.runtime.aiRetryAt,null);assert.ok(a.runtime.lastDecisionAt>oldAt);assert.equal(f.app.paper.orders().length,0);
+});
 test('Market outage is shown as waiting with retry time, spends no AI calls and resumes decisions on recovery',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'测试恢复后保持观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
  const original=f.g.markets,retryAt=Date.now()+300000;f.g.markets=()=>[];f.g.marketWait=()=>({retryAt});f.g.marketReason=()=> '行情服务暂不可用';

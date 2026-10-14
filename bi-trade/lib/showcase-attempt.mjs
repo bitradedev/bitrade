@@ -1,11 +1,11 @@
 function failure(message) {
   // The stored provider error remains private. Publish only bounded categories.
   if (/CF_SUBREQUEST_BUDGET|请求预算/.test(message))
-    return { code: 'REQUEST_BUDGET', reason: '请求预算不足，本次未完成模拟下单。' };
+    return { code: 'REQUEST_BUDGET', reason: '本次未成交，等待后续评估。' };
   if (/过期|expired|stale/i.test(message))
-    return { code: 'EXPIRED_EVIDENCE', reason: '报价或核查资料已过期，本次未完成模拟下单。' };
+    return { code: 'EXPIRED_EVIDENCE', reason: '市场条件已变化，本次未成交。' };
   if (/429|RATE_LIMIT|限频|冷却/i.test(message))
-    return { code: 'SOURCE_LIMITED', reason: '行情来源暂时限频，本次未完成模拟下单。' };
+    return { code: 'SOURCE_LIMITED', reason: '本次暂未取得可用报价，未发生成交。' };
   if (/余额|balance/i.test(message))
     return { code: 'BALANCE', reason: '虚拟余额不足以支付本次交易与费用。' };
   if (/风险|持仓|捆绑|集中|税|貔貅|身份|滑点|风险核查/.test(message))
