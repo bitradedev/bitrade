@@ -41,8 +41,8 @@ test('Paper account UI offers browser sessions and hides wallet/live controls in
   const login=context.dashboard();assert.match(login,/data-action="guest"/);assert.doesNotMatch(login,/data-action="login"/);assert.ok(login.includes(language==='en'?'No wallet required':'无需连接钱包'));
   context.stateInput={owner:{id:'owner',kind:'demo',address:null},liveEnabled:false,agents:[],orders:[],activity:[]};vm.runInContext('S=stateInput',context);
   const emptyAccount=context.dashboard();assert.match(emptyAccount,/data-action="pair"/);assert.doesNotMatch(emptyAccount,/data-action="login"/);
-  const a={id:'agent-1',name:'My Agent',mode:'paper',source:'user',connectionState:'awaiting-agent',paused:false,public:false,address:'0x'+'11'.repeat(20),policy:{mode:'balance'},paper:{balanceUsd:1000,realizedUsd:-2,realizedNativeRaw:'-1',positions:[]}};
-  const card=context.agentCard(a,0);assert.match(card,/\$1,000\.00/);assert.match(card,/-\$2\.00/);assert.match(card,/data-action="pause"/);assert.match(card,/data-action="reconnect"/);assert.match(card,/data-action="archive"/);assert.match(card,/data-action="strategy"/);assert.doesNotMatch(card,/data-action="(?:login|fund|withdraw|recover|mode|policy|copy-wallet)"/);
+  const a={id:'agent-1',name:'My Agent',mode:'paper',source:'user',connectionState:'awaiting-agent',paused:false,public:false,address:'0x'+'11'.repeat(20),policy:{mode:'balance'},paper:{balanceUsd:1000,realizedUsd:-2,realizedNativeRaw:'-1',positions:[{token:'0x'+'22'.repeat(20),symbol:'HELD',remainingRaw:'1000000000000000000',decimals:18,estimatedValueUsd:5}]}};
+  const card=context.agentCard(a,0);assert.match(card,/\$1,000\.00/);assert.match(card,/-\$2\.00/);assert.match(card,/data-action="pause"/);assert.match(card,/data-action="reconnect"/);assert.match(card,/data-action="archive"/);assert.match(card,/data-action="strategy"/);assert.doesNotMatch(card,/data-action="(?:login|fund|withdraw|recover|mode|policy|copy-wallet|demo-trade|demo-sell)"/);
   context.stateInput.liveEnabled=true;vm.runInContext('S=stateInput',context);assert.match(context.agentCard(a,0),/data-action="fund"/);
  }
 });

@@ -144,7 +144,7 @@ window.BI_UI_EN = {
 "一次性配对链接，领取独立 BSC 钱包和 1000U 虚拟资金。通过 API 或 MCP 持续提交决策。":"Pair once to receive an independent BSC wallet and 1,000U in virtual funds. Submit decisions through the API or MCP.",
 "提交后等待新区块重新核价。没有已验证买入和卖出路线时会显示失败原因。这里只测试一笔，不自动运行策略。":"The order is repriced in a later block. Missing verified buy or sell routes produce a failure reason. This tests one order and does not start an automatic strategy.",
 "。由Owner新签名授权。受限模式仅允许buy_token，预算按已签名交易的金额与Gas上限累计。":". A new Owner signature is required. Limited mode only allows buy_token; its budget includes signed trade amounts and gas limits.",
-"每Agent初始1000U，单笔无固定上限。体验按钮只提交一次订单；自动策略由外部Agent运行。":"Each Agent starts with 1,000U and no fixed trade cap. Trial buttons submit one order; external Agents run automatic strategies.",
+"每 Agent 初始 1000U，单笔无固定上限；交易由你接入的 Agent 自主执行。":"Each Agent starts with 1,000U with no fixed trade cap. Your connected Agent executes trades autonomously.",
 "在我的账户点击暂停，新的指令会被拒绝，未完成的模拟订单会取消。已签名或广播的实盘交易仍需核对回执。":"Pause in My account to reject new instructions and cancel pending paper orders. Signed or broadcast live transactions still need receipt checks.",
 "当前浏览器没有检测到EVM钱包。请用MetaMask等钱包浏览器打开此站，或先体验独立模拟账户。":"No EVM wallet was detected. Open this site in a wallet browser such as MetaMask, or try an independent paper account.",
 "交易明细的 BNB 盈亏采用 FIFO 成本。未知成本资产不计入收益；模拟成交没有链上交易哈希。":"Trade-level BNB profit uses FIFO costs. Assets with unknown costs are excluded from returns. Paper fills have no on-chain transaction hash.",

@@ -130,6 +130,18 @@ async function fixture(t,options={}){if(options.showcase===true)options={...opti
  async function register(session,name='Agent'){const p=await call('/api/pair',{},session),r=await call('/api/agent',{action:'register_dot',arguments:{pairingCode:p.value.pairingCode,name}});assert.equal(r.status,200);return r.value.result;}
  const agentCall=(agent,action,args={})=>call('/api/agent',{action,arguments:args},null,{Authorization:'Bearer '+agent.agentToken});return {app,g,rpc,url,call,owner,register,agentCall};
 }
+test('Removed browser trial trading cannot place orders; authenticated Agent trading remains available',async t=>{
+ const f=await fixture(t),s=await f.owner(),a=await f.register(s),before=JSON.stringify(f.app.paper.account(a.agentId));
+ for(const side of ['buy','sell']){
+  const result=await f.call('/api/demo/trade',{agentId:a.agentId,token:TOKEN,side,usd:10,amount:'1000',requestKey:'old-browser-'+side},s);
+  assert.equal(result.status,404);
+ }
+ assert.equal(f.app.paper.orders(a.agentId).length,0);assert.equal(f.app.store.forAgent('requests',a.agentId).length,0);
+ assert.equal(JSON.stringify(f.app.paper.account(a.agentId)),before);assert.equal(f.g.calls,0);
+ const result=await f.agentCall(a,'buy_token',{token:TOKEN,amount:'10000000000000000',requestKey:'runtime-buy'});
+ assert.equal(result.status,200);assert.equal(result.value.result.status,'queued');
+});
+
 test('Browser paper sessions last 30 days and renew the same identity without creating or changing an Agent',async t=>{
  const f=await fixture(t),response=await fetch(f.url+'/api/session',{method:'POST',headers:{Origin:f.url,'Content-Type':'application/json'},body:'{}'}),state=await response.json(),cookie=response.headers.get('set-cookie');
  assert.match(cookie,/HttpOnly; SameSite=Strict; Path=\/; Max-Age=2592000/);assert.equal(state.owner.kind,'demo');assert.equal(state.owner.address,null);assert.deepEqual(state.agents,[]);

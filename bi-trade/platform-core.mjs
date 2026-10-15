@@ -1047,48 +1047,6 @@ export async function createPlatformCore(options) {
           recoverLocks.delete(a.id);
         }
       }
-      // A visible, real-quote demonstration; it creates no background strategy.
-      if (path === '/api/demo/trade') {
-        fields(data, ['agentId', 'token', 'side', 'usd', 'requestKey', 'amount']);
-        const a = own(s, data.agentId);
-        if (a.mode !== 'paper') throw fail('体验按钮仅支持模拟模式');
-        let args, tool;
-        if (data.side === 'buy') {
-          const fx = paper.fx();
-          if (!fx) throw fail('BNB美元参考价尚未核实', 503);
-          const usd = Number(data.usd);
-          if (!Number.isFinite(usd) || usd <= 0) throw fail('模拟投入须大于0，余额须足以支付费用');
-          args = {
-            token: address(data.token),
-            amount: String(BigInt(Math.floor((usd / fx) * 1e18))),
-            requestKey: data.requestKey,
-            reason: 'Owner通过体验按钮测试真实报价模拟买入',
-          };
-          tool = 'buy_token';
-        } else if (data.side === 'sell') {
-          const token = address(data.token),
-            amount = raw(data.amount);
-          args = {
-            to: ROUTER_V2,
-            data: viem.encodeFunctionData({
-              abi: v2Abi,
-              functionName: 'swapExactTokensForETHSupportingFeeOnTransferTokens',
-              args: [
-                amount,
-                0n,
-                [token, '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c'],
-                a.address,
-                BigInt(Math.floor(Date.now() / 1000) + 180),
-              ],
-            }),
-            value: '0',
-            requestKey: data.requestKey,
-            reason: 'Owner通过体验按钮测试真实报价模拟卖出',
-          };
-          tool = 'submit_transaction';
-        } else throw fail('模拟方向无效');
-        return send(res, 200, await execute(a, tool, args));
-      }
       throw fail('接口不存在', 404);
     } catch (e) {
       send(res, e.status ?? 500, {
