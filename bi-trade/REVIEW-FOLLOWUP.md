@@ -2,7 +2,7 @@
 
 ### 2026-10-15 X账号链接更新
 
-按用户提供的新账号，将首页及滚动介绍页顶部X链接从https://x.com/BITradeAI改为https://x.com/BITradeAgent，保留新标签打开及noopener/noreferrer。仅两份HTML链接更新，待发布验证。
+按用户提供的新账号，将首页及滚动介绍页顶部X链接从https://x.com/BITradeAI改为https://x.com/BITradeAgent，保留新标签打开及noopener/noreferrer。仅两份HTML链接更新，e790a3e已推送GitHub并发布Cloudflare版本16ae5974-b3f5-4fd9-9343-428cf8b6f247，VPS同步同资源且后台哈希/进程ID未变。13:36:09Z正式/及/home均200、与本地字节一致、各包含新链接且无旧链接。GitHub短暂连接失败已恢复；这次为静态链接检查，没有新增交易或账本操作。证据.cloud-test-build/x-link-live.json及x-link-e790a3e/。
 
 ### 2026-10-15 英文默认语言
 
