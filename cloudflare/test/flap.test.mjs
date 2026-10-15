@@ -238,6 +238,19 @@ function gateway(t) {
     setState: (v) => (s = v),
   };
 }
+test('Personal Flap CA outside discovery quotes and fills without platform concentration or 2% sizing gates',async t=>{
+ const f=gateway(t);f.store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run('cloud-meme-candidates',TOKEN);f.market.catalog.delete(TOKEN);
+ await f.market.assertExternalEntry(TOKEN);assert.equal(f.market.isEntryCandidate(TOKEN),false);assert.equal(f.data.candidates().length,0);
+ assert.equal(f.store.get('cloud-external-meme-markets',TOKEN).platform,'flap');assert.equal(f.store.get('token-risk-reports',TOKEN),null);
+ const agent={id:'personal-flap',address:OWNER,mode:'paper',paused:false};f.store.put('agents',agent);
+ const paper=new PaperDesk(f.store,f.market,{buyGuard:async(_a,token,q)=>{if(q.refresh)await f.market.assertExternalEntry(token);}});
+ const order=await paper.submit(agent,{id:'personal-flap-large',token:TOKEN,side:'buy',amount:'200000000000000000'});
+ assert.ok(order.reference.priceImpactPct>2);assert.equal(order.slippageBps,3000);
+ order.dueAt=0;f.store.put('paper-orders',order);f.setHead(101);await f.market.updateHead();await paper.tick();
+ assert.equal(f.store.get('paper-orders',order.id).status,'filled');assert.equal(paper.fills(agent.id).length,1);assert.equal(paper.check(agent.id),true);
+ assert.equal(f.store.get('token-risk-reports',TOKEN),null);assert.equal(f.market.isEntryCandidate(TOKEN),false);
+});
+
 test('Flap creations verify event emitter, chain range, timestamps, identities and duplicates', () => {
   const at = Date.now(),
     l = creation(at),

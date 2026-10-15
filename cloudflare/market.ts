@@ -183,6 +183,43 @@ export class CloudMarket {
     if (!this.isEntryCandidate(token))
       throw Error('当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。');
   }
+  async assertExternalEntry(token: string) {
+    if (this.memeOnly) {
+      if (!this.memeData?.externalEntry)
+        throw Object.assign(Error('个人 Agent 的按需核价暂不可用'), { status: 503 });
+      let identity;
+      try {
+        identity = await this.memeData.externalEntry(token);
+        if (
+          identity.address !== token ||
+          identity.category !== 'meme' ||
+          identity.originVerified !== true
+        )
+          throw Error('Unverified identity');
+      } catch (error: any) {
+        if (error?.code === 'CF_SUBREQUEST_BUDGET') throw error;
+        throw Object.assign(Error('该代币尚未核实为当前支持的 BSC Meme 交易路线'), { status: 409 });
+      }
+      if (!this.catalog.has(token)) {
+        this.catalog.set(token, {
+          ...identity,
+          chain: 'bsc',
+          entryActive: false,
+          quality: 'unavailable',
+          updatedAt: 0,
+        });
+      }
+    }
+    await this.refresh([token], { limit: 1, onlyRequested: true });
+    const market = this.getMarket('bsc', token);
+    if (
+      !market ||
+      market.quality !== 'verified' ||
+      Date.now() < market.updatedAt ||
+      Date.now() - market.updatedAt >= 15000
+    )
+      throw Object.assign(Error('该代币当前没有可用的模拟报价'), { status: 503 });
+  }
   async updateHead() {
     const b = await this.rpc.block();
     if (this.head.head) {

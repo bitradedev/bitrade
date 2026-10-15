@@ -11,6 +11,7 @@ import {
 import { OwnerAuth, address, COOKIE } from './lib/auth.mjs';
 
 import { PaperDesk } from './lib/paper-desk.mjs';
+import { PAPER_EXECUTION_POLICY } from './lib/paper-execution-policy.mjs';
 import { LiveDesk, swapIntent, executionError } from './lib/live-desk.mjs';
 import { BscRpc, v2Abi, ROUTER_V2 } from './lib/bsc-rpc.mjs';
 import { viem } from './lib/dependencies.mjs';
@@ -123,8 +124,15 @@ export async function createPlatformCore(options) {
     readOnly: options.readOnly === true,
     preserveQueued: options.preserveQueued === true,
     buyGuard: async (a, token, q) => {
+      if (a.source !== 'builtin') {
+        if (q.refresh !== false) {
+          if (gateway.assertExternalEntry) await gateway.assertExternalEntry(token);
+          else await gateway.assertEntry?.(token);
+        }
+        return;
+      }
       await gateway.assertEntry?.(token);
-      if (riskGuard && (a.source === 'builtin' || gateway.marketScope?.().kind === 'meme'))
+      if (riskGuard)
         await riskGuard.assertBuy(token, {
           sizeUsd: q.nativeUsd ? (Number(BigInt(q.inputRaw)) / 1e18) * q.nativeUsd : null,
           marketPrice: q.marketPrice,
@@ -473,7 +481,19 @@ export async function createPlatformCore(options) {
       const fx = paper.fx();
       if (fx) store.transaction(() => paper.seed(a.id, fx));
       await live.balance(a);
-      return { ...agentDto(touchAgent(a, name)), agentToken: undefined, liveEnabled: live.enabled };
+      return {
+        ...agentDto(touchAgent(a, name)),
+        agentToken: undefined,
+        liveEnabled: live.enabled,
+        paperTradingPolicy: {
+          strategyOwner: a.source === 'builtin' ? 'platform' : 'external-agent',
+          platformScreeningRequired: a.source === 'builtin',
+          maxBuyPriceImpactPct:
+            a.source === 'builtin' ? PAPER_EXECUTION_POLICY.maxBuyPriceImpactPct : null,
+          maxFillSlippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
+          scope: 'supported-bsc-meme',
+        },
+      };
     }
     if (name === 'get_trade') {
       fields(args, ['id']);

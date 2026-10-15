@@ -159,6 +159,19 @@ test('Meme discovery does not give expired, missing or future screening a higher
   assert.equal(store.all('paper-fills').length,0);
  }
 });
+test('Personal CA verification can quote a Four.meme token outside discovery without granting builtin permission',async t=>{
+ const {store,rpc,data}=sourceFixture(t);store.db.prepare('DELETE FROM entities WHERE kind=? AND id=?').run('cloud-meme-candidates',TOKEN);
+ const market=new CloudMarket(store,{rpc,memeData:data,memeOnly:true,gmgn:{status:()=>({limited:true})}});
+ market.nativePrice={read:async()=>({id:'native-fx',usd:750,at:Date.now(),readAt:Date.now()})};
+ assert.equal(data.supports(TOKEN),false);await market.assertExternalEntry(TOKEN);
+ assert.equal(data.supports(TOKEN),true);assert.equal(market.getMarket('bsc',TOKEN).quality,'verified');assert.equal(market.isEntryCandidate(TOKEN),false);
+ assert.equal(data.candidates().length,0);assert.equal(store.get('token-risk-reports',TOKEN),null);assert.equal(store.all('paper-orders').length,0);
+ const rebuiltData=new MemeBscData(store,rpc);assert.equal(rebuiltData.supports(TOKEN),true,'Held exit metadata retains verified origin after reconstruction');
+ await assert.rejects(market.assertExternalEntry(WBNB),/支持的 BSC Meme/);
+ const saved=rpc.read;rpc.read=async(_to,_abi,name,...args)=>name==='getTokenInfo'?Array(12).fill(0):saved(_to,_abi,name,...args);
+ await assert.rejects(market.assertExternalEntry(OTHER),/支持的 BSC Meme/);assert.equal(store.get('cloud-external-meme-markets',OTHER),null);
+});
+
 test('Chart failure retains verified Meme exits, but stale chart evidence cannot authorize new entries',async t=>{
  const {store,rpc,data}=sourceFixture(t);await data.metadata(TOKEN);store.put('cloud-public-cache',{id:'meme-trading:'+TOKEN,at:Date.now()-121000});const binding=store.get('cloud-meme-pools',TOKEN);store.put('cloud-meme-pools',{...binding,marketDataAt:Date.now()-121000});data.chart=async()=>{throw Error('Chart cooling down');};
  const md=await data.metadata(TOKEN);assert.ok(Date.now()-md.at<1000);assert.ok(Date.now()-md.marketDataAt>120000);

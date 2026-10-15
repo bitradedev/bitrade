@@ -176,7 +176,7 @@ export class PaperDesk {
       Date.now() - q.at > 5000
     )
       throw fail('报价数量、费用或时间未核实', 503);
-    if (side === 'buy') assertEntryQuoteImpact(q);
+    if (side === 'buy' && agent.source === 'builtin') assertEntryQuoteImpact(q);
     return q;
   }
   current(agent) {

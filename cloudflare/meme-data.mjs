@@ -305,8 +305,43 @@ export class MemeBscData extends PublicBscData {
   supports(token) {
     return (
       !establishedAsset(token) &&
-      this.store.get('cloud-meme-candidates', String(token).toLowerCase())?.category === 'meme'
+      (this.store.get('cloud-meme-candidates', String(token).toLowerCase())?.category === 'meme' ||
+        this.store.get('cloud-external-meme-markets', String(token).toLowerCase())
+          ?.originVerified === true)
     );
+  }
+  async externalEntry(token) {
+    token = addr(token);
+    if (!token || [ZERO, WBNB].includes(token) || establishedAsset(token))
+      throw Error('当前仅支持 BSC Meme 模拟交易');
+    let platform;
+    try {
+      await this.flap.evidence(token);
+      platform = 'flap';
+    } catch (error) {
+      if (error?.code === 'CF_SUBREQUEST_BUDGET') throw error;
+      const b = await this.rpc.block();
+      const f = await this.rpc.read(FOUR_HELPER, FOUR_ABI, 'getTokenInfo', [token], b.number);
+      if (Number(f[0]) !== 2 || addr(f[1]) !== FOUR_MANAGER || ![ZERO, WBNB].includes(addr(f[2])))
+        throw Error('该代币的 BSC Meme 发行身份尚未核实');
+      if (f[11] !== true) throw Error('该 Four.meme 内盘路线尚未支持模拟核价');
+      platform = 'four';
+    }
+    // This is launch identity and a pricing hint, never screening permission
+    // or membership of the built-in discovery pool.
+    const old = this.store.get('cloud-external-meme-markets', token);
+    const value = {
+      id: token,
+      address: token,
+      category: 'meme',
+      platform,
+      symbol: old?.symbol ?? token.slice(0, 10),
+      name: old?.name ?? token,
+      originVerified: true,
+      at: this.now(),
+    };
+    this.store.put('cloud-external-meme-markets', value);
+    return value;
   }
   candidates() {
     return this.store
@@ -653,7 +688,9 @@ export class MemeBscData extends PublicBscData {
       const value = {
         pair: chart.pair,
         check: check.value,
-        candidate: this.store.get('cloud-meme-candidates', token),
+        candidate:
+          this.store.get('cloud-meme-candidates', token) ??
+          this.store.get('cloud-external-meme-markets', token),
         proof: {
           originVerified: true,
           poolVerified: true,

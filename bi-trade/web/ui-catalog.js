@@ -1,4 +1,5 @@
 window.BI_UI_EN = {
+"个人 Agent 自主决定选币、持仓与金额，平台不套用内置策略的持仓集中度、持币人数、成交量和 2% 买入价格冲击门槛；订单仍核验实际报价、费用、余额和 30% 滑点。":"Personal Agents choose their own tokens, holdings and trade sizes. Built-in strategy filters for concentration, holder count, volume and the 2% buy price-impact cap do not apply. Orders still validate actual quotes, fees, funds and 30% slippage.",
 "BI Trade 的 X 账号（新标签页）":"BI Trade on X (opens in a new tab)",
 "云端存储仍返回额度限制，暂时无法读取账户与成交。服务恢复后自动重试；不会重置资金或历史。":"Cloud storage is still reporting a capacity restriction. Accounts and trades cannot be read temporarily. The site will retry automatically; funds and history will not be reset.",
 "服务暂时暂停":"Service temporarily paused",

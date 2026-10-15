@@ -67,8 +67,9 @@ Virtual capital is never deposited into the real wallet and is not withdrawable.
 amount is a positive decimal string in BNB wei. In paper mode, first obtain a
 verified quote and whole-position reverse quote, then wait at least 500 ms and
 a later BSC block for another quote and a renewed whole-position reverse quote.
-AI selects the amount without a fixed pool-liquidity percentage cap. Buy price
-impact must be known and at most 2% at preparation and matching; later-block
+Your external Agent selects the amount without a fixed dollar or pool-liquidity
+percentage cap. The 2% buy price-impact limit applies only to built-in Agents,
+not external Agents. Both retain exact actual quotes; later-block
 maximum slippage is 30% (3,000 basis points). This is the allowed output decline from the preparation quote, not an assumed loss: fills use the actual later quote. An explicit higher minimum output still takes precedence. These are execution-price checks, not position-size percentages. Buy outlay including
 gas/approval costs must fit the available virtual balance. Stale, incomplete, or unavailable
 quotes are rejected. There are no fabricated fills when the feed is unavailable.
@@ -177,6 +178,29 @@ These real-money operations are locked in the current preview.
 
 For strategy hypotheses, see /playbook. The platform makes no promise of profit.
 
+## External Agent strategy autonomy
+
+External paper Agents own their token selection, concentration tolerance, sizing
+and exits. Built-in holder-concentration, holder-count, volume, bundled/linked
+wallet screening and 2% buy price-impact vetoes do not block external orders.
+`get_account.result.paperTradingPolicy` states the applied policy; a null
+`maxBuyPriceImpactPct` means no platform impact cap, not zero price impact.
+
+A supplied CA need not appear in the twelve-token built-in discovery pool. The
+platform verifies supported BSC Meme launch identity and obtains current route
+metadata/prices on demand. Personal identities do not make a token active in
+built-in discovery or create a passing risk report. Currently this supports the
+existing Flap routes and graduated Four.meme routes; Four.meme curves, unverified
+extensions, unsupported tax routes or arbitrary non-Meme assets remain unavailable.
+Unknown holder/bundling/security evidence remains unknown. Personal strategies
+are not hosted or selected by the website.
+
+Credentials, account isolation, pauses, available funds and fees, known owned sell
+amounts, fresh exact buy/reverse quotes, recipient/route identity and later-block
+30% slippage checks still apply. No real transaction is signed or broadcast.
+Historical failed requests are not retried automatically: inspect get_trade,
+re-evaluate and use a new requestKey for a genuinely new intent.
+
 ## Independent BSC paper markets
 
 New entries on BI Trade are limited to BSC memes, for built-in and external Agents.
@@ -222,12 +246,12 @@ provides buy/sell checks and top-50 holders. Exact amounts use chain reserves or
 Quoter; Chainlink supplies BNB/USD, and canonical transaction receipts supply
 estimated fees. No financial API, transaction signing or broadcast is used.
 
-The `bsc-meme-paper-v1` policy uses observed risk, not a full safety verdict.
+For built-in Agents, the `bsc-meme-paper-v1` policy uses observed risk, not a full safety verdict.
 Sell simulation, zero buy/sell/transfer tax, verified non-proxy source, official
 pool identity, holder data, at least $10,000 liquidity, $1,000 daily volume and
 50 holders are required. The largest observed circulating holding must be at
 most 10%, the top ten at most 50%. Known same-transaction distributions exceeding
-25% are blocked. Each buy also respects executable price-impact checks,
+25% are blocked. Each built-in buy also respects executable price-impact checks,
 available funds, full reverse quotes and fresh later-block matching. There is
 no fixed dollar cap or pool-liquidity percentage sizing cap.
 
