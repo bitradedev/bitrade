@@ -11,9 +11,10 @@ function preferences(values={}){
  return {ui:context.window.BiUI,root,readKeys,catalog:context.window.BI_UI_EN,context};
 }
 test('appearance preferences default to the approved light palette and accept only supported values',()=>{
- const first=preferences();assert.equal(first.root.dataset.theme,'light');assert.equal(first.root.lang,'zh-CN');assert.deepEqual(first.readKeys,['bi-ui-theme','bi-ui-language']);
+ const first=preferences();assert.equal(first.root.dataset.theme,'light');assert.equal(first.root.lang,'en');assert.equal(first.ui.locale,'en-US');assert.deepEqual(first.readKeys,['bi-ui-theme','bi-ui-language']);
  const chosen=preferences({'bi-ui-theme':'dark','bi-ui-language':'en'});assert.equal(chosen.root.dataset.theme,'dark');assert.equal(chosen.root.lang,'en');assert.equal(chosen.ui.locale,'en-US');
- const invalid=preferences({'bi-ui-theme':'injected-value','bi-ui-language':'<script>'});assert.equal(invalid.root.dataset.theme,'light');assert.equal(invalid.ui.language,'zh');
+ const invalid=preferences({'bi-ui-theme':'injected-value','bi-ui-language':'<script>'});assert.equal(invalid.root.dataset.theme,'light');assert.equal(invalid.ui.language,'en');
+ const chinese=preferences({'bi-ui-language':'zh'});assert.equal(chinese.root.lang,'zh-CN');assert.equal(chinese.ui.language,'zh');assert.equal(chinese.ui.locale,'zh-CN');
 });
 test('English UI translation preserves order actions, asset addresses, amounts, and HTML structure',()=>{
  const {ui}=preferences({'bi-ui-language':'en'}),address='0x1111111111111111111111111111111111111111';

@@ -3,7 +3,7 @@
  const root=document.documentElement,dictionary=window.BI_UI_EN??{};
  const read=(key,allowed,fallback)=>{try{const value=localStorage.getItem(key);return allowed.includes(value)?value:fallback;}catch{return fallback;}};
  const save=(key,value)=>{try{localStorage.setItem(key,value);}catch{}};
- let theme=read('bi-ui-theme',['light','dark'],'light'),language=read('bi-ui-language',['zh','en'],'zh');
+ let theme=read('bi-ui-theme',['light','dark'],'light'),language=read('bi-ui-language',['zh','en'],'en');
  function phrase(value){
   if(language!=='en')return value;
   if(Object.hasOwn(dictionary,value))return dictionary[value];
