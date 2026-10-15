@@ -631,12 +631,20 @@ export class CloudMarket {
             busy = activeFlapLaunches(ranked, Date.now())[0]?.address,
             priority = [...new Set([...tokens, ...(busy ? [busy] : [])])],
             exploration = pool.filter((t) => !priority.includes(t)),
-            count = Math.max(0, limit - priority.length),
+            // Held positions and a busy launch can fill the nominal batch.
+            // Keep one real exploration read ahead of held refreshes rather
+            // than leaving every other entry stale indefinitely. Exit checks
+            // have their own priority round and retain exact fresh quotes.
+            count = Math.max(exploration.length ? 1 : 0, limit - priority.length),
             rotated = Array.from(
               { length: Math.min(count, exploration.length) },
               (_, i) => exploration[(this.explorationCursor + i) % exploration.length],
             );
-          selected.splice(0, selected.length, ...[...priority, ...rotated].slice(0, 8));
+          selected.splice(
+            0,
+            selected.length,
+            ...[...new Set([...(busy ? [busy] : []), ...rotated, ...tokens])].slice(0, 8),
+          );
           this.explorationCursor = exploration.length
             ? (this.explorationCursor + rotated.length) % exploration.length
             : 0;

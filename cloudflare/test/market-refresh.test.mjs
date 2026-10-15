@@ -86,6 +86,35 @@ test('Self-hosted refresh prioritizes actual activity, covers all exploration sl
     'Activity is never buying permission',
   );
 });
+test('Held tokens and a busy launch cannot starve other entries or consume their first refresh batch', async () => {
+  const now = Date.now(), held = [token(101), token(102)],
+    candidates = Array.from({ length: 6 }, (_, i) => ({
+      address: token(i + 1), id: token(i + 1), category: 'meme', entryRank: i,
+    }));
+  Object.assign(candidates[0], {sampleAt: now, sample: {buys: 50, sells: 10}});
+  const {market, store} = fixture({runtime: marketRuntime({BI_TRADE_SELF_HOSTED:'true'}), memeData:{candidates:()=>candidates}});
+  const old = now - 20000;
+  for(const m of [...candidates, ...held.map(address=>({address,category:'meme',entryActive:false}))])
+    market.catalog.set(m.address,{...m,updatedAt:old,quality:'verified'});
+  market.discover=async()=>{};
+  const visited=new Set();let batch=[];
+  market.refreshMarket=async t=>{batch.push(t);visited.add(t);market.catalog.set(t,{...market.catalog.get(t),updatedAt:Date.now()});};
+  for(let i=0;i<5;i++){
+    batch=[];await market.refresh(held,{limit:2});
+    assert.equal(batch[0],candidates[0].address);
+    assert.equal(batch.length,4);
+    assert.ok(!held.includes(batch[1])&&batch[1]!==candidates[0].address,'Exploration reaches the first parallel batch');
+    assert.ok(held.every(t=>batch.includes(t)),'Held price refreshes remain present');
+  }
+  assert.equal(visited.size,8,'Every other entry gets an actual refresh while positions remain held');
+  assert.equal(store.get('cloud-settings','market-cursor').explorationNext,0);
+  assert.equal(store.get('token-risk-reports',candidates[1].address),null,'A fresh price cannot create buying permission');
+  const one = fixture({runtime:marketRuntime({BI_TRADE_SELF_HOSTED:'true'}),memeData:{candidates:()=>[]}}).market;
+  one.discover=async()=>{};for(const m of candidates)one.catalog.set(m.address,{...m,updatedAt:old,quality:'verified'});
+  const first=[];one.refreshMarket=async t=>{first.push(t);};await one.refresh([], {limit:2});
+  assert.equal(first.length,2,'Without competing priorities the configured batch size is unchanged');
+});
+
 test('Self-hosted request capacity is bounded separately while the Cloudflare limit stays 45', async () => {
   const cloud = marketRuntime(),
     server = marketRuntime({ BI_TRADE_SELF_HOSTED: 'true' });
