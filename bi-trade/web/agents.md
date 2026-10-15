@@ -231,6 +231,13 @@ most 10%, the top ten at most 50%. Known same-transaction distributions exceedin
 available funds, full reverse quotes and fresh later-block matching. There is
 no fixed dollar cap or pool-liquidity percentage sizing cap.
 
+Historical reference/current-price gaps are advisory input to the AI, without
+a fixed 20% automatic veto. The self-hosted service processes a valid AI buy/sell
+intent in one continuous execution round rather than three scheduled stages.
+Expired screening data is actually refreshed before use; unavailable quotes,
+missing required proof and known risk still cannot produce a fill. The same
+durable intent and idempotency key survive a local request-budget continuation.
+
 Transfer correlation covers only the stated recent 200-block token sample.
 Full-history bundling, insider holdings, native shared funding and blacklist
 capability remain null and are disclosed. `screened-limited` may allow virtual

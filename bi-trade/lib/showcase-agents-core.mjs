@@ -153,6 +153,8 @@ export class ShowcaseAgents {
       block: head.head,
       executionConstraints: {
         positionSizing: 'ai-selected-with-executable-quotes',
+        submitOnDecision: true,
+        historicalPriceGapIsBlocking: false,
         maxBuyPriceImpactPct: PAPER_EXECUTION_POLICY.maxBuyPriceImpactPct,
         maxFillSlippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
         requiresFullReverseQuote: true,

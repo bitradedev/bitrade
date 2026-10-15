@@ -12,6 +12,8 @@ import {publicAgent} from '../lib/public-agents.mjs';
 import {runScheduledRound} from '../../cloudflare/scheduler.mjs';
 import {IOBudget} from '../../cloudflare/io-budget.mjs';
 import {aiRequestFailure,aiHttpFailure} from '../lib/ai-errors.mjs';
+import {TokenRiskGuard} from '../lib/token-risk-core.mjs';
+import {marketRuntime} from '../../cloudflare/market-runtime.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
 test('AI-selected paper sizing uses executable impact at preparation and fill, preserves reverse quotes, balance and slippage',async t=>{
@@ -442,6 +444,29 @@ test('deferred AI proposals persist without an order, use current guarded execut
  order.dueAt=Date.now()-1;f.app.store.put('paper-orders',order);f.g.advance();await f.app.paper.tick();assert.equal(f.app.paper.fills(a.id).length,1);assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);assert.equal(calls,1);
  const finished=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(finished.runtime.lastExecution.status,'filled');
  f.app.store.put('requests',{id:'old-failed-attempt',agentId:a.id,createdAt:Date.now()+1,action:'buy_token',status:'failed',error:'CF_SUBREQUEST_BUDGET private-provider-secret'});const failed=(await f.call('/api/public/agent?id='+a.id)).value.agent;assert.equal(failed.runtime.lastExecution.code,'REQUEST_BUDGET');assert.doesNotMatch(JSON.stringify(failed),/private-provider-secret|CF_SUBREQUEST_BUDGET/);
+});
+
+test('VPS AI proposal refreshes expired screening and fills once at a doubled current price rather than the old reference',async t=>{
+ let guard,refreshes=0;
+ const risk={snapshot:(...args)=>guard.snapshot(...args),assertBuy:(...args)=>guard.assertBuy(...args),tick(){},close:()=>guard.close()};
+ const f=await fixture(t,{showcase:true,showcaseOptions:{riskGuard:risk,maxAgentsPerRun:1,deferExecution:true,configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){return {action:'buy',token:TOKEN,sizeUsd:60,reason:'测试现价自主买入',exit:{takeProfitPct:25,stopLossPct:12,maxHoldMinutes:360}};}}}});
+ const report=()=>({id:TOKEN,token:TOKEN,chain:'bsc',fetchedAt:Date.now(),state:'screened',buyAllowed:true,reasons:[],metrics:{liquidityUsd:100000,referencePriceUsd:1}});
+ guard=new TokenRiskGuard(f.app.store,{source:{async riskReport(){refreshes++;return report();}}});
+ f.app.store.put('token-risk-reports',report());
+ const markets=f.g.markets.bind(f.g),quote=f.g.quote.bind(f.g);
+ f.g.markets=()=>markets().map(m=>({...m,priceUsd:2}));
+ f.g.quote=async p=>{const q=await quote(p);return {...q,priceUsd:2,outputRaw:String(p.side==='buy'?BigInt(q.outputRaw)/2n:BigInt(q.outputRaw)*2n)};};
+ const id=SHOWCASE_PROFILES[0].id;await f.app.showcase.run({agentId:id});
+ const p=f.app.showcase.pendingProposal(),account=structuredClone(f.app.paper.account(id));assert.ok(p);assert.equal(f.app.paper.orders().length,0);
+ f.app.store.put('token-risk-reports',{...report(),fetchedAt:Date.now()-121000});
+ const io=new IOBudget(128),host={io,store:f.app.store,initialize:async()=>f.app,marketPolicy:marketRuntime({BI_TRADE_SELF_HOSTED:'true'}),arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},market:{async updateHead(){f.g.advance();},async fx(){},async refresh(){},getMarket:()=>f.g.getMarket()},risk:guard};
+ await io.run('alarm',()=>runScheduledRound(host));
+ assert.equal(refreshes,1);assert.equal(guard.snapshot(TOKEN,2).priceGapPct,100);assert.equal(f.app.store.get('showcase-proposals',p.id).state,'submitted');
+ assert.equal(f.app.paper.orders(id).length,1);assert.equal(f.app.paper.orders(id)[0].status,'queued');assert.deepEqual(f.app.paper.account(id),account);
+ const order=f.app.paper.orders(id)[0];order.dueAt=Date.now()-1;f.app.store.put('paper-orders',order);
+ await io.run('alarm',()=>runScheduledRound(host));await f.app.showcase.executeProposal(p);await f.app.paper.tick();
+ assert.equal(f.app.paper.orders(id).length,1);assert.equal(f.app.paper.fills(id).length,1);const fill=f.app.paper.fills(id)[0];
+ assert.equal(fill.tokenRaw,'30000000000000000000');assert.equal(fill.usd,60.01);assert.equal(f.app.paper.check(id),true);assert.equal(f.app.live.orders().length,0);
 });
 
 test('public builtin execution results respect an already completed round reset without deleting retained requests',async t=>{

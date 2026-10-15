@@ -25,7 +25,6 @@ export const RISK_POLICY = {
   maxRatFloatShare: 0.05,
   maxLargestFloatShare: 0.1,
   maxLinkedFloatShare: 0.25,
-  maxPriceGapPct: 20,
 };
 export function currentRiskEvidence(report, now = Date.now()) {
   return (
@@ -199,14 +198,8 @@ export class TokenRiskGuard {
         positive(marketPrice) && positive(reference)
           ? Math.abs(marketPrice / reference - 1) * 100
           : null;
-    if (gap !== null && gap > RISK_POLICY.maxPriceGapPct)
-      return {
-        ...saved,
-        state: 'blocked',
-        buyAllowed: false,
-        priceGapPct: gap,
-        reasons: [...saved.reasons, '独立参考与当前价格偏差超过20%，不能使用不一致的数据开仓'],
-      };
+    // Price movement since a screening sample is context for the AI. Exact
+    // current execution quotes govern fills; an old price gap is not a veto.
     return { ...saved, priceGapPct: gap };
   }
   refresh(token) {
