@@ -1,5 +1,9 @@
 # 检查文档处理记录
 
+### 2026-10-15 用户要求暂停网站AI
+
+已将VPS持久配置BI_TRADE_SHOWCASE_PAUSED=true，暂停3个平台内置Agent，停止自动决策及自动退出；原有个人Agent状态不改。维护事务检查无待取消平台订单/提案，财务指纹e3942f7a99749d1ec1550338be3a00390f3af0954f4ef60b66d3fa9462951002前后相同，保留资金、亏损、持仓、成交和最后真实决策时间，追加暂停审计记录。服务已重启并正常提供网站/API。14:20:43Z正式/api/public核验3个内置Agent均paused=true、runtime.state=paused。Cloudflare配置及AGENTS.md同步持久暂停，未经用户新指令不得恢复。证据.cloud-test-build/ai-paused-live.json及服务器/opt/bitrade/releases/pause-ai-20261015-1792074000460/。
+
 ### 2026-10-15 公布用户提供的官方合约
 
 用户指定BSC地址0xc534742eecc89651bba0cb670566a9c2d46cffff。主网只读RPC核验chainId=56、有代码、name=bitrade.site、symbol=BiTrade；仅公开现有地址，不发行或交易。新增公开官方配置，首页可独立于账户接口读取并复制，查看入口改为BscScan合约；API默认同一配置，行情/持有人未知保留空值。中英文与原配色保持。115项产品检查通过，998a54b已推送并上线，Cloudflare版本9c05e87f-1d80-4284-b64d-c6ae95e40056，VPS包8197dd2f。正式/home与新版app/公开官方JSON均200；14:01:15Z/api/token返回准确CA、symbol=BiTrade、issued=true。发布前后财务指纹8a4f8880一致，4账户/31订单/28成交保留。未提交交易，未改费用或资金功能。证据.cloud-test-build/official-contract-live.json及contract-998a54b/。
