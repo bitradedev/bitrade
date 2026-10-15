@@ -654,3 +654,20 @@ test('rankings include only opted-in Agents, expose strategy descriptions, separ
  const rank=(await f.call('/api/leaderboard')).value;assert.equal(rank.entries.length,2);assert.deepEqual(rank.entries.map(x=>x.rank),[1,1]);assert.ok(rank.entries.every(x=>x.returnPct===2));assert.equal(rank.entries.find(x=>x.id===a.agentId).strategy.name,'My trend');assert.equal((await f.call('/api/leaderboard?mode=live')).value.total,0);assert.equal((await f.call('/api/leaderboard?source=builtin')).value.total,0);assert.equal((await f.call('/api/leaderboard?mode=wrong')).status,400);assert.equal((await f.call('/api/public/agent?id='+privateA.agentId)).status,404);assert.doesNotMatch(JSON.stringify(rank),/ownerId|encryptedKey|privateKey|apiKey|agentToken/);
  await f.call('/api/control',{agentId:a.agentId,public:false},one);assert.equal((await f.call('/api/leaderboard')).value.total,1);
 });
+
+test('platform-only five-minute and narrative entry checks survive preparation and later-block matching while exits and personal Agents continue',async t=>{
+ const {assertVolume5m,volumeEligibility}=await import('../lib/builtin-entry-policy.mjs');
+ let usd=2999,calls=0,checks=0;
+ const narrative={verdict:'unknown',thesis:'发行资料的故事与热点关联未证实',catalyst:null,risks:'未核实社交传播，不把名称当热点',evidenceIds:[]};
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return{action:'buy',token:TOKEN,sizeUsd:100,reason:'结合近期成交判断；项目叙事与传播关联仍未知',exit:null,narrative};}}}});
+ const snapshot=()=>{const at=Date.now(),v={usd,at,windowMs:300000,quality:'observed-lower-bound',fromTime:at-300000,toTime:at-1000};return{policyVersion:1,volume5m:v,eligibility:volumeEligibility(v,at),narrative:{sources:[]}};};
+ f.g.builtinEntrySnapshot=snapshot;f.g.assertBuiltinEntry=async()=>{checks++;assertVolume5m(snapshot().volume5m);};
+ const builtin=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
+ await f.app.showcase.run({agentId:builtin.id});assert.equal(calls,0);assert.equal(f.app.paper.orders(builtin.id).length,0);
+ usd=3000;f.app.showcase.status(builtin.id,{nextDecisionAt:0});await f.app.showcase.run({agentId:builtin.id});
+ const o=f.app.paper.orders(builtin.id)[0];assert.ok(o);assert.equal(f.app.store.get('showcase-entry-assessments',o.id).narrative.verdict,'unknown');
+ usd=2999;f.app.store.put('paper-orders',{...o,dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',o.id).status,'failed');assert.equal(f.app.paper.fills(builtin.id).length,0);
+ usd=3500;f.app.showcase.status(builtin.id,{nextDecisionAt:0});await f.app.showcase.run({agentId:builtin.id});const next=f.app.paper.orders(builtin.id).find(x=>x.status==='queued');assert.ok(next,JSON.stringify(f.app.store.get('showcase-status',builtin.id)));f.app.store.put('paper-orders',{...next,dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',next.id).status,'filled');
+ usd=0;const before=checks;const sale=await f.app.showcase.sell(builtin,TOKEN,'成交量下降，主动退出','volume-exit');f.app.store.put('paper-orders',{...f.app.store.get('paper-orders',sale.id),dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',sale.id).status,'filled',JSON.stringify(f.app.store.get('paper-orders',sale.id)));assert.equal(checks,before);
+ const s=await f.owner(),a=await f.register(s,'Independent');const personal=await f.agentCall(a,'buy_token',{token:TOKEN,amount:'10000000000000000',requestKey:'autonomy-volume'});assert.equal(personal.status,200);const p=personal.value.result;f.app.store.put('paper-orders',{...f.app.store.get('paper-orders',p.id),dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',p.id).status,'filled');assert.equal(checks,before);assert.equal(f.app.paper.check(a.agentId),true);assert.equal(f.app.paper.check(builtin.id),true);
+});

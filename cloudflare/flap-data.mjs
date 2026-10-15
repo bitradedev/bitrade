@@ -95,6 +95,7 @@ export function flapCreations(logs, from, to, at) {
       label: 'Flap',
       symbol: String(e.args.symbol).slice(0, 60),
       name: String(e.args.name).slice(0, 100),
+      metadataCid: String(e.args.meta).slice(0, 160),
       at,
       discoverySource: 'Flap Portal · TokenCreated · BSC RPC',
       createdAt,

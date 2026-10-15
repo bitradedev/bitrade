@@ -24,6 +24,7 @@ import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 import { RISK_POLICY } from '../bi-trade/lib/token-risk-core.mjs';
 import { activeFlapLaunches } from './flap-data.mjs';
 import { marketRuntime } from './market-runtime.mjs';
+import { BuiltinEntryEvidence } from './builtin-entry-evidence.mjs';
 const finite = (x: any) =>
   x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x)) ? Number(x) : null;
 const raw = (x: any) => {
@@ -95,6 +96,7 @@ export class CloudMarket {
   runtime: any;
   persistAt = new Map<string, number>();
   gap: () => void;
+  entryEvidence: any;
   constructor(
     store: any,
     {
@@ -111,6 +113,7 @@ export class CloudMarket {
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
+    this.entryEvidence = new BuiltinEntryEvidence(store, this);
     if (memeData?.flap) memeData.flap.market = this;
     for (const m of store.all('cloud-markets')) {
       this.catalog.set(m.address, m);
@@ -182,6 +185,17 @@ export class CloudMarket {
   assertEntry(token: string) {
     if (!this.isEntryCandidate(token))
       throw Error('当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。');
+  }
+  builtinEntrySnapshot(token: string) {
+    return this.entryEvidence.snapshot(token);
+  }
+  async prepareBuiltinEntries(tokens: string[]) {
+    // Share Portal samples; bound work and retain external-service backoff.
+    for (const token of tokens.slice(0, this.runtime.refreshBatch))
+      await this.entryEvidence.collect(token);
+  }
+  async assertBuiltinEntry(token: string) {
+    await this.entryEvidence.assert(token);
   }
   async assertExternalEntry(token: string) {
     if (this.memeOnly) {

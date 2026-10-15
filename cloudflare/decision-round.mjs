@@ -31,6 +31,11 @@ export async function runDecisionRound(host, app, market, held = null) {
   // Refresh the comparison set together before entry evaluation. Held exits
   // and Cloudflare's small-budget path keep their single-token priority.
   await host.market.refresh(tokens, { limit: tokens.length, onlyRequested: true });
+  if (!held && host.market.prepareBuiltinEntries) {
+    await host.market.prepareBuiltinEntries(tokens);
+    // Source collection must never make old prices look newly quoted.
+    await host.market.refresh(tokens, { limit: tokens.length, onlyRequested: true });
+  }
   const permitted = app.showcase
     .freshMarkets()
     .some((m) => host.risk.snapshot(m.address, m.priceUsd).buyAllowed);

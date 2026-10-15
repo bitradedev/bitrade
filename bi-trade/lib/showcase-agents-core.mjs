@@ -4,6 +4,7 @@ import { viem } from './dependencies.mjs';
 import { v2Abi, ROUTER_V2, WBNB } from './bsc-rpc.mjs';
 import { RISK_POLICY } from './token-risk-core.mjs';
 import { PAPER_EXECUTION_POLICY } from './paper-execution-policy.mjs';
+import { BUILTIN_ENTRY_POLICY, validateNarrative } from './builtin-entry-policy.mjs';
 import {
   showcasePositions,
   EXIT_POLICY_VERSION,
@@ -159,6 +160,12 @@ export class ShowcaseAgents {
         maxFillSlippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
         requiresFullReverseQuote: true,
         paperOnly: true,
+        ...(this.gateway.builtinEntrySnapshot
+          ? {
+              minVolume5mUsd: BUILTIN_ENTRY_POLICY.minVolume5mUsd,
+              requiresNarrativeAssessment: true,
+            }
+          : {}),
       },
       account: {
         initialUsd: v.initialUsd,
@@ -183,6 +190,10 @@ export class ShowcaseAgents {
       markets: this.freshMarkets().map((m) => ({
         token: m.address,
         symbol: String(m.symbol ?? '').slice(0, 60),
+        name: String(m.name ?? '').slice(0, 100),
+        ...(this.gateway.builtinEntrySnapshot
+          ? { entryEvidence: this.gateway.builtinEntrySnapshot(m.address) }
+          : {}),
         platform: m.platform ?? m.venue ?? null,
         stage: m.stage ?? null,
         priceUsd: m.priceUsd,
@@ -410,6 +421,12 @@ export class ShowcaseAgents {
   async submitDecision(agent, decision, requestKey) {
     let order;
     if (decision.action === 'buy') {
+      if (this.gateway.builtinEntrySnapshot) {
+        const evidence = this.gateway.builtinEntrySnapshot(decision.token);
+        validateNarrative(decision.narrative, evidence.narrative);
+        // Legacy proposals without the new assessment cannot bypass evaluation.
+        await this.gateway.assertBuiltinEntry(decision.token);
+      }
       const fx = this.paper.fx();
       if (!fx) throw fail('决策后 BNB 美元行情已过期');
       const size = String(BigInt(Math.floor((decision.sizeUsd / fx) * 1e18)));
@@ -421,6 +438,16 @@ export class ShowcaseAgents {
       });
       if (!['queued', 'quoting', 'filled', 'partial'].includes(order.status))
         throw fail('原模拟下单已失败或取消，等待重新评估。');
+      if (this.gateway.builtinEntrySnapshot)
+        this.store.put('showcase-entry-assessments', {
+          id: order.id,
+          agentId: agent.id,
+          token: decision.token,
+          at: this.now(),
+          policyVersion: BUILTIN_ENTRY_POLICY.version,
+          narrative: decision.narrative,
+          evidence: this.gateway.builtinEntrySnapshot(decision.token),
+        });
       this.store.put('showcase-exits', {
         id: order.id,
         agentId: agent.id,
@@ -624,13 +651,20 @@ export class ShowcaseAgents {
         });
         continue;
       }
-      if (!context.account.positions.length && !context.markets.some((m) => m.risk.buyAllowed)) {
+      if (
+        !context.account.positions.length &&
+        !context.markets.some(
+          (m) => m.risk.buyAllowed && (!m.entryEvidence || m.entryEvidence.eligibility.allowed),
+        )
+      ) {
         this.status(a.id, {
           state: 'waiting-risk',
           model: config.model,
           marketRetryAt: null,
           nextDecisionAt: this.now() + config.intervalMinutes * 60000,
-          reason: '尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。',
+          reason: this.gateway.builtinEntrySnapshot
+            ? '尚无同时满足开仓条件的候选；最近5分钟成交量需至少3,000美元，资料不足时继续观察。'
+            : '尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。',
         });
         continue;
       }

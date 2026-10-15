@@ -855,3 +855,11 @@ Object.assign(window.BI_UI_EN,{
 Object.assign(window.BI_UI_EN,{"评估时间：":"Evaluation time: "});
 
 Object.assign(window.BI_UI_EN,{"数据暂时无法更新，请稍后再试。已保存的账户和记录会保留。":"Data is temporarily unavailable. Please try again later. Your saved accounts and records are retained.","还没有社区 Agent，来创建第一位。":"Be the first to publish a community Agent."});
+
+Object.assign(window.BI_UI_EN,{
+ "尚无同时满足开仓条件的候选；最近5分钟成交量需至少3,000美元，资料不足时继续观察。":"No candidate currently meets the entry conditions. At least $3,000 of verified volume in the last 5 minutes is required; incomplete evidence keeps the Agent observing.",
+ "最近5分钟成交量尚未核实，暂不开新仓。":"Volume in the last 5 minutes is unverified; no new position will be opened.",
+ "最近5分钟成交量尚未核实达到3,000美元，暂不开新仓。":"Verified volume in the last 5 minutes has not reached $3,000; no new position will be opened.",
+ "本次尚未完成叙事判断，等待重新评估。":"The narrative assessment is incomplete; awaiting a new evaluation.",
+ "本次尚未完成新的开仓评估，等待重新判断。":"The updated entry assessment is incomplete; awaiting a new evaluation."
+});

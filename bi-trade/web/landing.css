@@ -135,7 +135,7 @@ html[lang="en"] .metric-strip b { font-size: 23px; }
 .strategy-map small { color: var(--bi-muted); font: 8px Consolas,monospace; letter-spacing: .1em; }
 .map-connector { height: 1px; background: linear-gradient(90deg,var(--bi-primary-border),var(--bi-primary)); }
 .map-engine { width: 130px; height: 130px; justify-self: center; border: 1px solid var(--bi-primary-border); border-radius: 50%; background: var(--bi-panel); box-shadow: 0 12px 40px var(--bi-shadow); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
-.map-engine strong { font-size: 13px; }
+.map-engine strong { width: 100%; max-width: 108px; padding: 0 4px; font-size: 13px; line-height: 1.35; text-align: center; overflow-wrap: normal; text-wrap: balance; }
 .map-branches { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 28px; }
 .map-branches > div { padding: 14px 8px; border-top: 2px solid var(--bi-primary-border); text-align: center; }
 .map-branches span { display: block; font-size: 12px; margin-bottom: 6px; }

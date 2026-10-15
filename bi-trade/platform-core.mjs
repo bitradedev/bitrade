@@ -138,6 +138,16 @@ export async function createPlatformCore(options) {
           marketPrice: q.marketPrice,
           refresh: q.refresh,
         });
+      await gateway.assertBuiltinEntry?.(token);
+      if (gateway.builtinEntrySnapshot && q.refresh === false) {
+        const assessment = store.get('showcase-entry-assessments', q.orderId);
+        if (
+          assessment?.policyVersion !== 1 ||
+          assessment.agentId !== a.id ||
+          assessment.token !== token
+        )
+          throw fail('本次尚未完成新的开仓评估，等待重新判断。', 409);
+      }
     },
   });
   const rpc = options.rpc ?? new BscRpc(options.rpcUrl ?? process.env.BI_TRADE_BSC_RPC);

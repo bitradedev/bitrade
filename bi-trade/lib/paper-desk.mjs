@@ -308,6 +308,7 @@ export class PaperDesk {
               nativeUsd: q.nativeUsd,
               marketPrice: q.priceUsd,
               refresh: false,
+              orderId: o.id,
             });
           if (o.side === 'buy') {
             const reverse = await this.quote(agent, 'sell', o.token, q.outputRaw, q.block);
