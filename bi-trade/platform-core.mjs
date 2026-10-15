@@ -697,7 +697,7 @@ export async function createPlatformCore(options) {
             mcp: origin + '/mcp',
             liveEnabled: live.enabled,
             tools: toolsList,
-            documentation: origin + '/agents.md',
+            documentation: origin + '/agents.md?v=20261015-5',
           });
         if (path === '/api/markets') {
           ownerSession(req);

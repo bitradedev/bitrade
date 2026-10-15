@@ -46,6 +46,7 @@ const ASSET_ROUTES: any = {
   '/playbook': 'index.html',
   '/intro': 'intro.html',
   '/intro.html': 'intro.html',
+  '/agents.md': 'agents.md',
 };
 
 export class TradingPlatform extends DurableObject<any> {
@@ -556,6 +557,7 @@ export default {
     if (!['GET', 'HEAD'].includes(request.method)) return json({ error: '不支持此请求方法' }, 405);
     const asset = ASSET_ROUTES[url.pathname];
     if (asset) url.pathname = '/' + asset;
+    if (url.pathname === '/agents.md') url.searchParams.set('v', '20261015-5');
     const response = await env.ASSETS.fetch(new Request(url, request));
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY)) headers.set(k, v);
