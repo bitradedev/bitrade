@@ -32,6 +32,20 @@ const json = (v) =>
   JSON.parse(
     JSON.stringify(v, (_k, value) => (typeof value === 'bigint' ? value.toString() : value)),
   );
+export function activeFlapLaunches(rows, now) {
+  return rows
+    .filter(
+      (r) =>
+        Number.isFinite(r.sampleAt) &&
+        now >= r.sampleAt &&
+        now - r.sampleAt < 120000 &&
+        Number.isSafeInteger(r.sample?.buys) &&
+        r.sample.buys > 0 &&
+        Number.isSafeInteger(r.sample?.sells) &&
+        r.sample.sells > 0,
+    )
+    .sort((a, b) => b.sample.buys + b.sample.sells - a.sample.buys - a.sample.sells);
+}
 function event(log, from, to) {
   if (log.removed) return null;
   if (
@@ -328,15 +342,7 @@ export class FlapBscData {
   }
   rankedLaunches() {
     const rows = this.store.all('cloud-flap-launches').sort((a, b) => b.createdAt - a.createdAt);
-    const active = [...rows]
-      .filter(
-        (r) =>
-          r.sample?.buys > 0 &&
-          r.sample?.sells > 0 &&
-          this.now() - r.sampleAt >= 0 &&
-          this.now() - r.sampleAt < 120000,
-      )
-      .sort((a, b) => b.sample.buys + b.sample.sells - (a.sample.buys + a.sample.sells));
+    const active = activeFlapLaunches(rows, this.now());
     const mixed = [];
     for (let i = 0; i < 24; i++) {
       if (active[i]) mixed.push(active[i]);

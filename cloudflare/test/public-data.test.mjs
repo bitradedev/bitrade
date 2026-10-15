@@ -122,7 +122,7 @@ test('Risk guard consumes the independent mature report with original age and st
  const s=store();let oldCalls=0;const report=evaluateEstablishedRisk(A.address,evidence(),NOW);
  const guard=new TokenRiskGuard(s,{now:()=>NOW,source:{riskReport:async t=>t===A.address?report:null,info:async()=>{oldCalls++;throw Error('GMGN banned');}}});
  assert.equal((await guard.refresh(A.address)).buyAllowed,true);assert.equal(oldCalls,0);
- await guard.assertBuy(A.address,{sizeUsd:100,marketPrice:2});await assert.rejects(guard.assertBuy(A.address,{sizeUsd:20000,marketPrice:2}),/流动性/);
+ await guard.assertBuy(A.address,{sizeUsd:100,marketPrice:2});await guard.assertBuy(A.address,{sizeUsd:20000,marketPrice:2});
  assert.equal((await guard.refresh('0x'+'ab'.repeat(20))).buyAllowed,false);assert.equal(oldCalls,1);
  report.fetchedAt=NOW-120001;s.put('token-risk-reports',report);assert.equal(guard.snapshot(A.address).buyAllowed,false);
 });

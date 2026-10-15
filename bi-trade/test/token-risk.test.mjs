@@ -71,12 +71,13 @@ test('the token contract remains in float but is excluded from ordinary-wallet a
  const d=evidence();d.holders.list=d.holders.list.slice(0,21);d.holders.list.push({address:TOKEN,amount_percentage:.10,addr_type:2,maker_token_tags:[],native_transfer:{from_address:CREATOR}});
  const r=evaluateTokenRisk(TOKEN,d);assert.equal(r.metrics.poolSupplyShare,.5);assert.equal(r.metrics.tradeableFloatShare,.5);assert.ok(r.metrics.largestObservedFloatShare<.1);assert.equal(r.state,'screened');
 });
-test('entry checks enforce age, price coherence and depth; concurrent refreshes share one read-only collection',async t=>{
+test('entry screening enforces evidence age and price coherence without a fixed liquidity-share sizing cap',async t=>{
  let now=1000000,calls=0;const d=evidence(),source={async info(){calls++;return d.info;},async holders(){calls++;return d.holders;},async security(){calls++;return d.security;},close(){}};
  const {guard}=fixture(t,{source,now:()=>now});await Promise.all([guard.refresh(TOKEN),guard.refresh(TOKEN)]);assert.equal(calls,3);
  await guard.assertBuy(TOKEN,{sizeUsd:150,marketPrice:1});assert.equal(calls,3);
  await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:150,marketPrice:2,refresh:false}),/价格偏差/);
- await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:1001,marketPrice:1,refresh:false}),/流动性的1%/);
+ await guard.assertBuy(TOKEN,{sizeUsd:1001,marketPrice:1,refresh:false});
+ for(const sizeUsd of [0,-1,NaN,Infinity])await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd,marketPrice:1,refresh:false}),/金额/);
  now+=RISK_POLICY.maxAgeMs+1;await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:150,marketPrice:1,refresh:false}),/已过期/);
 });
 test('read failures record unknown risk without leaking provider diagnostics or claiming absent tags are safe',async t=>{

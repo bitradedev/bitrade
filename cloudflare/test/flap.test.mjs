@@ -30,7 +30,7 @@ await require('esbuild').build({
   outdir: '.cloud-test-build/flap-tests',
   outExtension: { '.js': '.mjs' },
 });
-const { flapCreations, flapTurnover, flapHolders, FLAP_EVENTS } =
+const { flapCreations, flapTurnover, flapHolders, activeFlapLaunches, FLAP_EVENTS } =
   await import('../../.cloud-test-build/flap-tests/cloudflare/flap-data.mjs');
 const { MemeBscData } = await import('../../.cloud-test-build/flap-tests/cloudflare/meme-data.mjs');
 const { CloudMarket } = await import('../../.cloud-test-build/flap-tests/cloudflare/market.mjs');
@@ -79,6 +79,11 @@ const creation = (at = Date.now()) => ({
     parseAbiParameters('uint256,address,uint256,address,string,string,string'),
     [BigInt(Math.floor(at / 1000)), OWNER, 0n, TOKEN, 'Name', 'MEME', 'ipfs'],
   ),
+});
+test('Flap activity priority only uses fresh two-sided samples and never refreshes evidence timestamps',()=>{
+ const now=2000000,base={sampleAt:now-1000,sample:{buys:77,sells:47}};
+ const rows=[base,{...base,sampleAt:now-120000},{...base,sampleAt:now+1},{...base,sampleAt:String(now)},{...base,sample:{buys:100,sells:0}},{...base,sample:{buys:3,sells:2}}];
+ const before=structuredClone(rows);assert.deepEqual(activeFlapLaunches(rows,now),[rows[0],rows[5]]);assert.deepEqual(rows,before);
 });
 function fixture(t) {
   const db = new DatabaseSync(':memory:');
@@ -328,11 +333,13 @@ test('Independent Flap market and risk use Portal state, real decimals and taxes
   assert.equal(m.stage, 'curve');
   assert.equal(m.progressPct, 12.5);
   assert.equal(m.liquidityUsd, 450);
+  assert.equal(m.curveVirtualReserveUsd, 4950);
+  assert.equal(m.curveDepthQuality, 'curve-model-estimate');
   assert.equal(r.buyAllowed, true);
   assert.equal(r.metrics.honeypot, null);
   assert.equal(r.metrics.liquidityUsd, 450);
 });
-test('Flap paper entry and natural graduation exit preserve FIFO, identity and original capital', async (t) => {
+test('Flap paper entry above the former reserve-share cap uses actual impact and preserves FIFO across graduation', async (t) => {
   const f = gateway(t),
     guard = new TokenRiskGuard(f.store, {
       source: { riskReport: (token) => f.data.riskReport(token) },
@@ -353,10 +360,12 @@ test('Flap paper entry and natural graduation exit preserve FIFO, identity and o
     id: 'flap-buy',
     token: TOKEN,
     side: 'buy',
-    amount: '2000000000000000',
+    amount: '12000000000000000',
     reason: 'isolated Flap lifecycle',
   });
   assert.equal(paper.fills(agent.id).length, 0);
+  assert.ok(Number(buy.inputRaw)/1e18*buy.reference.nativeUsd > 450*0.01);
+  assert.ok(buy.reference.priceImpactPct <= 2);
   buy.dueAt = 0;
   f.store.put('paper-orders', buy);
   f.setHead(101);
@@ -521,6 +530,7 @@ test('Flap six-decimal conversion uses actual depegged value and supports the vi
   assert.equal(m.quality, 'verified');
   assert(Math.abs(m.quoteUsd - 0.99) < 1e-9);
   assert(Math.abs(m.liquidityUsd - 0.594) < 1e-9);
+  assert(Math.abs(m.curveVirtualReserveUsd - 6.534) < 1e-9);
   const buy = await f.market.quote({
       chain: 'bsc',
       token: TOKEN,

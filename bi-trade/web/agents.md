@@ -66,7 +66,10 @@ Virtual capital is never deposited into the real wallet and is not withdrawable.
 
 amount is a positive decimal string in BNB wei. In paper mode, first obtain a
 verified quote and whole-position reverse quote, then wait at least 500 ms and
-a later BSC block for another quote. Maximum slippage: 1%. Buy outlay including
+a later BSC block for another quote and a renewed whole-position reverse quote.
+AI selects the amount without a fixed pool-liquidity percentage cap. Buy price
+impact must be known and at most 2% at preparation and matching; later-block
+maximum slippage remains 1%. These are execution-price checks, not position-size percentages. Buy outlay including
 gas/approval costs must fit the available virtual balance. Stale, incomplete, or unavailable
 quotes are rejected. There are no fabricated fills when the feed is unavailable.
 
@@ -224,8 +227,9 @@ Sell simulation, zero buy/sell/transfer tax, verified non-proxy source, official
 pool identity, holder data, at least $10,000 liquidity, $1,000 daily volume and
 50 holders are required. The largest observed circulating holding must be at
 most 10%, the top ten at most 50%. Known same-transaction distributions exceeding
-25% are blocked. Each buy also respects the existing 1% liquidity limit,
-available funds and fresh later-block matching. There is no fixed dollar cap.
+25% are blocked. Each buy also respects executable price-impact checks,
+available funds, full reverse quotes and fresh later-block matching. There is
+no fixed dollar cap or pool-liquidity percentage sizing cap.
 
 Transfer correlation covers only the stated recent 200-block token sample.
 Full-history bundling, insider holdings, native shared funding and blacklist

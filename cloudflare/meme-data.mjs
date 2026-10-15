@@ -1,6 +1,6 @@
 import { keccak256, parseAbi, decodeEventLog, getEventSelector } from 'viem';
 import { PublicBscData } from './public-data.mjs';
-import { FlapBscData } from './flap-data.mjs';
+import { FlapBscData, activeFlapLaunches } from './flap-data.mjs';
 import { evaluateMemeRisk } from '../bi-trade/lib/meme-risk.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 import { readTurnoverHistory } from './turnover-history.mjs';
@@ -426,13 +426,18 @@ export class MemeBscData extends PublicBscData {
       .sort((a, b) => Number(recentlyScreened(b)) - Number(recentlyScreened(a)))
       .slice(0, 4);
     const flapCursor = Number.isInteger(current?.flapCursor) ? current.flapCursor : 0;
-    const freshFlap = launches.length
+    // Keep actual recent activity visible while rotating exploration separately.
+    // A cursor over a reordered launch list can otherwise miss its busiest token.
+    const activeFlap = activeFlapLaunches(launches, this.now()).slice(0, 2),
+      pinned = new Set(activeFlap.map((c) => c.address)),
+      exploration = launches.filter((c) => !pinned.has(c.address));
+    const freshFlap = exploration.length
       ? Array.from(
-          { length: Math.min(4, launches.length) },
-          (_, i) => launches[(flapCursor + i) % launches.length],
+          { length: Math.min(4 - activeFlap.length, exploration.length) },
+          (_, i) => exploration[(flapCursor + i) % exploration.length],
         )
       : [];
-    rows = [...knownFlap, ...freshFlap, ...rows];
+    rows = [...knownFlap, ...activeFlap, ...freshFlap, ...rows];
     const seen = new Set();
     rows = rows.filter((c) => !seen.has(c.address) && seen.add(c.address)).slice(0, 12);
     if (!rows.length) throw Error('独立 Meme 发现暂未返回候选');
@@ -456,7 +461,9 @@ export class MemeBscData extends PublicBscData {
       id: 'meme-discovery',
       at: this.now(),
       bootstrapCursor: (bootstrapCursor + 2) % MEME_BOOTSTRAP.length,
-      flapCursor: launches.length ? (flapCursor + 2) % launches.length : 0,
+      flapCursor: exploration.length ? (flapCursor + freshFlap.length) % exploration.length : 0,
+      activeFlap: activeFlap.map((c) => ({ token: c.address, sampleAt: c.sampleAt })),
+      explorationFlap: freshFlap.map((c) => c.address),
     });
     return this.candidates();
   }

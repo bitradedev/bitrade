@@ -1,5 +1,6 @@
 import { identifier, fail, json } from './database-core.mjs';
 import { address } from './auth.mjs';
+import { PAPER_EXECUTION_POLICY, assertEntryQuoteImpact } from './paper-execution-policy.mjs';
 const UNIT = 10n ** 18n,
   active = new Set(['preparing', 'queued', 'quoting']);
 const nativeUsd = (v, fx) => (Number(BigInt(v)) / 1e18) * fx;
@@ -175,6 +176,7 @@ export class PaperDesk {
       Date.now() - q.at > 5000
     )
       throw fail('报价数量、费用或时间未核实', 503);
+    if (side === 'buy') assertEntryQuoteImpact(q);
     return q;
   }
   current(agent) {
@@ -253,7 +255,7 @@ export class PaperDesk {
       side,
       inputRaw: amount,
       minOutput,
-      slippageBps: 100,
+      slippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
       status: 'queued',
       createdAt: Date.now(),
       dueAt: Date.now() + 500,
@@ -307,6 +309,11 @@ export class PaperDesk {
               marketPrice: q.priceUsd,
               refresh: false,
             });
+          if (o.side === 'buy') {
+            const reverse = await this.quote(agent, 'sell', o.token, q.outputRaw, q.block);
+            if (reverse.spentInputRaw !== reverse.inputRaw)
+              throw fail('撮合时整仓反向报价尚未核实');
+          }
           this.current(agent);
           const latest = this.store.get('paper-orders', o.id);
           if (latest.status !== 'quoting' || rev !== this.revision) continue;

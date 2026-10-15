@@ -14,6 +14,7 @@ import {
 import {
   units,
   flapReserve,
+  ceilDiv,
   feeExcludedImpact,
 } from '../paper-terminal/src/server/adapters/math.js';
 import { CloudRpc } from './rpc.mjs';
@@ -29,6 +30,16 @@ const raw = (x: any) => {
   return BigInt(x);
 };
 const key = (_chain: string, token: string) => token.toLowerCase();
+function flapCurveDepthUsd(state: any, quoteUsd: number) {
+  try {
+    const denominator =
+      1000000000n * 10n ** 18n + BigInt(state.h) - BigInt(state.circulatingSupply);
+    const depth = units(ceilDiv(BigInt(state.k) * 10n ** 18n, denominator), 18) * quoteUsd;
+    return Number.isFinite(depth) && depth > 0 ? depth : null;
+  } catch {
+    return null;
+  }
+}
 // Pricing samples may checkpoint once a minute. Eligibility, route identity,
 // execution quality and taxes must become durable immediately when they change.
 const MARKET_STATE_FIELDS = [
@@ -371,7 +382,8 @@ export class CloudMarket {
             ? md.marketDataAt
             : md.at,
         statsFresh =
-          Number.isFinite(statsAt) && Date.now() - statsAt >= 0 && Date.now() - statsAt < 120000;
+          Number.isFinite(statsAt) && Date.now() - statsAt >= 0 && Date.now() - statsAt < 120000,
+        curveDepth = r.kind === 'flap' ? flapCurveDepthUsd(r.state, quoteUsd) : null;
       m = {
         ...m,
         decimals,
@@ -396,6 +408,10 @@ export class CloudMarket {
         createdAt: md.flap?.createdAt ?? m.createdAt ?? null,
         reserveUsd:
           r.kind === 'flap' ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd : null,
+        // Curve depth includes the virtual term used by the Portal invariant.
+        // It is a model input, not real funds or an executable-size guarantee.
+        curveVirtualReserveUsd: curveDepth,
+        curveDepthQuality: curveDepth === null ? null : 'curve-model-estimate',
         liquidityUsd:
           md.source === 'flap-bsc'
             ? r.kind === 'flap'

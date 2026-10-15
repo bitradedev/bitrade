@@ -3,6 +3,7 @@ import { readAIConfig, OpenAIPlanner, validateDecision, reserveAICall } from './
 import { viem } from './dependencies.mjs';
 import { v2Abi, ROUTER_V2, WBNB } from './bsc-rpc.mjs';
 import { RISK_POLICY } from './token-risk-core.mjs';
+import { PAPER_EXECUTION_POLICY } from './paper-execution-policy.mjs';
 import {
   showcasePositions,
   EXIT_POLICY_VERSION,
@@ -151,8 +152,10 @@ export class ShowcaseAgents {
       chainId: 56,
       block: head.head,
       executionConstraints: {
-        maxLiquidityShare: RISK_POLICY.maxOrderLiquidityShare,
-        liquidityBasis: 'risk.metrics.liquidityUsd',
+        positionSizing: 'ai-selected-with-executable-quotes',
+        maxBuyPriceImpactPct: PAPER_EXECUTION_POLICY.maxBuyPriceImpactPct,
+        maxFillSlippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
+        requiresFullReverseQuote: true,
         paperOnly: true,
       },
       account: {
@@ -188,6 +191,8 @@ export class ShowcaseAgents {
         quoteProofMode: m.quoteProofMode ?? null,
         progressPct: m.progressPct ?? null,
         reserveUsd: m.reserveUsd ?? null,
+        curveVirtualReserveUsd: m.curveVirtualReserveUsd ?? null,
+        curveDepthQuality: m.curveDepthQuality ?? null,
         createdAt: m.createdAt ?? null,
         dataSource: m.dataSource ?? null,
         marketDataAt: m.marketDataAt ?? null,

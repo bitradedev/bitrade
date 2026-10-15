@@ -18,6 +18,19 @@ const {CloudMarket}=await import('../../.cloud-test-build/meme-tests/market.mjs'
 const TOKEN='0x'+'11'.repeat(20),POOL='0x'+'22'.repeat(20),OTHER='0x'+'33'.repeat(20),OWNER='0x'+'44'.repeat(20),WBNB='0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c',FACTORY='0xca143ce32fe78f1f7019d7d551a6402fc5350c73',MANAGER='0x5c952063c7fc8610ffdb798152d69f0b9550762b';
 function fixture(t){const db=new DatabaseSync(':memory:');t.after(()=>db.close());const sql={exec(query,...args){if(!args.length&&query.split(';').filter(x=>x.trim()).length>1){db.exec(query);return {toArray:()=>[],rowsWritten:0};}const s=db.prepare(query);if(/^(?:CREATE|DELETE|INSERT|UPDATE)/i.test(query.trim())){const r=s.run(...args);return {toArray:()=>[],rowsWritten:r.changes};}return {toArray:()=>s.all(...args),rowsWritten:0};}};return new CloudStore({sql,transactionSync(fn){db.exec('BEGIN');try{const r=fn();db.exec('COMMIT');return r;}catch(e){db.exec('ROLLBACK');throw e;}}});}
 const fourRow=(tokenAddress=TOKEN)=>({tokenAddress,networkCode:0,status:'TRADE',symbol:'BNB',shortName:'Meme',tag:'Meme',day1Vol:5000});
+
+test('Fresh active Flap launches reach the candidate set regardless of the exploration cursor, without trading permission',async t=>{
+ const store=fixture(t),now=2000000,data=new MemeBscData(store,rpcFixture(),{now:()=>now});
+ const launches=Array.from({length:20},(_,i)=>{const a='0x'+(4000+i).toString(16).padStart(40,'0');return {id:a,address:a,platform:'flap',symbol:'F'+i,createdAt:now-i*1000,at:now};});
+ Object.assign(launches[0],{sampleAt:now-1000,sample:{buys:77,sells:47}});
+ Object.assign(launches[5],{sampleAt:now-1000,sample:{buys:30,sells:20}});
+ for(let i=0;i<4;i++){const a='0x'+(5000+i).toString(16).padStart(40,'0');store.put('cloud-meme-candidates',{id:a,address:a,platform:'flap',entryRank:i,active:true});store.put('cloud-flap-evidence',{id:a,originVerified:true});store.put('token-risk-reports',{id:a,token:a,buyAllowed:true,fetchedAt:now-1000,metrics:{liquidityUsd:0.001}});}
+ store.put('cloud-settings',{id:'meme-discovery',at:now-60001,flapCursor:10});
+ store.put('paper-fills',{id:'retained-loss',netUsd:-7});const before=store.all('token-risk-reports');
+ data.flap.discover=async()=>launches;data.scanMigrations=async()=>[];data.read=async()=>({at:now,value:{data:Array.from({length:12},(_,i)=>fourRow('0x'+(6000+i).toString(16).padStart(40,'0')))}});
+ const rows=await data.discover();assert.ok(rows.some(c=>c.address===launches[0].address),'The currently most active launch must not be skipped by a cursor over a moving list');assert.ok(rows.some(c=>c.address===launches[5].address));
+ assert.equal(rows.length,12);assert.equal(new Set(rows.map(c=>c.address)).size,12);assert.equal(store.get('token-risk-reports',launches[0].address),null);assert.deepEqual(store.all('token-risk-reports'),before);assert.equal(store.get('paper-fills','retained-loss').netUsd,-7);
+});
 const pair=()=>({chainId:'bsc',dexId:'pancakeswap',pairAddress:POOL,baseToken:{address:TOKEN},quoteToken:{address:WBNB},labels:['v2'],priceUsd:'1',liquidity:{usd:20000},volume:{h24:5000},priceChange:{h24:1},txns:{h24:{buys:10,sells:8}}});
 const check=()=>({chain:{id:'56'},token:{address:TOKEN,symbol:'Meme',totalHolders:200},pair:{chainId:'56',pair:{address:POOL}},simulationSuccess:true,simulationResult:{buyTax:0,sellTax:0,transferTax:0},honeypotResult:{isHoneypot:false},contractCode:{isProxy:false,hasProxyCalls:false,openSource:true,rootOpenSource:true},summary:{riskLevel:0,flags:[]}});
 const holders=()=>({totalSupply:'1000000',holders:[{address:POOL,balance:'500000',isContract:true},...Array.from({length:50},(_,i)=>({address:'0x'+(100+i).toString(16).padStart(40,'0'),balance:'10000',isContract:false}))]});
@@ -128,7 +141,7 @@ test('Recent transfer links validate token, block range and transfer amounts wit
 });
 test('Meme screening runs through the buy guard without GMGN and keeps unavailable labels null',async t=>{
  const {store,data}=sourceFixture(t);let gmgn=0;const guard=new TokenRiskGuard(store,{source:{riskReport:token=>data.riskReport(token),info:()=>{gmgn++;throw Error();}}});t.after(()=>guard.close());
- const r=await guard.assertBuy(TOKEN,{sizeUsd:20,marketPrice:1});assert.equal(r.policy,'bsc-meme-paper-v1');assert.equal(r.state,'screened-limited');assert.equal(r.metrics.bundlerVolumeShare,null);assert.equal(r.metrics.linkedFunding,null);assert.equal(r.metrics.transferSample.available,true);assert.equal(gmgn,0);await assert.rejects(guard.assertBuy(TOKEN,{sizeUsd:201}),/1%/);
+ const r=await guard.assertBuy(TOKEN,{sizeUsd:20,marketPrice:1});assert.equal(r.policy,'bsc-meme-paper-v1');assert.equal(r.state,'screened-limited');assert.equal(r.metrics.bundlerVolumeShare,null);assert.equal(r.metrics.linkedFunding,null);assert.equal(r.metrics.transferSample.available,true);assert.equal(gmgn,0);await guard.assertBuy(TOKEN,{sizeUsd:201});
 });
 
 test('Meme discovery does not give expired, missing or future screening a higher priority than current risk evidence',async t=>{

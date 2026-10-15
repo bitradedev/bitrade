@@ -26,7 +26,6 @@ export const RISK_POLICY = {
   maxLargestFloatShare: 0.1,
   maxLinkedFloatShare: 0.25,
   maxPriceGapPct: 20,
-  maxOrderLiquidityShare: 0.01,
 };
 export function currentRiskEvidence(report, now = Date.now()) {
   return (
@@ -301,18 +300,8 @@ export class TokenRiskGuard {
     if (refresh) await this.refresh(token);
     const report = this.snapshot(token, marketPrice);
     if (!report.buyAllowed) throw fail('开仓风险检查未通过：' + report.reasons.join('；'), 409);
-    if (
-      !Number.isFinite(sizeUsd) ||
-      sizeUsd <= 0 ||
-      !positive(report.metrics?.liquidityUsd) ||
-      sizeUsd > report.metrics.liquidityUsd * RISK_POLICY.maxOrderLiquidityShare
-    )
-      throw fail(
-        report.metrics?.liquidityKind === 'curve-reserve'
-          ? '开仓金额超过已核实曲线实有储备的1%，暂不允许买入'
-          : '开仓金额超过已核实池流动性的1%，暂不允许买入',
-        409,
-      );
+    if (!Number.isFinite(sizeUsd) || sizeUsd <= 0 || !positive(report.metrics?.liquidityUsd))
+      throw fail('买入金额或可交易流动性尚未核实，暂不允许买入', 409);
     return report;
   }
   async close() {
