@@ -69,7 +69,7 @@ verified quote and whole-position reverse quote, then wait at least 500 ms and
 a later BSC block for another quote and a renewed whole-position reverse quote.
 AI selects the amount without a fixed pool-liquidity percentage cap. Buy price
 impact must be known and at most 2% at preparation and matching; later-block
-maximum slippage remains 1%. These are execution-price checks, not position-size percentages. Buy outlay including
+maximum slippage is 30% (3,000 basis points). This is the allowed output decline from the preparation quote, not an assumed loss: fills use the actual later quote. An explicit higher minimum output still takes precedence. These are execution-price checks, not position-size percentages. Buy outlay including
 gas/approval costs must fit the available virtual balance. Stale, incomplete, or unavailable
 quotes are rejected. There are no fabricated fills when the feed is unavailable.
 

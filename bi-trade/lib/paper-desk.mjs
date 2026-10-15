@@ -318,11 +318,19 @@ export class PaperDesk {
           const latest = this.store.get('paper-orders', o.id);
           if (latest.status !== 'quoting' || rev !== this.revision) continue;
           if (Date.now() - q.at > 5000 || !this.head().connected) throw fail('撮合报价已过期');
+          // Match the limit recorded when this order was prepared. Old orders
+          // retain their original limit; changing policy never rewrites history.
+          const slippageBps = o.slippageBps ?? 100;
           if (
-            BigInt(q.outputRaw) < (BigInt(o.reference.outputRaw) * 99n) / 100n ||
-            BigInt(q.outputRaw) < BigInt(o.minOutput)
+            !Number.isInteger(slippageBps) ||
+            slippageBps < 0 ||
+            slippageBps > PAPER_EXECUTION_POLICY.maxFillSlippageBps
           )
-            throw fail('新区块报价超出1%滑点或最低输出限制');
+            throw fail('模拟订单滑点设置无效');
+          const minimumOutput =
+            (BigInt(o.reference.outputRaw) * BigInt(10000 - slippageBps) + 9999n) / 10000n;
+          if (BigInt(q.outputRaw) < minimumOutput || BigInt(q.outputRaw) < BigInt(o.minOutput))
+            throw fail('新区块报价超出' + slippageBps / 100 + '%滑点或最低输出限制');
           this.policyCheck(agent, o.side, o.token, q);
           this.fill(o, q);
         } catch (e) {

@@ -20,7 +20,7 @@ test('AI-selected paper sizing uses executable impact at preparation and fill, p
  const f=await fixture(t,{showcase:true}),a=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
  f.app.paper.seed(a.id,f.g.fx);const before=structuredClone(f.app.paper.account(a.id));
  const constraints=f.app.showcase.context(a).executionConstraints;
- assert.equal('maxLiquidityShare' in constraints,false);assert.equal(constraints.maxBuyPriceImpactPct,2);assert.equal(constraints.maxFillSlippageBps,100);
+ assert.equal('maxLiquidityShare' in constraints,false);assert.equal(constraints.maxBuyPriceImpactPct,2);assert.equal(constraints.maxFillSlippageBps,3000);
  let impact=0.5,reverseUnavailable=false,outputFactor=100n;const quote=f.g.quote.bind(f.g);
  f.g.quote=async p=>{if(p.side==='sell'&&reverseUnavailable)throw Error('Reverse quote unavailable');const q=await quote(p);return {...q,priceImpactPct:p.side==='buy'?impact:95,outputRaw:p.side==='buy'?String(BigInt(q.outputRaw)*outputFactor/100n):q.outputRaw};};
  const input={token:TOKEN,side:'buy',amount:'150000000000000000'};
@@ -29,11 +29,37 @@ test('AI-selected paper sizing uses executable impact at preparation and fill, p
  assert.equal(f.app.paper.orders(a.id).length,0);assert.deepEqual(f.app.paper.account(a.id),before);
  const pending=await f.app.paper.submit(a,{...input,id:'impact-changed'});pending.dueAt=0;f.app.store.put('paper-orders',pending);f.g.advance();impact=2.1;await f.app.paper.tick();
  assert.equal(f.app.store.get('paper-orders',pending.id).status,'failed');assert.equal(f.app.paper.fills(a.id).length,0);assert.deepEqual(f.app.paper.account(a.id),before);
- impact=0.5;const slippage=await f.app.paper.submit(a,{...input,id:'slippage-changed'});slippage.dueAt=0;f.app.store.put('paper-orders',slippage);f.g.advance();outputFactor=98n;await f.app.paper.tick();assert.match(f.app.store.get('paper-orders',slippage.id).error,/1%滑点/);assert.equal(f.app.paper.fills(a.id).length,0);
+ impact=0.5;const slippage=await f.app.paper.submit(a,{...input,id:'slippage-changed'});slippage.dueAt=0;f.app.store.put('paper-orders',slippage);f.g.advance();outputFactor=69n;await f.app.paper.tick();assert.match(f.app.store.get('paper-orders',slippage.id).error,/30%滑点/);assert.equal(f.app.paper.fills(a.id).length,0);
  outputFactor=100n;const reverseChanged=await f.app.paper.submit(a,{...input,id:'reverse-changed'});reverseChanged.dueAt=0;f.app.store.put('paper-orders',reverseChanged);f.g.advance();reverseUnavailable=true;await f.app.paper.tick();assert.match(f.app.store.get('paper-orders',reverseChanged.id).error,/Reverse quote/);assert.equal(f.app.paper.fills(a.id).length,0);assert.deepEqual(f.app.paper.account(a.id),before);reverseUnavailable=false;
  outputFactor=100n;impact=2;const accepted=await f.app.paper.submit(a,{...input,id:'accepted-large'});accepted.dueAt=0;f.app.store.put('paper-orders',accepted);f.g.advance();await f.app.paper.tick();
  assert.equal(f.app.paper.fills(a.id).length,1);assert.equal(f.app.paper.fills(a.id)[0].usd,150.01);assert.equal(f.app.paper.check(a.id),true);
 });
+test('paper buys and sells accept up to 30% output slippage, reject one raw unit below, honor explicit minimums and retain old order limits',async t=>{
+ for(const side of ['buy','sell'])for(const scenario of ['ten-percent','boundary','below-boundary','explicit-minimum','legacy']){
+  const f=await fixture(t),owner=await f.owner(),registered=await f.register(owner),a=f.app.store.get('agents',registered.agentId);
+  f.app.paper.seed(a.id,f.g.fx);
+  if(side==='sell'){
+   const buy=await f.app.paper.submit(a,{id:'seed-position',token:TOKEN,side:'buy',amount:'10000000000000000'});buy.dueAt=0;f.app.store.put('paper-orders',buy);f.g.advance();await f.app.paper.tick();
+  }
+  const before=structuredClone(f.app.paper.account(a.id)),lots=structuredClone(f.app.paper.lots(a.id)),fills=f.app.paper.fills(a.id).length;
+  const order=await f.app.paper.submit(a,{id:'slippage-'+scenario,token:TOKEN,side,amount:side==='buy'?'10000000000000000':lots[0].remainingRaw});
+  assert.equal(order.slippageBps,3000);const reference=BigInt(order.reference.outputRaw);
+  const output=scenario==='ten-percent'?reference*9n/10n:scenario==='legacy'?reference*98n/100n:reference*7n/10n-(scenario==='below-boundary'?1n:0n);
+  if(scenario==='legacy')order.slippageBps=100;
+  if(scenario==='explicit-minimum')order.minOutput=String(reference*8n/10n);
+  order.dueAt=0;f.app.store.put('paper-orders',order);const quote=f.g.quote.bind(f.g);
+  f.g.quote=async p=>{const q=await quote(p);return p.side===side?{...q,outputRaw:String(output),priceUsd:side==='buy'?Number(reference)/Number(output):Number(output)/Number(reference)}:q;};
+  f.g.advance();await f.app.paper.tick();await f.app.paper.tick();
+  const accepted=['ten-percent','boundary'].includes(scenario),saved=f.app.store.get('paper-orders',order.id);
+  assert.equal(saved.status,accepted?'filled':'failed');assert.equal(f.app.paper.fills(a.id).length,fills+Number(accepted));
+  if(accepted){
+   assert.equal(saved.quote.outputRaw,String(output));const fill=f.app.paper.fills(a.id).find(x=>x.orderId===order.id);assert.ok(fill);
+   if(side==='buy'){assert.equal(fill.tokenRaw,String(output));assert.equal(fill.usd,10.01);}else {assert.equal(fill.nativeRaw,String(output-10000000000000n));assert.ok(fill.netUsd<0);assert.equal(f.app.paper.lots(a.id).length,0);}
+  }else {assert.deepEqual(f.app.paper.account(a.id),before);assert.deepEqual(f.app.paper.lots(a.id),lots);assert.match(saved.error,scenario==='legacy'?/1%滑点/:/30%滑点/);}
+  assert.equal(f.app.paper.check(a.id),true);assert.equal(f.app.live.orders().length,0);
+ }
+});
+
 test('temporary AI failure keeps the last real decision, schedules a future retry and recovers without a trade',async t=>{
  let failNow=true,calls=0;
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;if(failNow)throw aiRequestFailure({name:'TimeoutError'});return {action:'hold',token:null,sizeUsd:null,exit:null,reason:'真实恢复后继续观察'};}}}});

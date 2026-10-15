@@ -2,7 +2,7 @@ import { fail } from './database-core.mjs';
 
 export const PAPER_EXECUTION_POLICY = Object.freeze({
   maxBuyPriceImpactPct: 2,
-  maxFillSlippageBps: 100,
+  maxFillSlippageBps: 3000,
 });
 
 export function assertEntryQuoteImpact(quote) {
