@@ -660,12 +660,12 @@ test('platform-only five-minute and narrative entry checks survive preparation a
  let usd=2999,calls=0,checks=0;
  const narrative={verdict:'unknown',thesis:'发行资料的故事与热点关联未证实',catalyst:null,risks:'未核实社交传播，不把名称当热点',evidenceIds:[]};
  const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return{action:'buy',token:TOKEN,sizeUsd:100,reason:'结合近期成交判断；项目叙事与传播关联仍未知',exit:null,narrative};}}}});
- const snapshot=()=>{const at=Date.now(),v={usd,at,windowMs:300000,quality:'observed-lower-bound',fromTime:at-300000,toTime:at-1000};return{policyVersion:1,volume5m:v,eligibility:volumeEligibility(v,at),narrative:{sources:[]}};};
+ const snapshot=()=>{const at=Date.now()-100,v={usd,at,windowMs:300000,quality:'observed-lower-bound',fromTime:at-300000,toTime:at-1000};return{policyVersion:1,volume5m:v,eligibility:volumeEligibility(v,at),narrative:{sources:[]}};};
  f.g.builtinEntrySnapshot=snapshot;f.g.assertBuiltinEntry=async()=>{checks++;assertVolume5m(snapshot().volume5m);};
  const builtin=f.app.store.get('agents',SHOWCASE_PROFILES[0].id);
  await f.app.showcase.run({agentId:builtin.id});assert.equal(calls,0);assert.equal(f.app.paper.orders(builtin.id).length,0);
  usd=3000;f.app.showcase.status(builtin.id,{nextDecisionAt:0});await f.app.showcase.run({agentId:builtin.id});
- const o=f.app.paper.orders(builtin.id)[0];assert.ok(o);assert.equal(f.app.store.get('showcase-entry-assessments',o.id).narrative.verdict,'unknown');
+ const o=f.app.paper.orders(builtin.id)[0];assert.ok(o,JSON.stringify(f.app.store.get('showcase-status',builtin.id)));assert.equal(f.app.store.get('showcase-entry-assessments',o.id).narrative.verdict,'unknown');
  usd=2999;f.app.store.put('paper-orders',{...o,dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',o.id).status,'failed');assert.equal(f.app.paper.fills(builtin.id).length,0);
  usd=3500;f.app.showcase.status(builtin.id,{nextDecisionAt:0});await f.app.showcase.run({agentId:builtin.id});const next=f.app.paper.orders(builtin.id).find(x=>x.status==='queued');assert.ok(next,JSON.stringify(f.app.store.get('showcase-status',builtin.id)));f.app.store.put('paper-orders',{...next,dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',next.id).status,'filled');
  usd=0;const before=checks;const sale=await f.app.showcase.sell(builtin,TOKEN,'成交量下降，主动退出','volume-exit');f.app.store.put('paper-orders',{...f.app.store.get('paper-orders',sale.id),dueAt:0});f.g.advance();await f.app.paper.tick();assert.equal(f.app.store.get('paper-orders',sale.id).status,'filled',JSON.stringify(f.app.store.get('paper-orders',sale.id)));assert.equal(checks,before);
