@@ -24,3 +24,15 @@
 - [Pancake V3 Swap事件（含两项protocolFees字段）](https://github.com/pancakeswap/pancake-v3-contracts/blob/main/projects/v3-core/contracts/interfaces/pool/IPancakeV3PoolEvents.sol)
 
 当前限制：没有实时全网舆情、独立事件检索或完整同源/刷量鉴别。资料缺失保留未知，不能称为完整叙事尽调或保证抓住上涨币。无固定仓位/止盈止损改动，真钱关闭，账户和亏损历史不重置。
+
+## 发布验收
+
+功能提交 c6ba44d，检查时间样本修正 0c27f57（仅测试变化，服务包相同）。[最终完整GitHub检查](https://github.com/bitradedev/bitrade/actions/runs/38703597063)通过。初次CI发现隔离样本在context.at之后生成而被正确拒绝，改为样本先于上下文，不放宽真实时间校验。
+
+已发布VPS包SHA256：725aae02012a38241a9ae2c767ea4c39c34da9e1d4297bd1941dd8b110b747a6；Cloudflare版本58f9268d-a402-4b33-9e85-095b3bdcdf20。在线SQLite备份通过，发布前后财务指纹均为94ef9fe307c18742de3816ac7ecc4eee77eeeca28112241316b0e964ed61e4f6，4账户/30订单/27成交保留。没有重置账本、造单或改变个人Agent规则。
+
+08:12:33Z正式/home、landing.css?v=20261015-3、ui-catalog.js?v=20261015-5全部200且字节与本地一致；API200、BSC链头连接、真钱关闭。正式浏览器导航超时，未声称完成线上视觉复检，视觉证据为本地1280/390px和线上同字节资源。
+
+08:11:59Z及08:14:06Z自然后台已产生4只候选的真实5分钟成交下界记录：两个高于3K（首次约91415.88/5613.33美元），另两个约0.59/264.41美元，不把它们伪装成满足门槛。两只高量候选各取得2项带来源的项目描述/链接，均标为项目资料、不是独立传播证明。原观测时间保留，后续旧记录不能续鲜通过。
+
+截至08:14:06Z，尚无showcase-entry-assessments新成交评估记录或新规则下自然成交；原有两款Agent部分持仓退出报价不可用，一款原有决策响应延迟仍存在，未用这次成交量/叙事和排版更新冒称这些问题已恢复。没有扩大本次范围去强制重放旧评估或制造验收交易。私有证据：.cloud-test-build/entry-live-first.json、entry-live-second.json、entry-live-assets.json及entry-release-c6ba44d/；服务器发布与备份位于/opt/bitrade/releases/20261015-entry-c6ba44d。
