@@ -9,6 +9,7 @@ import {
   canonicalJson,
 } from './lib/database-core.mjs';
 import { OwnerAuth, address, COOKIE } from './lib/auth.mjs';
+import officialToken from './web/official-token.json' with { type: 'json' };
 
 import { PaperDesk } from './lib/paper-desk.mjs';
 import { PAPER_EXECUTION_POLICY } from './lib/paper-execution-policy.mjs';
@@ -584,7 +585,7 @@ export async function createPlatformCore(options) {
   }
   let tokenCache = { at: 0, market: null };
   async function tokenInfo() {
-    const ca = options.tokenAddress ?? process.env.BI_TRADE_TOKEN_ADDRESS;
+    const ca = options.tokenAddress ?? process.env.BI_TRADE_TOKEN_ADDRESS ?? officialToken.address;
     if (!ca) return { symbol: 'BI', address: null, issued: false, market: null };
     const token = address(ca);
     if (Date.now() - tokenCache.at > 60000) {
@@ -602,7 +603,15 @@ export async function createPlatformCore(options) {
         tokenCache.market = null;
       }
     }
-    return { symbol: 'BI', address: token, issued: true, market: tokenCache.market, holders: null };
+    return {
+      symbol: token === officialToken.address ? officialToken.symbol : 'BI',
+      name: token === officialToken.address ? officialToken.name : null,
+      chainId: 56,
+      address: token,
+      issued: true,
+      market: tokenCache.market,
+      holders: null,
+    };
   }
   function publicState(url) {
     const tracked = store.all('agents').filter((a) => a.public && !a.closedAt),

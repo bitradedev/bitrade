@@ -863,3 +863,5 @@ Object.assign(window.BI_UI_EN,{
  "本次尚未完成叙事判断，等待重新评估。":"The narrative assessment is incomplete; awaiting a new evaluation.",
  "本次尚未完成新的开仓评估，等待重新判断。":"The updated entry assessment is incomplete; awaiting a new evaluation."
 });
+
+Object.assign(window.BI_UI_EN,{"查看合约 ↗":"View contract ↗"});

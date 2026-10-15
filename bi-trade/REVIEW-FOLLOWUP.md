@@ -1,5 +1,9 @@
 # 检查文档处理记录
 
+### 2026-10-15 公布用户提供的官方合约
+
+用户指定BSC地址0xc534742eecc89651bba0cb670566a9c2d46cffff。主网只读RPC核验chainId=56、有代码、name=bitrade.site、symbol=BiTrade；仅公开现有地址，不发行或交易。新增公开官方配置，首页可独立于账户接口读取并复制，查看入口改为BscScan合约；API默认同一配置，行情/持有人未知保留空值。中英文与原配色保持。115项产品检查通过，待上线核对。
+
 ### 2026-10-15 X账号链接更新
 
 按用户提供的新账号，将首页及滚动介绍页顶部X链接从https://x.com/BITradeAI改为https://x.com/BITradeAgent，保留新标签打开及noopener/noreferrer。仅两份HTML链接更新，e790a3e已推送GitHub并发布Cloudflare版本16ae5974-b3f5-4fd9-9343-428cf8b6f247，VPS同步同资源且后台哈希/进程ID未变。13:36:09Z正式/及/home均200、与本地字节一致、各包含新链接且无旧链接。GitHub短暂连接失败已恢复；这次为静态链接检查，没有新增交易或账本操作。证据.cloud-test-build/x-link-live.json及x-link-e790a3e/。
