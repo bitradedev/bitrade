@@ -14,7 +14,23 @@ export function startShowcaseDecision(host, app, options) {
   return true;
 }
 export async function runDecisionRound(host, app, market, held = null) {
-  await host.market.refresh([market.address], { limit: 1, onlyRequested: true });
+  const peers =
+    host.marketPolicy?.selfHosted && !held
+      ? (host.market.prioritizedEntryMarkets?.() ?? host.market.markets?.() ?? [])
+          .filter(
+            (m) =>
+              host.market.isEntryCandidate(m.address) &&
+              host.risk.snapshot(m.address, m.priceUsd).buyAllowed,
+          )
+          .map((m) => m.address)
+      : [];
+  const tokens = [...new Set([market.address, ...peers])].slice(
+    0,
+    host.marketPolicy?.selfHosted && !held ? host.marketPolicy.refreshBatch : 1,
+  );
+  // Refresh the comparison set together before entry evaluation. Held exits
+  // and Cloudflare's small-budget path keep their single-token priority.
+  await host.market.refresh(tokens, { limit: tokens.length, onlyRequested: true });
   const permitted = app.showcase
     .freshMarkets()
     .some((m) => host.risk.snapshot(m.address, m.priceUsd).buyAllowed);

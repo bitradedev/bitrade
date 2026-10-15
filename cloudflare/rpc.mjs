@@ -63,7 +63,7 @@ export class CloudRpc {
     this.cache = new Map();
     this.pending = new Map();
     this.id = 0;
-    if (![1, 2].includes(concurrency)) throw Error('Unsupported RPC concurrency');
+    if (![1, 2, 4].includes(concurrency)) throw Error('Unsupported RPC concurrency');
     this.concurrency = concurrency;
     this.queue = [];
     this.running = 0;

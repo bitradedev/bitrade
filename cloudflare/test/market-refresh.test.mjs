@@ -41,7 +41,7 @@ test('Exact requested refresh never spends its evidence window or request budget
   assert.equal(discovered, 0);
   assert.deepEqual(refreshed, [token(1)]);
 });
-test('Self-hosted refresh prioritizes actual activity, covers all exploration slots and keeps only two jobs running', async () => {
+test('Self-hosted refresh prioritizes actual activity, covers all exploration slots and covers twelve candidates in three rounds with four jobs running', async () => {
   const now = Date.now(),
     candidates = Array.from({ length: 12 }, (_, i) => ({
       id: token(i + 1),
@@ -67,15 +67,15 @@ test('Self-hosted refresh prioritizes actual activity, covers all exploration sl
     market.catalog.set(t, { ...market.catalog.get(t), updatedAt: Date.now() });
     running--;
   };
-  for (let i = 0; i < 11; i++) {
+  for (let i = 0; i < 3; i++) {
     await market.refresh([], { limit: runtime.refreshBatch });
     const b = store.get('cloud-settings', 'market-cursor').lastBatch;
     batches.push(b);
-    assert.equal(b.length, 2);
+    assert.equal(b.length, 6);
     assert.ok(b.some((m) => m.token === candidates[8].address));
   }
   assert.equal(visited.size, 12, 'An independent exploration cursor must not skip odd slots');
-  assert.equal(peak, 2);
+  assert.equal(peak, 4);
   assert.equal(market.prioritizedEntryMarkets()[0].address, candidates[8].address);
   const saved = store.get('cloud-settings', 'market-cursor');
   const rebuilt = new CloudMarket(store, { memeOnly: true, gmgn: {}, runtime });
@@ -115,13 +115,34 @@ test('Held tokens and a busy launch cannot starve other entries or consume their
   assert.equal(first.length,2,'Without competing priorities the configured batch size is unchanged');
 });
 
+test('Six-token price pulses use four bounded jobs, rotate peers and never freshen a failed price or risk report', async () => {
+  const {market,store}=fixture({runtime:marketRuntime({BI_TRADE_SELF_HOSTED:'true'})}),now=Date.now(),old=now-20000;
+  const candidates=Array.from({length:8},(_,i)=>token(i+1));
+  market.fxValue={usd:750,at:now};
+  for(const address of candidates){
+    market.catalog.set(address,{address,category:'meme',quality:'verified',updatedAt:old});
+    market.metadata.set(address,{source:'flap-bsc',at:now});
+    store.put('token-risk-reports',{id:address,policy:'bsc-flap-paper-v1',buyAllowed:true,fetchedAt:old});
+  }
+  const visited=new Set();let running=0,peak=0;
+  market.refreshMarket=async address=>{
+    running++;peak=Math.max(peak,running);visited.add(address);
+    try{await new Promise(resolve=>setImmediate(resolve));if(address===candidates[0])throw Error('Read failed');market.catalog.set(address,{...market.catalog.get(address),updatedAt:Date.now()});}
+    finally{running--;}
+  };
+  await market.pulse(6);assert.equal(visited.size,6);assert.equal(peak,4);
+  await market.pulse(6);assert.equal(visited.size,8);assert.equal(market.catalog.get(candidates[0]).updatedAt,old);
+  assert.ok(candidates.slice(1).every(t=>market.catalog.get(t).updatedAt>old));
+  assert.ok(candidates.every(t=>store.get('token-risk-reports',t).fetchedAt===old));
+});
+
 test('Self-hosted request capacity is bounded separately while the Cloudflare limit stays 45', async () => {
   const cloud = marketRuntime(),
     server = marketRuntime({ BI_TRADE_SELF_HOSTED: 'true' });
   assert.equal(cloud.requestsPerRound, 45);
   assert.equal(cloud.rpcConcurrency, 1);
   assert.equal(cloud.flapIntervalMs, 120000);
-  assert.equal(server.rpcConcurrency, 2);
+  assert.equal(server.rpcConcurrency, 4);
   assert.equal(server.flapIntervalMs, 30000);
   const io = new IOBudget(server.requestsPerRound, async () => Response.json({}));
   await io.run('alarm', async () => {

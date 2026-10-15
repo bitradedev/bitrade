@@ -11,9 +11,9 @@ const cloud = Object.freeze({
 const server = Object.freeze({
   selfHosted: true,
   requestsPerRound: 128,
-  rpcConcurrency: 2,
-  refreshBatch: 2,
-  refreshConcurrency: 2,
+  rpcConcurrency: 4,
+  refreshBatch: 6,
+  refreshConcurrency: 4,
   discoveryIntervalMs: 30000,
   flapIntervalMs: 30000,
 });

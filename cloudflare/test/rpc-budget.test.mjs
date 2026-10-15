@@ -18,6 +18,22 @@ test('Two self-hosted RPC requests may overlap, but an in-flight success cannot 
   await assert.rejects(rpc.request('eth_getLogs',[{}]),/冷却/);assert.equal(calls,2);
 });
 
+test('Four-request RPC queue remains bounded and preserves cooldown despite three concurrent successes',async()=>{
+ let enter,release;const ready=new Promise(r=>enter=r),success=new Promise(r=>release=r);
+ let calls=0,active=0,peak=0;
+ const rpc=new CloudRpc('https://four.example',{concurrency:4,now:()=>1000000,fetchImpl:async()=>{
+  const n=++calls;active++;peak=Math.max(peak,active);if(calls===4)enter();
+  if(n===1){await ready;active--;return Response.json({}, {status:429,headers:{'Retry-After':'60'}});}
+  await success;active--;return Response.json({result:'0x38'});
+ }});
+ const pending=Promise.allSettled(Array.from({length:12},()=>rpc.request('eth_chainId')));
+ await ready;while(!rpc.status().limited)await Promise.resolve();release();const results=await pending;
+ assert.equal(peak,4);assert.equal(calls,4);assert.equal(results.filter(r=>r.status==='fulfilled').length,3);
+ assert.equal(rpc.status().retryAt,1065000);assert.equal(rpc.status().limited,true);
+ await assert.rejects(rpc.request('eth_chainId'),/冷却/);assert.equal(calls,4);
+ assert.throws(()=>new CloudRpc('https://four.example',{concurrency:5}),/concurrency/);
+});
+
 test('Exact-block contract cache shares immutable reads without crossing recipients, blocks, forks or latest calls', async () => {
   const abi = parseAbi(['function value() view returns (uint256)']),
     token = '0x' + '11'.repeat(20),

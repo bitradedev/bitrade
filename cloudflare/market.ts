@@ -728,15 +728,15 @@ export class CloudMarket {
       (_, i) => pool[(this.pulseCursor + i) % pool.length],
     );
     this.pulseCursor = pool.length ? (this.pulseCursor + limit) % pool.length : 0;
-    for (const m of selected) {
+    const refresh = async (m: any) => {
       try {
         const md = this.metadata.get(m.address);
         if (md.source === 'flap-bsc') {
           await this.refreshMarket(m.address);
-          continue;
+          return;
         }
-        if (Date.now() - md.at >= 120000) continue;
-        if (['public-bsc', 'meme-bsc'].includes(md.source) && !this.routes.has(m.address)) continue;
+        if (Date.now() - md.at >= 120000) return;
+        if (['public-bsc', 'meme-bsc'].includes(md.source) && !this.routes.has(m.address)) return;
         const v = this.venues.bsc,
           cached = this.routes.get(m.address),
           r =
@@ -767,9 +767,9 @@ export class CloudMarket {
           r.state?.platform !== 'flap' &&
           (BigInt(r.state?.buyTaxRate || 0) || BigInt(r.state?.sellTaxRate || 0))
         )
-          continue;
+          return;
         const priceUsd = spot * 10 ** (td - qd) * usd;
-        if (!Number.isFinite(priceUsd) || priceUsd <= 0 || Date.now() - b.time > 15000) continue;
+        if (!Number.isFinite(priceUsd) || priceUsd <= 0 || Date.now() - b.time > 15000) return;
         const statsFresh =
           Number.isFinite(m.marketDataAt) &&
           Date.now() - m.marketDataAt >= 0 &&
@@ -798,7 +798,9 @@ export class CloudMarket {
       } catch {
         /* Failed reads never refresh a market timestamp. */
       }
-    }
+    };
+    for (let i = 0; i < selected.length; i += this.runtime.refreshConcurrency)
+      await Promise.all(selected.slice(i, i + this.runtime.refreshConcurrency).map(refresh));
   }
   async quote(request: any) {
     if (request.chain !== 'bsc' || !['buy', 'sell'].includes(request.side))
