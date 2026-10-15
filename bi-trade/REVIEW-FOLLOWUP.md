@@ -2,7 +2,7 @@
 
 ### 2026-10-15 公布用户提供的官方合约
 
-用户指定BSC地址0xc534742eecc89651bba0cb670566a9c2d46cffff。主网只读RPC核验chainId=56、有代码、name=bitrade.site、symbol=BiTrade；仅公开现有地址，不发行或交易。新增公开官方配置，首页可独立于账户接口读取并复制，查看入口改为BscScan合约；API默认同一配置，行情/持有人未知保留空值。中英文与原配色保持。115项产品检查通过，待上线核对。
+用户指定BSC地址0xc534742eecc89651bba0cb670566a9c2d46cffff。主网只读RPC核验chainId=56、有代码、name=bitrade.site、symbol=BiTrade；仅公开现有地址，不发行或交易。新增公开官方配置，首页可独立于账户接口读取并复制，查看入口改为BscScan合约；API默认同一配置，行情/持有人未知保留空值。中英文与原配色保持。115项产品检查通过，998a54b已推送并上线，Cloudflare版本9c05e87f-1d80-4284-b64d-c6ae95e40056，VPS包8197dd2f。正式/home与新版app/公开官方JSON均200；14:01:15Z/api/token返回准确CA、symbol=BiTrade、issued=true。发布前后财务指纹8a4f8880一致，4账户/31订单/28成交保留。未提交交易，未改费用或资金功能。证据.cloud-test-build/official-contract-live.json及contract-998a54b/。
 
 ### 2026-10-15 X账号链接更新
 
