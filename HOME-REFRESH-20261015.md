@@ -1,0 +1,12 @@
+# Homepage and Agent motion · 2026-10-15
+
+The user requested the latest Agent design from [their shared preview](https://chatgpt.com/s/cx_6ad065322e748191a02202fadbc0a60f), removal of the repeated standalone trade journal and slightly stronger background separation across the homepage.
+
+- The three independent character files already match the preview byte-for-byte. The newer workstation mouse group, irregular mouse/typing controller, hand targets, lighter gaze/blink/posture and wall-clock work cadence are integrated. Automatic entry greetings are removed. Existing 30 FPS limiting, low-power rendering, offscreen suspension, reduced-motion/global pause, theme updates, WebGL fallback and disposal remain. Mouse/keyboard motion illustrates the Agent character; it does not invent real trading activity.
+- The homepage's standalone journal, aggregate strip and associated navigation links are removed. Its DOM rendering and outage handling no longer expect the deleted container. Confirmed trade records remain in the selected Agent's workstation sidebar, details and Owner account. The preview's sample transactions were not imported.
+- Full-width fog-blue, blue-gray and navy sections now separate the hero, Agent arena, ranking, strategy explanation, connection steps, ecosystem information, FAQ and final call to action. Light/dark palettes, Chinese/English, mobile wrapping and entrance animations remain. Account pages and the standalone scroll introduction keep their layouts.
+- Public asset versions are advanced. The rebuilt Agent desk is reproducible from the checked-in source and existing locked Three.js dependency.
+
+Validation: 110 product checks pass, including bilingual account/record projection and outage behavior without the removed journal container. A deterministic five-minute motion run for each variant observes mouse movement and typing within the first twelve seconds, frequent pointer movement, short typing bursts, rests and no automatic greeting. Browser inspection covers all three real WebGL models, advancing frames, mouse mode, zero displayed wrist-target error, light Chinese and dark English, 390-pixel mobile width without horizontal overflow, and absence of the standalone journal. No browser console errors were observed.
+
+This release replaces frontend assets only. The running trading service, 30% new-order paper slippage policy and financial records are outside the change. Release and live acceptance follow after publishing.

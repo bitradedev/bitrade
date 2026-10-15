@@ -162,7 +162,6 @@ export function mountAgentDesk(container, options) {
         room = mountTrendStudio($('.desk-scene'), {
           variant: Math.max(0, ['trend', 'rebound', 'rotation'].indexOf(agent.avatar)),
           interactive: false,
-          greetOnEntry: true,
           compact: innerWidth < 900,
         });
         $('.desk-scene canvas')?.setAttribute('aria-label', agentName(agent));

@@ -85,7 +85,7 @@ test('public strategy details render saved exit rules in both languages and keep
 test('A storage outage renders an explicit bilingual pause without invented balances and backs off refreshes',async()=>{
  for(const language of ['zh','en']){
   const {ui,context}=preferences({'bi-ui-language':language}),app=readFileSync(resolve(web,'app.js'),'utf8'),nodes=new Map();
-  for(const id of ['content','public-wallets','ranking-board','public-ledger'])nodes.set('#'+id,{innerHTML:'',prepend(el){nodes.set('#'+el.id,el);}});
+  for(const id of ['content','public-wallets','ranking-board'])nodes.set('#'+id,{innerHTML:'',prepend(el){nodes.set('#'+el.id,el);}});
   context.document.querySelector=id=>nodes.get(id);context.document.createElement=()=>({remove(){nodes.delete('#'+this.id);}});
   context.location={pathname:'/home',origin:'https://bitrade.site'};context.BiUI=ui;
   vm.runInContext(app.slice(0,app.indexOf('const docSections=')),context);
@@ -93,7 +93,7 @@ test('A storage outage renders an explicit bilingual pause without invented bala
   let error;try{await context.api('/api/state');}catch(e){error=e;}
   assert.equal(error.code,'STORAGE_DAILY_QUOTA');context.serviceFailure(error);
   const html=nodes.get('#service-status').innerHTML;assert.ok(html.includes(language==='en'?'Service temporarily paused':'服务暂时暂停'));assert.ok(html.includes(language==='en'?'Expected recovery:':'预计恢复时间：'));
-  for(const id of ['public-wallets','ranking-board','public-ledger']){assert.ok(nodes.get('#'+id).innerHTML.includes(language==='en'?'Data temporarily unavailable':'数据暂时不可用'));assert.doesNotMatch(nodes.get('#'+id).innerHTML,/1,000|0\.00%/);}
+  for(const id of ['public-wallets','ranking-board']){assert.ok(nodes.get('#'+id).innerHTML.includes(language==='en'?'Data temporarily unavailable':'数据暂时不可用'));assert.doesNotMatch(nodes.get('#'+id).innerHTML,/1,000|0\.00%/);}
   vm.runInContext(app.split('\n').find(line=>line.startsWith('async function refresh()')),context);await context.refresh();assert.equal(calls,1);
   context.serviceFailure({...error,retryAt:null});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/Expected recovery|预计恢复时间/);context.serviceFailure({message:'<script>unsafe</script>'});assert.doesNotMatch(nodes.get('#service-status').innerHTML,/<script>/);context.serviceRecovered();assert.equal(nodes.has('#service-status'),false);
  }

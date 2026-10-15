@@ -1,6 +1,7 @@
 import { createTrendCharacter } from './characters/trend.js';
 import { createReboundCharacter } from './characters/rebound.js';
 import { createRotationCharacter } from './characters/rotation.js';
+import { createWorkBehavior } from './work-behavior.js';
 const characterFactories=[createTrendCharacter,createReboundCharacter,createRotationCharacter];
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -78,7 +79,8 @@ function makeWorkstation(scene,variant=0){
   const keys=new THREE.InstancedMesh(new RoundedBoxGeometry(.050,.018,.046,2,.006),material('#f7f6ed',.56),46);let n=0;const obj=new THREE.Object3D();
   for(let r=0;r<4;r++)for(let k=0;k<(r===3?10:12);k++){obj.position.set(-.345+k*.063,1.282,.735+r*.064);obj.updateMatrix();keys.setMatrixAt(n++,obj.matrix);}keys.castShadow=keys.receiveShadow=true;desk.add(keys);
   round(desk,[.27,.020,.046],[0,1.285,.953],material('#e1dac4',.6),.006);
-  const mouse=ball(desk,[.094,.045,.14],[.64,1.28,.89],light,28);tube(desk,[[.64,1.328,.8],[.64,1.326,.88]],.003,metal);
+  const mouse=new THREE.Group();mouse.position.set(.64,1.28,.89);desk.add(mouse);
+  ball(mouse,[.094,.045,.14],[0,0,0],light,28);tube(mouse,[[0,.048,-.09],[0,.046,-.01]],.003,metal);
   const charts=[];
   function monitor(x,y,z,yaw,w,h,kind){
     const group=new THREE.Group();group.position.set(x,y,z);group.rotation.y=yaw;scene.add(group);
@@ -107,8 +109,8 @@ function makeWorkstation(scene,variant=0){
   return{charts,mouse};
 }
 
-const MODE_NAMES={type:'专注敲键盘',observe:'抬头观察走势',mouse:'操作鼠标',rest:'放松一下',greet:'向你打招呼'};
-export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',compact=false,variant=0,interactive=true,greetOnEntry=false}={}){
+const MODE_NAMES={type:'短暂输入',observe:'观察行情',think:'核对数据',mouse:'检查屏幕',rest:'等待新信号',greet:'向你打招呼'};
+export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',compact=false,variant=0,interactive=true}={}){
   if(!container)throw Error('A scene container is required');
   const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true,powerPreference:'low-power'});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,compact?1.3:1.75));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=.90;renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFShadowMap;
@@ -128,16 +130,15 @@ export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',c
   const presets={hero:{position:compact?[4.65,3.12,7.35]:(agent.heroCamera??[4.3,3.25,5.6]),target:[-.05,1.12,.45]},face:{position:[2.1,2.57,4.45],target:[0,1.63,-.15]},screen:{position:[2.15,2.66,3.52],target:[-.54,1.54,1.04]}};
   let userPaused=false,dirty=true,lastPaint=0;
   let desiredCamera=null,disposed=false,visible=true,paused=matchMedia('(prefers-reduced-motion: reduce)').matches,mode='auto',t=0,last=0,frames=0,lastChart=-1,lastName='';
-  const blend={type:0,observe:0,mouse:0,greet:0,rest:1};
+  const behavior=createWorkBehavior({variant});let workState=null;
+  const blend={type:0,observe:1,think:0,mouse:0,greet:0,rest:0};
   function setView(view,immediate=false){const p=presets[view]||presets.hero;desiredCamera={position:V(...p.position),target:V(...p.target)};if(immediate){camera.position.copy(desiredCamera.position);controls.target.copy(desiredCamera.target);desiredCamera=null;controls.update();}}
   setView(initialView,true);controls.addEventListener('start',()=>{desiredCamera=null;});
   const reduceMotion=matchMedia('(prefers-reduced-motion: reduce)');
   const motionChange=()=>{paused=userPaused||reduceMotion.matches;dirty=true;};reduceMotion.addEventListener('change',motionChange);
   function pose(dt){
-    const introEnd=greetOnEntry?3.5+variant*.45:0,phase=Math.max(0,t-introEnd)%25;
-    const routine=variant===1?(phase<5?'observe':phase<11?'type':phase<18?'rest':phase<21?'mouse':'observe'):variant===2?(phase<6?'mouse':phase<10?'observe':phase<17?'type':'rest'):(phase<8?'type':phase<13?'observe':phase<19?'mouse':'rest');
-    const current=greetOnEntry&&t<introEnd?'greet':mode==='auto'?routine:mode;
-    for(const k in blend)blend[k]=THREE.MathUtils.damp(blend[k],Number(k===current),7,dt);
+    const work=behavior.sample(t,dt),automatic=mode==='auto',current=automatic?work.state:mode;workState=work;
+    for(const k in blend)blend[k]=THREE.MathUtils.damp(blend[k],Number(k===current),4,dt);
     if(lastName!==current){lastName=current;onStatus(MODE_NAMES[current],current);}
     const breathing=Math.sin(t*1.7)*.008;
     agent.spine.rotation.x=-.032-blend.type*.026+breathing;agent.chest.rotation.z=Math.sin(t*(variant===2?.96:.61))*(variant===2?.019:.008);
@@ -145,17 +146,32 @@ export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',c
     agent.neck.rotation.x=.06+blend.type*.065-blend.observe*.15-blend.greet*.04;
     agent.neck.rotation.z=Math.sin(t*.9)*.012+blend.greet*.045;
     agent.updateHead?.(t,blend);
-    const period=4.7+Math.sin(Math.floor(t/5)*1.7)*.65,blinkTime=t%period;
-    const blink=(Math.exp(-Math.pow((blinkTime-.15)/.073,2))+Math.exp(-Math.pow((t%13.7-.39)/.075,2)));
+    if(automatic){
+      agent.spine.rotation.x=-.026+Math.sin(t*1.45)*.0027-blend.type*.018+blend.rest*.014+work.posture;
+      agent.chest.rotation.z=Math.sin(t*.29+variant)*.002;
+      agent.neck.rotation.y=work.baseYaw+work.gazeYaw-blend.mouse*.015;
+      agent.neck.rotation.x=.045+work.gazePitch+blend.type*.025-blend.think*.006-blend.rest*.012;
+      agent.neck.rotation.z=Math.sin(t*.31+variant)*.003;
+    }
+    const blink=work.blink;
     agent.eyes.forEach(e=>e.scale.y=(agent.eyeOpenHeight??.103)*Math.max(.07,1-Math.min(1,blink)*.96));
     agent.applyBlink?.(blink);
-    agent.ears.forEach((e,i)=>{const side=i?1:-1;e.rotation.z=side*(agent.earTilt??-.22)+Math.sin(t*1.3+i*.8)*.021+blend.greet*side*.035;e.rotation.x=Math.sin(t*1.4+i*.9)*.026;});
+    agent.ears.forEach((e,i)=>{const side=i?1:-1;e.rotation.z=side*(agent.earTilt??-.22)+(automatic?work.ear*.018:Math.sin(t*1.3+i*.8)*.021+blend.greet*side*.035);e.rotation.x=automatic?Math.sin(t*.47+i)*.003:Math.sin(t*1.4+i*.9)*.026;});
     agent.updateExpression?.(t,blend);
-    agent.tail1.rotation.y=Math.sin(t*.94+variant)*.13;
-    if(agent.tail2)agent.tail2.rotation.x=Math.sin(t*1.08+.7)*.11;
-    if(agent.tail3)agent.tail3.rotation.z=Math.sin(t*1.3+1)*.08;
+    agent.tail1.rotation.y=Math.sin(t*(automatic?.23:.94)+variant)*(automatic?.025:.13);
+    if(agent.tail2)agent.tail2.rotation.x=Math.sin(t*(automatic?.27:1.08)+.7)*(automatic?.021:.11);
+    if(agent.tail3)agent.tail3.rotation.z=Math.sin(t*(automatic?.31:1.3)+1)*(automatic?.018:.08);
     agent.root.updateMatrixWorld(true);
     agent.arms.forEach((a,i)=>{
+      if(automatic){
+        const pawHeight=variant===1?.105:.081,keyY=1.296+pawHeight+.026,restY=1.24+pawHeight*.94;
+        const target=i===0?V(-.32,restY,.73):V(work.mouseX,1.31+pawHeight*.84,work.mouseZ-.14);
+        target.lerp(V(a.side*.28+work.keyX[i],keyY,.78+work.keyZ[i]),blend.type);
+        target.lerp(V(i===0?-.35:.43,restY,.69),blend.rest);
+        a.workTarget??=a.target.clone();a.workTarget.lerp(target,1-Math.exp(-dt*11));
+        a.target.copy(a.workTarget);a.target.y-=blend.type*work.taps[i]*.028+(i===1?blend.mouse*work.click*.008:0);
+        solveArm(a,a.target);return;
+      }
       const side=a.side,target=V(side*.28,1.284,.77);
       // Different rhythms, rest intervals, and tiny finger contacts avoid a mirrored loop.
       const tap=Math.max(0,Math.sin(t*(variant===1?(i?5.8:5.2):i?10.3:8.7)+i*2.2))*Math.max(0,Math.sin(t*.9+i)+.35);
@@ -167,16 +183,16 @@ export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',c
       if(i===1){target.lerp(agent.greetingTarget?agent.greetingTarget(t):V(.98+Math.sin(t*5.8)*.03,1.49+Math.sin(t*5.8)*.07,.47),blend.greet);}
       a.target.copy(target);solveArm(a,target);
     });
-    desk.mouse.position.x=.64+blend.mouse*Math.sin(t*1.2)*.04;desk.mouse.position.z=.89+blend.mouse*Math.cos(t*.83)*.035;
-    const tick=Math.floor(t*5);if(tick!==lastChart){lastChart=tick;desk.charts.forEach(chart=>chart.draw(t));}
+    desk.mouse.position.x=automatic?work.mouseX:.64+blend.mouse*Math.sin(t*1.2)*.04;desk.mouse.position.z=automatic?work.mouseZ:.89+blend.mouse*Math.cos(t*.83)*.035;
+    const tick=Math.floor(t*(automatic&&work.state==='rest'?.5:2));if(tick!==lastChart){lastChart=tick;desk.charts.forEach(chart=>chart.draw(t*.6));}
   }
   function resize(){const w=Math.max(1,container.clientWidth),h=Math.max(1,container.clientHeight);renderer.setSize(w,h,false);camera.aspect=w/h;camera.fov=w/h<.9?44:33;camera.updateProjectionMatrix();dirty=true;}
   const resizeObserver=new ResizeObserver(resize);resizeObserver.observe(container);resize();
   const observer=new IntersectionObserver(e=>{visible=e[0]?.isIntersecting??false;last=0;},{threshold:.01});observer.observe(container);
   function render(now){
-    if(disposed)return;if(document.hidden||!visible){last=now;return;}if(now-lastPaint<1000/30)return;lastPaint=now;if(paused&&!dirty&&!desiredCamera)return;dirty=false;
-    const dt=last?Math.min((now-last)/1000,.055):.016;last=now;
-    if(!paused){t+=dt;pose(dt);}else if(frames===0)pose(1);
+    if(disposed)return;if(document.hidden||!visible){last=now;return;}if(now-lastPaint<1000/30)return;lastPaint=now;if(paused&&!dirty&&!desiredCamera){last=now;return;}dirty=false;
+    const elapsed=last?Math.max(0,(now-last)/1000):.016,dt=Math.min(elapsed,.1);last=now;
+    if(!paused){t+=elapsed;pose(dt);}else if(frames===0)pose(1);
     if(desiredCamera){const amount=1-Math.exp(-dt*5);camera.position.lerp(desiredCamera.position,amount);controls.target.lerp(desiredCamera.target,amount);if(camera.position.distanceTo(desiredCamera.position)<.008)desiredCamera=null;}
     controls.update();renderer.render(scene,camera);frames++;
     if(frames%20===0){renderer.domElement.dataset.frames=String(frames);renderer.domElement.dataset.mode=lastName;renderer.domElement.dataset.wristError=String(Math.max(...agent.arms.map(a=>a.wrist.getWorldPosition(V()).distanceTo(a.target))).toFixed(3));renderer.domElement.dataset.drawCalls=String(renderer.info.render.calls);}
@@ -189,7 +205,7 @@ export function mountTrendStudio(container,{onStatus=()=>{},initialView='hero',c
     setView, setPaused(value){userPaused=Boolean(value);paused=userPaused||reduceMotion.matches;dirty=true;},get paused(){return paused;},
     setTheme(value){const dark=value==='dark';ground.material.color.set(dark?'#142238':'#edf2fa');scene.fog.color.set(dark?'#142238':'#edf2fa');dirty=true;},
     setRigVisible(value){rigHelper.visible=Boolean(value);},
-    diagnostics(){return {version:THREE.REVISION,mode,paused,time:t,frames,visible,boneCount:agent.boneCount,skinnedMeshes:agent.skinnedMeshes,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,canvas:[renderer.domElement.width,renderer.domElement.height],wristPositions:agent.arms.map(a=>a.wrist.getWorldPosition(V()).toArray()),wristTargets:agent.arms.map(a=>a.target.toArray()),headRotation:agent.neck.rotation.toArray(),eyeScale:agent.eyes.map(e=>e.scale.y)};},
+    diagnostics(){return {version:THREE.REVISION,mode,activity:workState?.state,activitySource:workState?.source,paused,time:t,frames,visible,boneCount:agent.boneCount,skinnedMeshes:agent.skinnedMeshes,drawCalls:renderer.info.render.calls,triangles:renderer.info.render.triangles,canvas:[renderer.domElement.width,renderer.domElement.height],wristPositions:agent.arms.map(a=>a.wrist.getWorldPosition(V()).toArray()),wristTargets:agent.arms.map(a=>a.target.toArray()),headRotation:agent.neck.rotation.toArray(),eyeScale:agent.eyes.map(e=>e.scale.y)};},
     dispose(){
       if(disposed)return;disposed=true;renderer.setAnimationLoop(null);resizeObserver.disconnect();observer.disconnect();reduceMotion.removeEventListener('change',motionChange);controls.dispose();renderer.domElement.removeEventListener('webglcontextlost',contextLost);
       const geometries=new Set(),materials=new Set(),textures=new Set();scene.traverse(o=>{if(o.geometry)geometries.add(o.geometry);for(const m of Array.isArray(o.material)?o.material:o.material?[o.material]:[]){materials.add(m);for(const v of Object.values(m))if(v?.isTexture)textures.add(v);}});
