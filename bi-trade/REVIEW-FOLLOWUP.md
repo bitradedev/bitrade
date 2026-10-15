@@ -1,5 +1,9 @@
 # 检查文档处理记录
 
+### 2026-10-15 X账号链接更新
+
+按用户提供的新账号，将首页及滚动介绍页顶部X链接从https://x.com/BITradeAI改为https://x.com/BITradeAgent，保留新标签打开及noopener/noreferrer。仅两份HTML链接更新，待发布验证。
+
 ### 2026-10-15 英文默认语言
 
 按用户面向海外的方向，首次或无有效已存语言时默认英文，保留中英文切换及用户已选语言。主站和滚动品牌页均更新偏好脚本版本，HTML默认lang=en；原中文偏好仍优先，不清理本地会话或覆盖用户选择。115项产品检查及0ed683b完整GitHub检查通过（https://github.com/bitradedev/bitrade/actions/runs/38708504028），已发布Cloudflare版本437b692b-f89e-41dc-9e57-b9080fe74977及VPS同资源。08:53:34Z正式/、/home和新版偏好脚本均200且与本地字节一致；对线上实际脚本核验无偏好/无效值英文、保存中文仍中文、保存英文仍英文。VPS只更新3个静态文件，后台哈希和进程ID均不变，无重启、账本或执行改动。证据在.cloud-test-build/english-default-live.json及english-default-0ed683b/。
