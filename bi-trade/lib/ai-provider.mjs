@@ -1,5 +1,6 @@
 import { fields, fail } from './database-core.mjs';
 import { aiHttpFailure, aiRequestFailure } from './ai-errors.mjs';
+import { retryAfter } from './http-retry.mjs';
 
 export const DEFAULT_MODEL = 'gpt-5.4-mini';
 export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
@@ -245,7 +246,20 @@ export class OpenAIPlanner {
         throw fail('云端单轮请求上限已到，下一轮自动重试', 503);
       throw aiRequestFailure(e, { cancelled: signal?.aborted === true });
     }
-    if (!response.ok) throw aiHttpFailure(response.status);
+    if (!response.ok) {
+      const receivedAt = Date.now(),
+        retry = retryAfter(response.headers?.get?.('Retry-After'), receivedAt);
+      // Release failed response bodies without parsing or retaining provider
+      // diagnostics. Cleanup failure must not mask the original HTTP status.
+      try {
+        await response.body?.cancel();
+      } catch {
+        /* The original request failure remains authoritative. */
+      }
+      throw aiHttpFailure(response.status, {
+        retryAt: retry.at !== null && retry.at > receivedAt ? retry.at : null,
+      });
+    }
     let body;
     try {
       body = await response.json();

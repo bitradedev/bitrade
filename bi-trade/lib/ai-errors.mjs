@@ -49,7 +49,7 @@ export function aiRequestFailure(error, { cancelled = false } = {}) {
     },
   );
 }
-export function aiHttpFailure(status) {
+export function aiHttpFailure(status, { retryAt = null } = {}) {
   const code =
     status === 429
       ? 'AI_RATE_LIMITED'
@@ -69,6 +69,7 @@ export function aiHttpFailure(status) {
       code,
       aiDiagnostic: { code, networkCode: null, httpStatus: status },
       retryable: code !== 'AI_AUTH',
+      retryAt: code !== 'AI_AUTH' && Number.isFinite(retryAt) && retryAt > 0 ? retryAt : null,
     },
   );
 }

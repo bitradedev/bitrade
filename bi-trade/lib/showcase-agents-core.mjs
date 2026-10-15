@@ -698,10 +698,13 @@ export class ShowcaseAgents {
       } catch (e) {
         const failures = (state.aiFailures ?? 0) + 1;
         const aiRetryAt = e.aiDiagnostic
-          ? this.now() +
-            Math.max(
-              config.intervalMinutes * 60000,
-              Math.min(300000, 60000 * 2 ** Math.min(failures - 1, 3)),
+          ? Math.max(
+              this.now() +
+                Math.max(
+                  config.intervalMinutes * 60000,
+                  Math.min(300000, 60000 * 2 ** Math.min(failures - 1, 3)),
+                ),
+              Number.isFinite(e.retryAt) ? e.retryAt : 0,
             )
           : null;
         if (!this.stopped)

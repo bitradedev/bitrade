@@ -11,7 +11,7 @@ import {SHOWCASE_PROFILES} from '../lib/showcase-agents.mjs';
 import {publicAgent} from '../lib/public-agents.mjs';
 import {runScheduledRound} from '../../cloudflare/scheduler.mjs';
 import {IOBudget} from '../../cloudflare/io-budget.mjs';
-import {aiRequestFailure} from '../lib/ai-errors.mjs';
+import {aiRequestFailure,aiHttpFailure} from '../lib/ai-errors.mjs';
 
 const ROOT=resolve('bi-trade/data/test-runs');mkdirSync(ROOT,{recursive:true});
 test('AI-selected paper sizing uses executable impact at preparation and fill, preserves reverse quotes, balance and slippage',async t=>{
@@ -47,6 +47,17 @@ test('temporary AI failure keeps the last real decision, schedules a future retr
  a=(await f.call('/api/public/agent?id='+id)).value.agent;
  assert.equal(a.runtime.state,'observing');assert.equal(f.app.store.get('showcase-status',id).aiIssue,null);assert.ok(a.runtime.lastDecisionAt>oldAt);assert.equal(f.app.paper.orders().length,0);
 });
+test('An explicit decision-service Retry-After persists without renewing the last valid decision or creating a trade',async t=>{
+ let calls=0;const retryAt=Date.now()+900000;
+ const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;throw aiHttpFailure(503,{retryAt});}}}});
+ const id=SHOWCASE_PROFILES[0].id,oldAt=Date.now()-600000;
+ f.app.showcase.status(id,{lastDecisionAt:oldAt,decision:{action:'hold',token:null,sizeUsd:null,reason:'上次有效评估',exit:null},nextDecisionAt:0});
+ f.app.paper.seed(id,f.g.fx);const account=structuredClone(f.app.paper.account(id));await f.app.showcase.run({agentId:id});
+ const saved=f.app.store.get('showcase-status',id);assert.equal(saved.nextDecisionAt,retryAt);assert.equal(saved.aiIssue.retryAt,retryAt);assert.equal(saved.lastDecisionAt,oldAt);
+ f.app.showcase.exitChecks.clear();await f.app.showcase.run({agentId:id});assert.equal(calls,1);assert.deepEqual(f.app.paper.account(id),account);assert.equal(f.app.paper.orders().length,0);
+ const publicView=(await f.call('/api/public/agent?id='+id)).value.agent;assert.equal(publicView.runtime.lastDecisionAt,oldAt);assert.equal('aiIssue' in publicView.runtime,false);
+});
+
 test('Market outage is shown as waiting with retry time, spends no AI calls and resumes decisions on recovery',async t=>{
  let calls=0;const f=await fixture(t,{showcase:true,showcaseOptions:{configReader:()=>({model:'test-model',intervalMinutes:1,dailyCalls:null}),planner:{async decide(){calls++;return {action:'hold',token:null,sizeUsd:null,reason:'测试恢复后保持观察',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}};}}}});
  const original=f.g.markets,retryAt=Date.now()+300000;f.g.markets=()=>[];f.g.marketWait=()=>({retryAt});f.g.marketReason=()=> '行情服务暂不可用';

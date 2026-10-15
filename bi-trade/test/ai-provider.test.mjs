@@ -8,6 +8,15 @@ import {saveAIConfig,readAIConfig,OpenAIPlanner,validateDecision,DEFAULT_MODEL,D
 const TOKEN='0x'+'11'.repeat(20),config={apiKey:'test-secret-key-not-real',model:DEFAULT_MODEL,intervalMinutes:15,dailyCalls:300};
 const context={account:{balanceUsd:1000,positions:[]},markets:[{token:TOKEN,priceUsd:1,liquidityUsd:null,prices:[]}]};
 const buy=()=>({action:'buy',token:TOKEN,sizeUsd:150,reason:'依据真实测试输入提出150U模拟买入，设定退出条件。',exit:{takeProfitPct:10,stopLossPct:5,maxHoldMinutes:60}});
+
+test('Failed AI HTTP responses release their bodies and retain valid server retry deadlines without reading provider messages',async()=>{
+ for(const [status,header,expected] of [[503,'600',true],[429,new Date(Date.now()+900000).toUTCString(),true],[503,'invalid',false],[401,'600',false]]){
+  let cancelled=0,read=0;const started=Date.now();
+  const planner=new OpenAIPlanner({fetchImpl:async()=>({ok:false,status,headers:new Headers({'Retry-After':header}),body:{async cancel(){cancelled++;if(status===429)throw Error('cleanup private detail');}},async json(){read++;throw Error('must not read private provider body');}})});
+  await assert.rejects(planner.decide(config,{},context),e=>{assert.equal(e.aiDiagnostic.httpStatus,status);assert.equal(Number.isFinite(e.retryAt),expected);if(expected)assert.ok(e.retryAt>=started+599000);assert.doesNotMatch(e.message,/private|secret/);return true;});
+  assert.equal(cancelled,1);assert.equal(read,0);
+ }
+});
 test('local OpenAI configuration is encrypted, reloadable and never returned with the API key',t=>{
  const root=resolve('bi-trade/data/test-runs');mkdirSync(root,{recursive:true});const dir=mkdtempSync(resolve(root,'ai-')),store=new PlatformStore(dir),vault=new WalletVault(dir);
  t.after(()=>{store.close();assert.ok(dir.startsWith(root+'\\')||dir.startsWith(root+'/'));rmSync(dir,{recursive:true,force:true});});
