@@ -22,6 +22,8 @@ import { GmgnHTTP, unwrap } from './gmgn.mjs';
 import { NativePrice } from './native-price.mjs';
 import { establishedAsset } from '../bi-trade/lib/established-risk.mjs';
 import { RISK_POLICY } from '../bi-trade/lib/token-risk-core.mjs';
+import { activeFlapLaunches } from './flap-data.mjs';
+import { marketRuntime } from './market-runtime.mjs';
 const finite = (x: any) =>
   x !== null && x !== undefined && x !== '' && Number.isFinite(Number(x)) ? Number(x) : null;
 const raw = (x: any) => {
@@ -89,6 +91,8 @@ export class CloudMarket {
   memeOnly = false;
   cursor = 0;
   pulseCursor = 0;
+  explorationCursor = 0;
+  runtime: any;
   persistAt = new Map<string, number>();
   gap: () => void;
   constructor(
@@ -99,10 +103,11 @@ export class CloudMarket {
       publicData = null,
       memeData = null,
       memeOnly = false,
+      runtime = marketRuntime(),
       onGap = () => {},
     }: any = {},
   ) {
-    Object.assign(this, { store, rpc, gmgn, publicData, memeData, memeOnly, gap: onGap });
+    Object.assign(this, { store, rpc, gmgn, publicData, memeData, memeOnly, runtime, gap: onGap });
     this.venues = { bsc: new Venues(rpc) };
     this.gas = { bsc: new ReceiptGas(rpc) };
     this.nativePrice = new NativePrice(rpc);
@@ -118,6 +123,7 @@ export class CloudMarket {
     if (Number.isFinite(fxAt) && fxAt > 0) this.fxPersistAt = fxAt;
     this.discoveryAt = store.get('cloud-settings', 'discovery')?.at ?? 0;
     this.cursor = store.get('cloud-settings', 'market-cursor')?.next ?? 0;
+    this.explorationCursor = store.get('cloud-settings', 'market-cursor')?.explorationNext ?? 0;
   }
   statuses() {
     return [
@@ -129,6 +135,17 @@ export class CloudMarket {
           Math.abs(Date.now() - this.head.chainTime) <= 15000,
       },
     ];
+  }
+  prioritizedEntryMarkets() {
+    const busy = activeFlapLaunches(this.memeData?.candidates() ?? [], Date.now()),
+      rank = new Map(busy.map((m: any, i: number) => [m.address, i]));
+    return this.markets()
+      .filter((m: any) => this.isEntryCandidate(m.address))
+      .sort(
+        (a: any, b: any) =>
+          (rank.get(a.address) ?? 100) - (rank.get(b.address) ?? 100) ||
+          (a.entryRank ?? 100) - (b.entryRank ?? 100),
+      );
   }
   markets() {
     return [...this.catalog.values()];
@@ -589,10 +606,12 @@ export class CloudMarket {
         /* An unavailable USD feed does not disconnect the chain. */
       }
       if (this.gmgn.status?.().limited && !this.publicData && !this.memeData) return;
-      try {
-        await this.discover();
-      } catch {
-        /* Continue updating already discovered markets when discovery is unavailable. */
+      if (!onlyRequested) {
+        try {
+          await this.discover();
+        } catch {
+          /* Continue updating already discovered markets when discovery is unavailable. */
+        }
       }
       if (this.gmgn.status?.().limited && !this.publicData && !this.memeData) return;
       try {
@@ -607,11 +626,46 @@ export class CloudMarket {
                   : [...tokens, ...candidates.slice(this.cursor, this.cursor + limit)],
             ),
           ].slice(0, 8);
+        if (this.runtime.selfHosted && !onlyRequested) {
+          const ranked = this.memeData?.candidates() ?? [],
+            busy = activeFlapLaunches(ranked, Date.now())[0]?.address,
+            priority = [...new Set([...tokens, ...(busy ? [busy] : [])])],
+            exploration = pool.filter((t) => !priority.includes(t)),
+            count = Math.max(0, limit - priority.length),
+            rotated = Array.from(
+              { length: Math.min(count, exploration.length) },
+              (_, i) => exploration[(this.explorationCursor + i) % exploration.length],
+            );
+          selected.splice(0, selected.length, ...[...priority, ...rotated].slice(0, 8));
+          this.explorationCursor = exploration.length
+            ? (this.explorationCursor + rotated.length) % exploration.length
+            : 0;
+        }
         this.cursor = pool.length ? (this.cursor + limit) % pool.length : 0;
-        if (this.memeOnly)
-          this.store.put('cloud-settings', { id: 'market-cursor', next: this.cursor });
-        for (const token of selected) await this.refreshMarket(token);
+        const started = Date.now();
+        for (let i = 0; i < selected.length; i += this.runtime.refreshConcurrency)
+          await Promise.all(
+            selected
+              .slice(i, i + this.runtime.refreshConcurrency)
+              .map((token) => this.refreshMarket(token)),
+          );
         await this.updateHead();
+        if (this.memeOnly)
+          this.store.put('cloud-settings', {
+            id: 'market-cursor',
+            next: this.cursor,
+            ...(this.runtime.selfHosted
+              ? {
+                  explorationNext: this.explorationCursor,
+                  refreshMs: Date.now() - started,
+                  lastBatch: selected.map((token) => ({
+                    token,
+                    updatedAt: this.catalog.get(token)?.updatedAt ?? null,
+                    quality: this.catalog.get(token)?.quality ?? 'unavailable',
+                  })),
+                }
+              : {}),
+          });
       } catch (e: any) {
         // Chain connectivity is reported by RPC, independently of token data.
       }

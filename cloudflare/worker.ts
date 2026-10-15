@@ -14,6 +14,7 @@ import { marketFetch } from './market-source.mjs';
 import { PublicBscData } from './public-data.mjs';
 import { MemeBscData } from './meme-data.mjs';
 import { IOBudget } from './io-budget.mjs';
+import { marketRuntime } from './market-runtime.mjs';
 import { runScheduledRound } from './scheduler.mjs';
 import { handleFetch } from './bridge.mjs';
 import { mergeLedger } from './import.mjs';
@@ -57,6 +58,7 @@ export class TradingPlatform extends DurableObject<any> {
   working: any = null;
   decisionTask: any = null;
   riskRequestReserve = 32;
+  marketPolicy: any;
   importing = false;
   appReadOnly = false;
   wakeStatus: any = null;
@@ -67,7 +69,8 @@ export class TradingPlatform extends DurableObject<any> {
     this.store = new Store(ctx.storage, {
       readOnlyUntil: Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '') || 0,
     });
-    this.io = new IOBudget(45);
+    this.marketPolicy = marketRuntime(env);
+    this.io = new IOBudget(this.marketPolicy.requestsPerRound);
   }
   initialize() {
     if (this.app && this.appReadOnly !== this.store.readOnly) {
@@ -95,10 +98,15 @@ export class TradingPlatform extends DurableObject<any> {
             backupUrl: this.env.BSC_PRICE_BACKUP_RPC_URL ?? this.env.BSC_RECEIPT_RPC_URL,
             fetchImpl: this.io.fetch,
             store: this.store,
+            concurrency: this.marketPolicy.rpcConcurrency,
           }),
           memeData =
             this.env.BI_TRADE_MEME_ONLY === 'true'
-              ? new MemeBscData(this.store, rpc, { fetchImpl: this.io.fetch })
+              ? new MemeBscData(this.store, rpc, {
+                  fetchImpl: this.io.fetch,
+                  discoveryIntervalMs: this.marketPolicy.discoveryIntervalMs,
+                  flapIntervalMs: this.marketPolicy.flapIntervalMs,
+                })
               : null,
           publicData =
             this.env.BI_TRADE_PUBLIC_MARKET === 'true'
@@ -113,6 +121,7 @@ export class TradingPlatform extends DurableObject<any> {
             publicData,
             memeData,
             memeOnly: this.env.BI_TRADE_MEME_ONLY === 'true',
+            runtime: this.marketPolicy,
             onGap: () => this.app?.paper.gap(),
           });
         const risk = new TokenRiskGuard(this.store, {

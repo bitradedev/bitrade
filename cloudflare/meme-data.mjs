@@ -249,6 +249,7 @@ export class MemeBscData extends PublicBscData {
   constructor(store, rpc, options = {}) {
     super(store, rpc, options);
     this.flap = new FlapBscData(store, rpc, this, options);
+    this.discoveryIntervalMs = options.discoveryIntervalMs ?? 60000;
   }
   status() {
     const s = this.store.get('cloud-settings', 'meme-chain-index') ?? {},
@@ -319,7 +320,7 @@ export class MemeBscData extends PublicBscData {
     if (
       current &&
       this.now() - current.at >= 0 &&
-      this.now() - current.at < 60000 &&
+      this.now() - current.at < this.discoveryIntervalMs &&
       this.candidates().length
     )
       return this.candidates();

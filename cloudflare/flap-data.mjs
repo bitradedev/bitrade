@@ -215,8 +215,8 @@ export function flapHolders(logs, token, from, to, supply, circulating) {
 // Shared Portal index and fixed-block evidence. No private keys or transaction
 // submission; discovery hints never grant execution permission.
 export class FlapBscData {
-  constructor(store, rpc, reader, { now = Date.now } = {}) {
-    Object.assign(this, { store, rpc, reader, now });
+  constructor(store, rpc, reader, { now = Date.now, flapIntervalMs = 120000 } = {}) {
+    Object.assign(this, { store, rpc, reader, now, flapIntervalMs });
     this.market = null;
   }
   supports(token) {
@@ -244,7 +244,7 @@ export class FlapBscData {
   }
   async discover() {
     const old = this.store.get('cloud-settings', 'flap-index');
-    if (old && this.now() - old.at >= 0 && this.now() - old.at < 120000)
+    if (old && this.now() - old.at >= 0 && this.now() - old.at < this.flapIntervalMs)
       return this.rankedLaunches();
     try {
       const head = await this.rpc.block(),
@@ -279,7 +279,11 @@ export class FlapBscData {
       }
       // Bound SQLite writes as well as network requests. Do not rewrite the
       // entire overlapping creation window on every minute's discovery.
-      const active = rows
+      // Creation-window age is not an activity filter. Keep sampling verified
+      // launches we already know when they still trade in the current window.
+      const known = this.store.all('cloud-flap-launches'),
+        indexed = [...new Map([...known, ...rows].map((r) => [r.id, r])).values()];
+      const active = indexed
         .filter((r) => samples?.get(r.address)?.buys > 0 && samples?.get(r.address)?.sells > 0)
         .sort(
           (a, b) =>
@@ -309,9 +313,14 @@ export class FlapBscData {
         });
       }
       const recent = this.store
-        .all('cloud-flap-launches')
-        .sort((a, b) => b.createdAt - a.createdAt);
-      for (const row of recent.slice(48))
+          .all('cloud-flap-launches')
+          .sort((a, b) => b.createdAt - a.createdAt),
+        retained = [
+          ...new Map(
+            [...activeFlapLaunches(recent, this.now()), ...recent].map((r) => [r.id, r]),
+          ).values(),
+        ];
+      for (const row of retained.slice(48))
         this.store.db
           .prepare('DELETE FROM entities WHERE kind=? AND id=?')
           .run('cloud-flap-launches', row.id);

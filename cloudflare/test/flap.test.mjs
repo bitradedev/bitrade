@@ -606,6 +606,23 @@ test('Flap declaration changes and forks do not freshen failed identity evidence
   assert.equal(f.data.flap.status().lastError, 'Flap unavailable');
   assert.equal(f.data.flap.status().lastSuccessAt, null);
 });
+test('An older indexed Flap with fresh trades is sampled and retained outside the creation window without invented origins', async (t) => {
+  const f=gateway(t), now=Date.now(), original=flapCreations([creation(now-1800000)],95,105,now)[0];
+  f.store.put('cloud-flap-launches',{...original,sampleAt:now-1800000,sample:{buys:3,sells:1}});
+  for(let i=0;i<48;i++) {const a='0x'+(2000+i).toString(16).padStart(40,'0');f.store.put('cloud-flap-launches',{...original,id:a,address:a,createdAt:now-i*1000});}
+  f.store.put('paper-fills',{id:'preserved-loss',netUsd:-5});
+  const trade=(token,eventName,i)=>({...creation(now),blockNumber:'0x1380',logIndex:'0x'+i.toString(16),topics:encodeEventTopics({abi:FLAP_EVENTS,eventName}),data:encodeAbiParameters(parseAbiParameters('uint256,address,address,uint256,uint256,uint256,uint256'),[BigInt(Math.floor(now/1000)),token,OWNER,100n,5n,1n,10n])});
+  f.setHead(5000);let calls=0;
+  f.rpc.request=async()=>++calls%2===1?[]:[trade(TOKEN,'TokenBought',1),trade(TOKEN,'TokenSold',2),trade(OTHER,'TokenBought',3),trade(OTHER,'TokenSold',4)];
+  await f.data.flap.discover();
+  const saved=f.store.get('cloud-flap-launches',TOKEN);
+  assert.ok(saved,'An older active token must not be evicted solely by creation age');
+  assert.ok(saved.sampleAt>=now);assert.equal(saved.sample.buys,1);assert.equal(saved.sample.sells,1);
+  assert.equal(saved.at,original.at);assert.equal(saved.createdAt,original.createdAt);assert.deepEqual(saved.creation,original.creation);
+  assert.equal(f.store.get('cloud-flap-launches',OTHER),null,'Trades alone do not establish a verified launch origin');
+  assert.ok(f.store.all('cloud-flap-launches').length<=48);assert.equal(f.store.get('token-risk-reports',TOKEN),null);assert.equal(f.store.get('paper-fills','preserved-loss').netUsd,-5);
+});
+
 test('Flap indexing bounds writes in an overlapping busy creation window and preserves discovery ages', async (t) => {
   const f = gateway(t),
     rows = Array.from({ length: 40 }, (_, i) => ({

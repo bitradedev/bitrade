@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import {runScheduledRound} from '../scheduler.mjs';
 import {IOBudget} from '../io-budget.mjs';
 import {TokenRiskGuard} from '../../bi-trade/lib/token-risk-core.mjs';
+import {marketRuntime} from '../market-runtime.mjs';
+
+test('Self-hosted priority risk finishes with a real price refresh and starts an eligible decision in the same round',async()=>{
+ const token='0x'+'11'.repeat(20),rows=new Map(),io=new IOBudget(128,async()=>Response.json({})),kept=[];
+ let fresh=[],allowed=false,calls=0;const at=Date.now()-25000;
+ const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,structuredClone(v)),prune(){}};
+ store.put('cloud-settings',{id:'risk-priority-round',tokens:[token]});
+ const report={id:token,token,fetchedAt:at,buyAllowed:false};store.put('token-risk-reports',report);
+ const app={paper:{orders:()=>[],async tick(){}},showcase:{decisionDue:()=>true,freshMarkets:()=>fresh,async tick(){calls++;await io.fetch('https://decision.example');}}};
+ const host={io,store,marketPolicy:marketRuntime({BI_TRADE_SELF_HOSTED:'true'}),initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil:p=>kept.push(p)},market:{marketScope:()=>({kind:'meme'}),isEntryCandidate:()=>true,markets:()=>[],async updateHead(){},async fx(){},async pulse(n){assert.equal(n,2);await io.fetch('https://price.example');fresh=[{address:token,priceUsd:1,updatedAt:Date.now()}];}},risk:{snapshot:()=>({buyAllowed:allowed}),async tick(){await io.fetch('https://risk.example');allowed=true;}}};
+ await io.run('alarm',()=>runScheduledRound(host));await Promise.all(kept);
+ assert.equal(calls,1);assert.deepEqual(store.get('cloud-settings','risk-priority-round').tokens,[]);
+ assert.equal(store.get('token-risk-reports',token).fetchedAt,at,'A price refresh never rewrites the risk age');
+});
+test('A failed preselected entry does not starve discovery, and an in-flight decision does not block VPS risk collection',async()=>{
+ const token='0x'+'12'.repeat(20),io=new IOBudget(128,async()=>Response.json({})),rows=new Map();let refreshed=0,collected=0;
+ const store={all:()=>[],get:(k,id)=>rows.get(k+id),put:(k,v)=>rows.set(k+v.id,v),prune(){}};
+ const app={paper:{orders:()=>[],async tick(){}},showcase:{decisionDue:()=>true,freshMarkets:()=>[],tick:()=>null,async watchExits(){}}};
+ const host={io,store,marketPolicy:marketRuntime({BI_TRADE_SELF_HOSTED:'true'}),initialize:async()=>app,arm:async()=>{},ctx:{storage:{async setAlarm(){}},waitUntil(){}},market:{marketScope:()=>({kind:'meme'}),markets:()=>[{address:token}],isEntryCandidate:()=>true,async refresh(_tokens,options){refreshed++;if(!options.onlyRequested)assert.equal(options.limit,2);},async pulse(){}},risk:{snapshot:()=>({buyAllowed:true}),async tick(){collected++;}}};
+ await io.run('alarm',()=>runScheduledRound(host));assert.equal(refreshed,2,'A failed priority refresh must continue to discovery');
+ host.decisionTask=Promise.resolve();await io.run('alarm',()=>runScheduledRound(host));assert.equal(collected,2);
+});
 
 test('AI-managed held positions get fresh evaluation without new-buy permission or unrelated risk starvation',async()=>{
  const token='0x'+'11'.repeat(20),rows=new Map(),kept=[],io=new IOBudget(45,async()=>Response.json({}));let decided=0,held=true,quote=null,riskCalls=0;

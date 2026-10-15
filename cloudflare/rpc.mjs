@@ -54,6 +54,7 @@ export class CloudRpc {
       backupUrl = null,
       store = null,
       now = Date.now,
+      concurrency = 1,
     } = {},
   ) {
     this.url = publicEndpoint(url);
@@ -62,7 +63,10 @@ export class CloudRpc {
     this.cache = new Map();
     this.pending = new Map();
     this.id = 0;
-    this.tail = Promise.resolve();
+    if (![1, 2].includes(concurrency)) throw Error('Unsupported RPC concurrency');
+    this.concurrency = concurrency;
+    this.queue = [];
+    this.running = 0;
     this.store = store;
     this.now = now;
     this.budgetId = 'rpc-budget-' + createHash('sha256').update(this.url).digest('hex');
@@ -126,24 +130,39 @@ export class CloudRpc {
       rpcUnavailable: [403, 429, 500, 502, 503, 504].includes(response.status),
     });
   }
-  #recovered() {
-    if (this.cooldown.retryAt > 0)
+  #recovered(stateAtStart) {
+    if (this.cooldown === stateAtStart && this.cooldown.retryAt > 0)
       this.#save({ ...this.cooldown, retryAt: 0, lastError: null, lastSuccessAt: this.now() });
   }
   #queued(execute) {
-    const task = this.tail
-      .catch(() => {})
-      .then(() => {
-        if (this.sourceStatus().limited)
-          throw Object.assign(Error('BSC RPC 限频冷却中，稍后自动重试'), { rpcUnavailable: true });
-        return execute();
-      });
-    this.tail = task;
-    return task;
+    return new Promise((resolve, reject) => {
+      this.queue.push({ execute, resolve, reject });
+      this.#drain();
+    });
+  }
+  #drain() {
+    while (this.running < this.concurrency && this.queue.length) {
+      const task = this.queue.shift();
+      this.running++;
+      Promise.resolve()
+        .then(() => {
+          if (this.sourceStatus().limited)
+            throw Object.assign(Error('BSC RPC 限频冷却中，稍后自动重试'), {
+              rpcUnavailable: true,
+            });
+          return task.execute();
+        })
+        .then(task.resolve, task.reject)
+        .finally(() => {
+          this.running--;
+          this.#drain();
+        });
+    }
   }
   async request(method, params = []) {
     if (!ALLOWED.has(method)) throw Error('Cloud RPC is read-only');
     const execute = async () => {
+      const stateAtStart = this.cooldown;
       let r;
       try {
         r = await this.fetch(this.url, {
@@ -165,7 +184,7 @@ export class CloudRpc {
       if (!r.ok) throw this.#failed(r, 'BSC RPC 请求失败');
       const data = await r.json();
       if (data.error || !Object.hasOwn(data, 'result')) throw Error('BSC RPC 未返回有效读取结果');
-      this.#recovered();
+      this.#recovered(stateAtStart);
       this.activeSource = 'primary';
       return data.result;
     };
@@ -318,6 +337,7 @@ export class CloudRpc {
         params: [hash],
       }));
     const rows = await client.#queued(async () => {
+      const stateAtStart = client.cooldown;
       let response;
       try {
         response = await client.fetch(client.url, {
@@ -349,7 +369,7 @@ export class CloudRpc {
         if (!row || row.error || !Object.hasOwn(row, 'result'))
           throw Error('BSC 回执批次未返回有效数据');
       }
-      client.#recovered();
+      client.#recovered(stateAtStart);
       return rows;
     });
     const results = [];

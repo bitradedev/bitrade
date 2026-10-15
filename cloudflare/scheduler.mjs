@@ -10,6 +10,18 @@ function riskDue(host, token) {
     Date.now() - row.fetchedAt >= RISK_POLICY.maxAgeMs
   );
 }
+async function resumeAfterRisk(host, app) {
+  if (!host.marketPolicy?.selfHosted || host.io.exhausted || host.io.remaining < 8) return;
+  // Risk collection can outlive a short price window. Refresh actual prices;
+  // never make old evidence appear newer just to permit a decision.
+  await host.market.pulse(host.marketPolicy.refreshBatch);
+  if (
+    !host.decisionTask &&
+    app.showcase.decisionDue?.() &&
+    app.showcase.freshMarkets().some((m) => host.risk.snapshot(m.address, m.priceUsd).buyAllowed)
+  )
+    startShowcaseDecision(host, app);
+}
 export async function runScheduledRound(host) {
   if (!host.working && !host.decisionTask) host.store.prepareWriteBudget?.();
   if (host.store.readOnly) return;
@@ -83,19 +95,17 @@ export async function runScheduledRound(host) {
         app.showcase.decisionDue?.() &&
         host.market.marketScope?.()?.kind === 'meme'
       ) {
-        const permitted = host.market
-          .markets()
-          .find(
-            (m) =>
-              host.market.isEntryCandidate(m.address) &&
-              host.risk.snapshot(m.address, m.priceUsd).buyAllowed,
-          );
+        const permitted = (host.market.prioritizedEntryMarkets?.() ?? host.market.markets()).find(
+          (m) =>
+            host.market.isEntryCandidate(m.address) &&
+            host.risk.snapshot(m.address, m.priceUsd).buyAllowed,
+        );
         if (permitted) {
           phase = 'entry-decision';
           // Refresh and evaluate a currently permitted token before unrelated
           // risk continuations spend its short evidence-validity window.
-          await runDecisionRound(host, app, permitted);
-          return;
+          const started = await runDecisionRound(host, app, permitted);
+          if (started || host.io.exhausted) return;
         }
       }
       const tokens = [
@@ -107,7 +117,7 @@ export async function runScheduledRound(host) {
         ),
       ];
       const pendingRisk = host.store.get?.('cloud-settings', 'risk-priority-round');
-      if (pendingRisk?.tokens?.length && !host.decisionTask) {
+      if (pendingRisk?.tokens?.length && (!host.decisionTask || host.marketPolicy?.selfHosted)) {
         phase = 'priority-risk';
         const requested = pendingRisk.tokens.filter(
           (token) =>
@@ -126,6 +136,7 @@ export async function runScheduledRound(host) {
           // or the risk collector's short pacing window keeps this continuation.
           tokens: requested.length && (!task || host.io.exhausted) ? requested : [],
         });
+        await resumeAfterRisk(host, app);
         host.store.put('cloud-settings', {
           id: 'scheduler',
           at: Date.now(),
@@ -138,10 +149,10 @@ export async function runScheduledRound(host) {
         return;
       }
       phase = 'market-refresh';
-      await host.market.refresh(tokens, { limit: 1 });
+      await host.market.refresh(tokens, { limit: host.marketPolicy?.refreshBatch ?? 1 });
       phase = 'paper-matching';
       await app.paper.tick();
-      if (!host.decisionTask) {
+      if (!host.decisionTask || host.marketPolicy?.selfHosted) {
         phase = 'risk-screening';
         const fresh = app.showcase.freshMarkets();
         const riskTokens =
@@ -175,7 +186,7 @@ export async function runScheduledRound(host) {
         await host.risk.tick(riskTokens);
       }
       phase = 'market-pulse';
-      await host.market.pulse(1);
+      await host.market.pulse(host.marketPolicy?.refreshBatch ?? 1);
       phase = 'decision-or-exits';
       if (host.decisionTask) await app.showcase.watchExits();
       else startShowcaseDecision(host, app);

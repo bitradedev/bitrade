@@ -3,6 +3,21 @@ import assert from 'node:assert/strict';
 import { CloudRpc } from '../rpc.mjs';
 import { parseAbi, encodeFunctionResult } from 'viem';
 
+test('Two self-hosted RPC requests may overlap, but an in-flight success cannot erase a concurrent 429 cooldown', async()=>{
+  let releaseSuccess,begin,active=0,peak=0,calls=0;
+  const ready=new Promise(r=>begin=r),success=new Promise(r=>releaseSuccess=r);
+  const rpc=new CloudRpc('https://bounded.example',{concurrency:2,now:()=>1000000,fetchImpl:async()=>{
+    const n=++calls;active++;peak=Math.max(peak,active);
+    if(n===2){begin();await success;active--;return Response.json({result:'0x38'});}
+    await ready;active--;return Response.json({}, {status:429,headers:{'Retry-After':'60'}});
+  }});
+  const pending=Promise.allSettled(Array.from({length:5},()=>rpc.request('eth_chainId')));
+  await ready;while(!rpc.status().limited)await Promise.resolve();releaseSuccess();
+  const result=await pending;assert.equal(peak,2);assert.equal(calls,2);assert.equal(result.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(rpc.status().limited,true);assert.equal(rpc.status().retryAt,1065000);
+  await assert.rejects(rpc.request('eth_getLogs',[{}]),/冷却/);assert.equal(calls,2);
+});
+
 test('Exact-block contract cache shares immutable reads without crossing recipients, blocks, forks or latest calls', async () => {
   const abi = parseAbi(['function value() view returns (uint256)']),
     token = '0x' + '11'.repeat(20),
