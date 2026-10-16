@@ -131,7 +131,7 @@ export class ShowcaseAgents {
       .markets()
       .filter(
         (m) =>
-          m.chain === 'bsc' &&
+          m.chain === this.paper.chain &&
           (this.gateway.isEntryCandidate?.(m.address) ?? true) &&
           m.quality === 'verified' &&
           this.now() - m.updatedAt >= 0 &&
@@ -145,12 +145,13 @@ export class ShowcaseAgents {
   context(a) {
     const head = this.paper.head(),
       fx = this.paper.fx();
-    if (!fx) throw fail('等待新鲜 BNB 美元行情');
+    if (!fx) throw fail('等待新鲜 原生币美元行情');
     this.paper.seed(a.id, fx);
     const v = this.paper.view(a.id);
     return {
       at: this.now(),
-      chainId: 56,
+      chainId: this.paper.network.chainId,
+      network: this.paper.network.name,
       block: head.head,
       executionConstraints: {
         positionSizing: 'ai-selected-with-executable-quotes',
@@ -184,7 +185,10 @@ export class ShowcaseAgents {
                 .reduce((n, lot) => n + lot.estimatedValueUsd, 0)
             : null,
           exitPlan: p.exitPlan,
-          risk: this.riskGuard.snapshot(p.token, this.gateway.getMarket('bsc', p.token)?.priceUsd),
+          risk: this.riskGuard.snapshot(
+            p.token,
+            this.gateway.getMarket(this.paper.chain, p.token)?.priceUsd,
+          ),
         })),
       },
       markets: this.freshMarkets().map((m) => ({
@@ -225,6 +229,14 @@ export class ShowcaseAgents {
       .filter((p) => p.token === token)
       .reduce((n, p) => n + BigInt(p.remainingRaw), 0n);
     if (amount <= 0n) throw fail('没有可卖出的模拟持仓');
+    if (this.paper.chain !== 'bsc')
+      return this.execute(a, 'sell_token', {
+        token,
+        amount: String(amount),
+        chainId: this.paper.network.chainId,
+        requestKey: key,
+        reason,
+      });
     return this.execute(a, 'submit_transaction', {
       to: ROUTER_V2,
       data: viem.encodeFunctionData({
@@ -428,9 +440,10 @@ export class ShowcaseAgents {
         await this.gateway.assertBuiltinEntry(decision.token);
       }
       const fx = this.paper.fx();
-      if (!fx) throw fail('决策后 BNB 美元行情已过期');
+      if (!fx) throw fail('决策后 原生币美元行情已过期');
       const size = String(BigInt(Math.floor((decision.sizeUsd / fx) * 1e18)));
       order = await this.execute(agent, 'buy_token', {
+        chainId: this.paper.network.chainId,
         token: decision.token,
         amount: size,
         requestKey,

@@ -5,11 +5,12 @@ export const COOKIE = 'bi_trade_session';
 export const PAPER_SESSION_SECONDS = 30 * 86400;
 export function address(value) {
   if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(value) || /^0x0{40}$/i.test(value))
-    throw fail('BSC钱包地址无效');
+    throw fail('钱包地址无效');
   return value.toLowerCase();
 }
 export class OwnerAuth {
-  constructor(store, origin) {
+  constructor(store, origin, network = { name: 'BNB Chain', chainId: 56 }) {
+    this.network = network;
     this.store = store;
     this.origin = origin;
   }
@@ -62,7 +63,9 @@ export class OwnerAuth {
       domain = new URL(this.origin).host;
     const statement =
       purpose === 'login'
-        ? 'Sign in to bi trade on BNB Chain. This signature does not transfer funds.'
+        ? 'Sign in to bi trade on ' +
+          this.network.name +
+          '. This signature does not transfer funds.'
         : purpose === 'recover'
           ? 'Recover the private key for Agent ' + target + ' and pause it.'
           : purpose === 'policy'
@@ -76,7 +79,9 @@ export class OwnerAuth {
       statement +
       '\n\nURI: ' +
       this.origin +
-      '\nVersion: 1\nChain ID: 56\nNonce: ' +
+      '\nVersion: 1\nChain ID: ' +
+      this.network.chainId +
+      '\nNonce: ' +
       id +
       '\nIssued At: ' +
       new Date(now).toISOString() +
@@ -87,7 +92,7 @@ export class OwnerAuth {
         'INSERT INTO challenges(id,owner,address,purpose,target,message,expires) VALUES(?,?,?,?,?,?,?)',
       )
       .run(id, owner?.id ?? null, a, purpose, target, message, expires);
-    return { id, message, address: a, chainId: 56, expiresAt: expires };
+    return { id, message, address: a, chainId: this.network.chainId, expiresAt: expires };
   }
   async verify(id, signature, purpose, owner = null, target = null) {
     if (
@@ -100,6 +105,7 @@ export class OwnerAuth {
     if (
       !row ||
       row.used ||
+      !row.message.includes('\nChain ID: ' + this.network.chainId + '\n') ||
       row.expires <= Date.now() ||
       row.purpose !== purpose ||
       row.owner !== (owner?.id ?? null) ||

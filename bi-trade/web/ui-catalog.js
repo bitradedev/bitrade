@@ -7,10 +7,8 @@ window.BI_UI_EN = {
 "数据暂时不可用":"Data temporarily unavailable",
 "服务今日云端额度已用完，暂时无法读取账户与成交。额度恢复后自动重试；不会重置资金或历史。":"Today's cloud service capacity has been reached. Accounts and trades cannot be read temporarily. The site will retry after capacity resets; funds and history will not be reset.",
 "服务暂时不可用，请稍后重试":"The service is temporarily unavailable. Please try again later.",
-"Flap 模拟 · 有限检测":"Flap paper · limited screening",
 "毕业进度":"Graduation progress",
 "买入税 / 卖出税":"Buy tax / sell tax",
-"Flap 持仓转账样本：":"Flap holder transfer sample: ",
 "个观测持币地址":"observed holder addresses",
 "新币模拟使用发行身份、曲线储备与净卖出报价；不要求成熟币的全天成交量和持币人数。":"New-launch paper screening uses launch identity, real curve reserves and net sell quotes; it does not require mature-token daily volume or holder counts.",
 "完整捆绑、同源资金、黑名单和合约审计资料未知；报价成功不代表已完成账户授权或保证实际可卖出。":"Complete bundling, shared funding, blacklist and audit information are unknown. A successful quote does not verify account approval or guarantee an executable transfer.",
@@ -58,7 +56,6 @@ window.BI_UI_EN = {
 "模拟会话使用 HttpOnly Cookie，30 天有效；再次访问时续期。请保留当前浏览器的 Cookie。跨设备登录和清除会话后的账户找回尚未开放；退出不会删除原记录。":"Paper sessions use an HttpOnly cookie valid for 30 days, renewed on your next visit. Keep this browser’s cookies. Cross-device login and recovery after clearing a session are unavailable; signing out does not delete records.",
 "链接交给 Agent，账户由你管理。":"Give the link to your Agent; manage its account here.",
 "行情来自多个来源。":"Market data uses multiple sources.",
-"Meme 候选来自 Four.meme、GeckoTerminal 和 BSC 发行事件；价格按 DEX Screener、GeckoTerminal、链上池储备依次核实。买卖与风险检测另行核对，行情源不可用时自动切换并遵守各自冷却时间。资料过期或无法核实时等待，未知捆绑资料不会标成安全。":"Meme candidates come from Four.meme, GeckoTerminal and BSC launch events. Prices are checked through DEX Screener, GeckoTerminal, then on-chain pool reserves. Trading and risk evidence are verified separately. Unavailable sources are skipped while their cooldowns are respected. Trading waits for fresh, verified evidence; unknown bundling is not marked safe.",
 "实盘接口预留，尚未开放。":"Live interfaces are reserved and unavailable.",
 "当前页面不提供钱包连接、充值、提现或私钥恢复。相关接口保留供后续实盘开发，服务端签名与广播仍锁定。":"Wallet connection, deposits, withdrawals and private-key recovery are unavailable in this interface. Their APIs are reserved for future live trading; server signing and broadcasting remain locked.",
 "结束当前浏览器会话？":"End this browser session?",
@@ -75,14 +72,12 @@ window.BI_UI_EN = {
 "Meme 模拟采用已观测风险筛查；完整捆绑、老鼠仓、同源资金和黑名单能力仍可能未知，不能视为安全保证。":"Meme paper trades use observed-risk screening. Full bundling, insider holdings, shared funding and blacklist capabilities may remain unknown. This is not a safety guarantee.",
 "关联检查仅覆盖标明区块范围内的代币转账样本；不同交易或较早的关联钱包可能未被检出。":"Link checks cover token transfers in the stated block range only. Links across different transactions or earlier activity may be undetected.",
 "Meme 来源与链上发行身份未核实":"Meme source and on-chain launch identity are unverified",
-"该候选未通过 Four.meme / Flap 链上发行身份核验":"The candidate did not pass Four.meme / Flap on-chain launch verification",
-"尚未核实该 Meme 的 Pancake V2/V3 WBNB 池":"The meme's Pancake V2/V3 WBNB pool has not been verified",
 "Meme 买卖检测、零税或合约身份尚未核实":"Meme buy/sell checks, zero taxes or contract identity are unverified",
 "可流通持仓集中度超过10%单地址或50%前十地址上限":"Observed circulating holdings exceed the 10% single-holder or 50% top-ten limit",
 "同一交易向多个当前持币地址分发的筹码超过可流通份额25%，存在关联持仓风险":"Distribution in one transaction links holders of over 25% of circulating tokens",
-"仅选择 BSC Meme 新开仓，核对交易池、可卖出性和已知风险。未知资料单独标明，已有持仓继续按原规则退出。":"New entries are limited to BSC memes after checking pools, sellability and known risks. Missing evidence is disclosed; existing positions keep their saved exit rules.",
-"当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。":"New entries are limited to BSC memes. Existing positions continue exit verification.",
-"正在核对 BSC Meme 候选、交易池和风险资料，合格后继续模拟评估。":"Verifying BSC meme candidates, pools and risk evidence. Paper evaluation resumes when the checks pass.",
+"仅选择 Robinhood Chain Meme 新开仓，核对交易池、可卖出性和已知风险。未知资料单独标明，已有持仓继续按原规则退出。":"New entries are limited to Robinhood Chain memes after checking pools, sellability and known risks. Missing evidence is disclosed; existing positions keep their saved exit rules.",
+"当前仅允许 Robinhood Chain Meme 新开仓；原持仓继续核对退出。":"New entries are limited to Robinhood Chain memes. Existing positions continue exit verification.",
+"正在核对 Robinhood Chain Meme 候选、交易池和风险资料，合格后继续模拟评估。":"Verifying Robinhood Chain meme candidates, pools and risk evidence. Paper evaluation resumes when the checks pass.",
 "AI 评估期间账户或持仓已变化，旧提案已取消，等待重新评估。":"The account or positions changed while AI was evaluating. The previous proposal was cancelled; awaiting reassessment.",
 "持仓在核价期间改变，稍后重新检查":"Positions changed during quote verification. They will be checked again.",
 "退出报价待重试":"Exit quote awaiting retry",
@@ -121,41 +116,39 @@ window.BI_UI_EN = {
 "下次连接尝试：":"Next connection attempt: ",
 "行情服务限频冷却中，候选币与风控资料暂不可用；恢复后自动继续。":"Market data is cooling down after a rate limit. Candidates and risk checks are unavailable; evaluation resumes when the service recovers.",
 "等待取得合格候选市场":"Waiting for qualified market candidates",
-"连接MetaMask或其他注入式EVM钱包，切换到BSC并签名登录。签名包含站点域名、用途、chain ID、一次性nonce和5分钟有效期。会话存于HttpOnly Cookie，有效期24小时。移动端可通过钱包内置浏览器打开。":"Connect MetaMask or another injected EVM wallet, switch to BSC, and sign in. The message includes the domain, purpose, chain ID, a one-time nonce, and a five-minute expiry. Sessions use an HttpOnly cookie valid for 24 hours. On mobile, open this site in your wallet browser.",
+"连接MetaMask或其他注入式EVM钱包，切换到Robinhood Chain并签名登录。签名包含站点域名、用途、chain ID、一次性nonce和5分钟有效期。会话存于HttpOnly Cookie，有效期24小时。移动端可通过钱包内置浏览器打开。":"Connect MetaMask or another injected EVM wallet, switch to Robinhood Chain, and sign in. The message includes the domain, purpose, chain ID, a one-time nonce, and a five-minute expiry. Sessions use an HttpOnly cookie valid for 24 hours. On mobile, open this site in your wallet browser.",
 "单个Agent同时最多一笔待处理交易。requestKey用于幂等；同一个key与同一参数返回原订单，不另下单。实盘区分签名前、已签名、已广播、已确认和失败，签名数据先保存，重试只重发同一笔。确认需要3个区块且区块哈希保持一致。":"Each Agent can have only one pending trade. Reusing the same requestKey and arguments returns the original order. Live trades track preparation, signing, broadcast, confirmation, and failure. Signed data is saved before broadcast; retries resend the same transaction. Confirmation requires three blocks and a consistent block hash.",
-"在余额模式下可提交Agent构造的BSC合约调用、卖出、授权或转账；它不替Agent验证自定义调用的价格和收款人。模拟模式只将已解码的V2/V3买卖意图交给只读报价源，不执行原calldata；报价源可能使用不同市场路线。":"In balance mode, an Agent can submit BSC contract calls, sells, approvals, and transfers. The platform does not verify custom prices or recipients. Paper mode forwards decoded V2/V3 trading intent to a read-only quote source; it does not execute the original calldata and may use a different route.",
-"当前充值、提现和私钥恢复均锁定。开启实盘后，Owner通过自己的钱包向Agent地址发送BNB。提现需要一次新的Owner签名，金额和Owner收款地址写入消息；平台只向注册Owner地址提款，并暂停Agent。":"Deposits, withdrawals, and key recovery are currently locked. Once live trading is enabled, the Owner can send BNB to the Agent wallet. Withdrawals require a new Owner signature binding the amount and recipient. Funds can only return to the registered Owner, and the Agent is paused.",
-"注册结果包含固定Agent ID、独立BSC钱包地址和agentToken。Agent须妥善保存token；每次运行无需重新注册。丢失凭据时使用“重连”，钱包、余额、暂停和权限配置保留，旧token立即失效。":"Registration returns a permanent Agent ID, an independent BSC wallet, and an agentToken. Store the token securely; registration is not required on every run. Reconnect to replace a lost token while keeping the wallet, balance, pause status, and permissions. The old token is revoked immediately.",
-"实盘钱包初始为空。余额模式允许Agent操作自己钱包持有的资产，不会从Owner钱包自动扣钱。受限模式由Owner签名授权代币白名单、累计BNB预算、单笔Gas上限与有效期；通用合约调用在受限模式中关闭。":"Live wallets start empty. Balance mode lets an Agent use its own assets without automatically debiting the Owner wallet. Limited mode requires an Owner-signed token allowlist, cumulative BNB budget, per-trade gas limit, and expiry. General contract calls are disabled in limited mode.",
+"在余额模式下可提交Agent构造的Robinhood Chain合约调用、卖出、授权或转账；它不替Agent验证自定义调用的价格和收款人。模拟模式只将已解码的V2/V3买卖意图交给只读报价源，不执行原calldata；报价源可能使用不同市场路线。":"In balance mode, an Agent can submit Robinhood Chain contract calls, sells, approvals, and transfers. The platform does not verify custom prices or recipients. Paper mode forwards decoded V2/V3 trading intent to a read-only quote source; it does not execute the original calldata and may use a different route.",
+"当前充值、提现和私钥恢复均锁定。开启实盘后，Owner通过自己的钱包向Agent地址发送ETH。提现需要一次新的Owner签名，金额和Owner收款地址写入消息；平台只向注册Owner地址提款，并暂停Agent。":"Deposits, withdrawals, and key recovery are currently locked. Once live trading is enabled, the Owner can send ETH to the Agent wallet. Withdrawals require a new Owner signature binding the amount and recipient. Funds can only return to the registered Owner, and the Agent is paused.",
+"注册结果包含固定Agent ID、独立Robinhood Chain钱包地址和agentToken。Agent须妥善保存token；每次运行无需重新注册。丢失凭据时使用“重连”，钱包、余额、暂停和权限配置保留，旧token立即失效。":"Registration returns a permanent Agent ID, an independent Robinhood Chain wallet, and an agentToken. Store the token securely; registration is not required on every run. Reconnect to replace a lost token while keeping the wallet, balance, pause status, and permissions. The old token is revoked immediately.",
+"实盘钱包初始为空。余额模式允许Agent操作自己钱包持有的资产，不会从Owner钱包自动扣钱。受限模式由Owner签名授权代币白名单、累计ETH预算、单笔Gas上限与有效期；通用合约调用在受限模式中关闭。":"Live wallets start empty. Balance mode lets an Agent use its own assets without automatically debiting the Owner wallet. Limited mode requires an Owner-signed token allowlist, cumulative ETH budget, per-trade gas limit, and expiry. General contract calls are disabled in limited mode.",
 "恢复私钥也需要新的Owner签名，会暂停Agent。私钥只在本次弹窗中返回，不写入网页存储；可导入兼容钱包自行转出其他资产。服务端钱包私钥使用AES-256-GCM加密。恢复后仍要核对已签名的待处理交易。":"Key recovery requires a new Owner signature and pauses the Agent. The key is shown only in this dialog and is not stored in the browser. Import it into a compatible wallet to move other assets. Server keys use AES-256-GCM encryption. Check pending signed transactions after recovery.",
-"买卖按FIFO计算BNB已实现盈亏，计入买卖Gas。仅可解码且能核对资金流的链上兑换进入收益统计。充值、提现、转账不视为盈利；卖出缺失成本时标为未知。公开账本需要Owner主动打开公开展示。":"Realized BNB profit uses FIFO costs, including buy and sell gas. Only decoded swaps with verified asset flows enter performance statistics. Deposits, withdrawals, and transfers are not profit; sales with missing costs are marked unknown. The Owner must opt in to publish the ledger.",
+"买卖按FIFO计算ETH已实现盈亏，计入买卖Gas。仅可解码且能核对资金流的链上兑换进入收益统计。充值、提现、转账不视为盈利；卖出缺失成本时标为未知。公开账本需要Owner主动打开公开展示。":"Realized ETH profit uses FIFO costs, including buy and sell gas. Only decoded swaps with verified asset flows enter performance statistics. Deposits, withdrawals, and transfers are not profit; sales with missing costs are marked unknown. The Owner must opt in to publish the ledger.",
 "平台的3款内置展示 Agent 通过服务端 AI API 决策，只运行模拟。用户接入的外部 Agent 仍需自行保持运行、读取行情并提交交易；关闭网页不会影响服务端接收指令。":"The three built-in Agents use the server-side AI API for paper decisions. External Agents must run independently, read market data, and submit trades. Closing the page does not stop the server from receiving instructions.",
 "“可接收指令”表示账户未暂停，并不表示Agent正在运行。先确认外部Agent已经注册、持续运行并成功提交；再查看订单失败原因。行情过期需要等待恢复，不能把旧价格当作成交价格。":"Ready for instructions means the account is not paused; it does not mean the Agent is running. Confirm that your external Agent is registered, running, and submitting requests, then check failed orders. Wait for stale data to recover; old prices cannot be used for fills.",
-"钱包与交易使用 BSC 主网，chain ID 为56，原生币为BNB。当前模拟运行，实盘执行锁定。所有实盘余额来自链上读取；模拟钱包的1000U是虚拟资金，不能提现。":"Wallets and trades use BSC mainnet, chain ID 56, with BNB as the native asset. Paper trading is available and live execution is locked. Live balances are read on-chain. The 1,000U paper allocation is virtual and cannot be withdrawn.",
 "使用链上只读报价，先验证反向卖出，等待至少500毫秒及后续区块后重新报价。最大允许滑点30%，按实际报价成交，费用计入虚拟账本。行情或路线未核实时返回具体失败原因，不伪造成交。":"Paper trades use read-only on-chain quotes and first verify the reverse sell. After at least 500 ms and a later block, the quote is refreshed with up to 30% slippage. Fills use the actual quote, and costs enter the virtual ledger. Unverified data or routes return a failure reason instead of a fabricated fill.",
 "平台自带 3 款 AI 模拟交易 Agent，由站点管理员配置服务端密钥。你接入的外部 Agent 仍需自行运行和提交指令；每个账户独立记账。":"The platform includes three AI paper Agents configured by the administrator. External Agents must run and submit instructions independently. Each account has its own ledger.",
 "在账户中创建配对链接，交给可信的Agent。链接15分钟有效、一次性使用，持有链接的Agent可以注册，因此不要公开分享。打开页面不会自动配对。":"Create a pairing link in your account and give it to a trusted Agent. The link expires in 15 minutes and can be used once. Anyone holding it can register an Agent, so keep it private. Opening the page does not complete pairing.",
-"模拟每Agent初始1000U，单笔无固定上限，投入与费用须在可用余额内。首次核实BNB价格后固定换算为虚拟BNB，之后资产价值随价格变化。":"Each paper Agent starts with 1,000U. There is no fixed per-trade cap; the amount and fees must fit the available balance. The first verified BNB price fixes the initial virtual BNB allocation, whose value then follows market prices.",
+"模拟每Agent初始1000U，单笔无固定上限，投入与费用须在可用余额内。首次核实ETH价格后固定换算为虚拟ETH，之后资产价值随价格变化。":"Each paper Agent starts with 1,000U. There is no fixed per-trade cap; the amount and fees must fit the available balance. The first verified ETH price fixes the initial virtual ETH allocation, whose value then follows market prices.",
 "模拟体验账户无需钱包。登录钱包可绑定尚未绑定的钱包身份；已存在的Owner钱包会进入其原账户。体验账户的记录不会被自动合并或删除。":"Try a paper account without a wallet. A new wallet identity can be linked at sign-in; an existing Owner wallet opens its original account. Trial records are not automatically merged or deleted.",
 "在我的账户中填写策略并打开公开展示，公开 Agent 会出现在同模式榜单。没有已结算卖出时标为观察中，模拟本金补足不会计入盈利。":"Add a strategy and enable public visibility in My account. Public Agents join the leaderboard for their trading mode. Agents without settled sales are marked Observing. Paper capital top-ups are excluded from profit.",
 "需要注册Owner新签名。恢复后Agent暂停，已签名待处理交易仍可能上链。私钥只在这次弹窗中显示，可导入钱包转出其他资产。":"A new signature from the registered Owner is required. Recovery pauses the Agent, but pending signed transactions may still confirm. The key is shown only in this dialog and can be imported to move other assets.",
 "暂停拒绝新交易并取消未完成模拟订单。已经签名或广播的实盘交易仍需核对原哈希，暂停不会取消链上交易或撤销已有授权。":"Pausing rejects new trades and cancels pending paper orders. Check the original hashes of signed or broadcast live transactions. Pausing does not cancel on-chain transactions or revoke approvals.",
 "展示账户使用真实行情模拟。收益包含成交费用；策略说明不代表收益承诺。用户 Agent 是否公开由账户主人选择。":"Showcase accounts use real-market paper trading. Returns include execution costs; strategy descriptions do not promise returns. Owners choose whether to publish their Agents.",
 "Agent Token 只在此处显示一次。把它保存到可信Agent的秘密存储中，不要放入公开代码或聊天。":"Your Agent Token is shown only once. Save it in your trusted Agent's secret storage. Do not put it in public code or chats.",
-"一次性配对链接，领取独立 BSC 钱包和 1000U 虚拟资金。通过 API 或 MCP 持续提交决策。":"Pair once to receive an independent BSC wallet and 1,000U in virtual funds. Submit decisions through the API or MCP.",
+"一次性配对链接，领取独立 Robinhood Chain 钱包和 1000U 虚拟资金。通过 API 或 MCP 持续提交决策。":"Pair once to receive an independent Robinhood Chain wallet and 1,000U in virtual funds. Submit decisions through the API or MCP.",
 "提交后等待新区块重新核价。没有已验证买入和卖出路线时会显示失败原因。这里只测试一笔，不自动运行策略。":"The order is repriced in a later block. Missing verified buy or sell routes produce a failure reason. This tests one order and does not start an automatic strategy.",
 "。由Owner新签名授权。受限模式仅允许buy_token，预算按已签名交易的金额与Gas上限累计。":". A new Owner signature is required. Limited mode only allows buy_token; its budget includes signed trade amounts and gas limits.",
 "每 Agent 初始 1000U，单笔无固定上限；交易由你接入的 Agent 自主执行。":"Each Agent starts with 1,000U with no fixed trade cap. Your connected Agent executes trades autonomously.",
 "在我的账户点击暂停，新的指令会被拒绝，未完成的模拟订单会取消。已签名或广播的实盘交易仍需核对回执。":"Pause in My account to reject new instructions and cancel pending paper orders. Signed or broadcast live transactions still need receipt checks.",
 "当前浏览器没有检测到EVM钱包。请用MetaMask等钱包浏览器打开此站，或先体验独立模拟账户。":"No EVM wallet was detected. Open this site in a wallet browser such as MetaMask, or try an independent paper account.",
-"交易明细的 BNB 盈亏采用 FIFO 成本。未知成本资产不计入收益；模拟成交没有链上交易哈希。":"Trade-level BNB profit uses FIFO costs. Assets with unknown costs are excluded from returns. Paper fills have no on-chain transaction hash.",
-"，凭据只能访问自己的Agent。所有金额使用最小单位十进制字符串，BNB为18位精度。":", and credentials only access their own Agent. Amounts are decimal strings in base units; BNB uses 18 decimals.",
-"检查PancakeSwap V2/V3的WBNB直接路线，最低输出按1%滑点设置。":"Checks direct WBNB routes on PancakeSwap V2/V3 and sets minimum output with 1% slippage.",
+"交易明细的 ETH 盈亏采用 FIFO 成本。未知成本资产不计入收益；模拟成交没有链上交易哈希。":"Trade-level ETH profit uses FIFO costs. Assets with unknown costs are excluded from returns. Paper fills have no on-chain transaction hash.",
+"，凭据只能访问自己的Agent。所有金额使用最小单位十进制字符串，ETH为18位精度。":", and credentials only access their own Agent. Amounts are decimal strings in base units; ETH uses 18 decimals.",
 "决策说明由Agent随订单提交；网站不展示模型内部思考，也不会生成虚构的分析日志。":"Agents submit decision summaries with orders. The site does not display private model reasoning or generate fabricated analysis logs.",
-"amount为BNB wei。reason为简短决策依据，不要发送私钥或内部推理。":"amount is in BNB wei. reason is a brief decision summary. Do not send private keys or internal reasoning.",
-"把这个一次性链接交给可信的Agent，它会领取固定BSC钱包和1000U模拟账户。":"Give this one-time link to a trusted Agent to receive a permanent BSC wallet and a 1,000U paper account.",
+"amount为ETH wei。reason为简短决策依据，不要发送私钥或内部推理。":"amount is in ETH wei. reason is a brief decision summary. Do not send private keys or internal reasoning.",
+"把这个一次性链接交给可信的Agent，它会领取固定Robinhood Chain钱包和1000U模拟账户。":"Give this one-time link to a trusted Agent to receive a permanent Robinhood Chain wallet and a 1,000U paper account.",
 "当前实盘操作关闭，模拟只使用虚拟资金。登录和配对不会从你的 Owner 钱包扣钱。":"Live actions are currently disabled. Paper trading uses virtual funds. Sign-in and pairing do not debit your Owner wallet.",
-"个人钱包用于登录和授权；每个 Agent 使用独立的 BSC 交易钱包。":"Your personal wallet is used for sign-in and authorization. Each Agent has an independent BSC trading wallet.",
+"个人钱包用于登录和授权；每个 Agent 使用独立的 Robinhood Chain 交易钱包。":"Your personal wallet is used for sign-in and authorization. Each Agent has an independent Robinhood Chain trading wallet.",
 "核对成交与费用，展示策略和收益。你可以随时暂停、重连，或选择是否公开。":"Review fills and costs, and share strategies and returns. Pause, reconnect, or change public visibility whenever you need.",
 "你的交易仍保存在我的账户。公开 Agent 后，成交才会出现在这里。":"Your trades remain in My account. Enable public visibility to show the Agent's fills here.",
 "旧钱包、余额、暂停和权限配置会保留；完成重连后旧token立即失效。":"Your wallet, balance, pause status, and permissions are kept. Reconnecting immediately revokes the old token.",
@@ -177,12 +170,12 @@ window.BI_UI_EN = {
 "登录后可以看到自己的私有 Agent；公开展示由你选择。":"Sign in to see your private Agents. You choose whether to publish them.",
 "比较真实成交、方向和价格反应，不把重复交易当作独立买盘。":"Compare real trades, direction, and price response. Repeated transactions are not independent buying demand.",
 "设置最长持有时间，记录资金占用与超时退出造成的收益差异。":"Set a maximum holding time and track capital usage and the effects of time-based exits.",
-"目前没有新鲜且已核实的BSC市场。请等待行情恢复后重试。":"No fresh, verified BSC market is available. Wait for the market feed to recover and try again.",
+"目前没有新鲜且已核实的Robinhood Chain市场。请等待行情恢复后重试。":"No fresh, verified Robinhood Chain market is available. Wait for the market feed to recover and try again.",
 "3 款平台内置 Agent，由 AI 生成决策。":"Three built-in Agents with AI-generated decisions.",
-"为 BNB Chain 上的自主交易 Agent 构建。":"Built for autonomous trading Agents on BNB Chain.",
+"为 Robinhood Chain 上的自主交易 Agent 构建。":"Built for autonomous trading Agents on Robinhood Chain.",
 "配对后领取 1000U 虚拟资金，它会直接出现在这里。":"Pair to receive 1,000U in virtual funds. Your Agent will appear here.",
 "行情来自 DexScreener；持有人数量尚未接入。":"Market data comes from DexScreener. Holder counts are not integrated yet.",
-"它将领取自己的独立 BSC 钱包和1000U模拟资金。":"It receives an independent BSC wallet and 1,000U in paper funds.",
+"它将领取自己的独立 Robinhood Chain 钱包和1000U模拟资金。":"It receives an independent Robinhood Chain wallet and 1,000U in paper funds.",
 "先核对钱包近期记录与实际可跟成交价格，再研究跟随信号。":"Check recent wallet records and achievable fill prices before studying follow signals.",
 "按近期波动与实际流动性调整止损距离，评估滑点后的损失。":"Adjust stop distances to recent volatility and actual liquidity, accounting for slippage.",
 "这些是待验证的策略假设，需由外部Agent实现和测试。":"These are strategy hypotheses for an external Agent to implement and test.",
@@ -206,7 +199,7 @@ window.BI_UI_EN = {
 "实盘已开启。每个Agent只能操作自己的钱包。":"Live trading is enabled. Each Agent can only use its own wallet.",
 "从模拟开始，每一笔决策、成本与收益都清晰可见。":"Start with paper trading. See each decision, cost, and result clearly.",
 "公开 Agent。你自己的账户已显示在上方。":"public Agents. Your own accounts are shown above.",
-"初始1000U · 首次核实BNB价格后换算":"Starts with 1,000U · converted at the first verified BNB price",
+"初始1000U · 首次核实ETH价格后换算":"Starts with 1,000U · converted at the first verified ETH price",
 "核对原订单与回执，不要仅凭网络超时重新下单。":"Check the original order and receipt. A network timeout alone is not a reason to submit a new order.",
 "钱包账户已变化，请重新登录核对Owner身份":"Wallet account changed. Sign in again to verify the Owner.",
 "决策由账户主人运行的外部 Agent 提交。":"Decisions are submitted by an external Agent run by the account Owner.",
@@ -216,22 +209,22 @@ window.BI_UI_EN = {
 "独立模拟体验账户 · 连接个人钱包登录管理":"Independent paper trial · connect your personal wallet to manage it",
 "自己的 Agent 仍可查看，请稍后刷新。":"Your own Agents are still available. Refresh again later.",
 "模拟和实盘分开统计，未结算持仓不计入排名。":"Paper and live results are ranked separately. Open positions are excluded.",
-"独立产品，与 Binance 无隶属关系。":"An independent product, not affiliated with Binance.",
+"独立产品，与 Robinhood 无隶属关系。":"An independent product, not affiliated with Robinhood.",
 "初始本金 1000U · 单笔无固定上限":"Initial capital 1,000U · no fixed per-trade cap",
 "生成配对链接并交给运行中的 Agent，":"Create a pairing link and give it to your running Agent,",
 "，需要另付Gas。授权后Agent暂停。":", plus gas. Authorization pauses the Agent.",
-"美元行情暂不可用，BNB 数量仍可查看":"USD pricing is unavailable; the BNB balance is still visible",
+"美元行情暂不可用，ETH 数量仍可查看":"USD pricing is unavailable; the ETH balance is still visible",
 "仅当前账户可见，公开后才会展示给访客。":"Visible only to this account until you publish it.",
 "还没有公开 Agent，来创建第一位。":"No public Agent yet. Create the first one.",
 "笔。关闭弹窗后私钥不会保留在网页中。":"transactions. Closing the dialog removes the private key from this page.",
 "个公开账户 · 平台内置与社区策略":"public accounts · built-in and community strategies",
-"公开交易记录 · BNB Chain":"Public trade journal · BNB Chain",
+"公开交易记录 · Robinhood Chain":"Public trade journal · Robinhood Chain",
 "Agent已暂停 · 私钥仅显示一次":"Agent paused · private key shown once",
 "公开 Agent 的盈利与交易表现。":"Profit and trading performance of public Agents.",
 "每个 Agent，用自己的方式判断。":"Each Agent makes decisions from its own perspective.",
 "链接交给 Agent，钱包留给它。":"Give your Agent a link. Let it have its own wallet.",
 "查看完整 Agent 接入文档 ↗":"Full Agent integration guide ↗",
-"BNB金额须为最多18位小数的正数":"BNB amounts must be positive with at most 18 decimal places",
+"ETH金额须为最多18位小数的正数":"ETH amounts must be positive with at most 18 decimal places",
 "查看 API / MCP 文档 ↗":"View API / MCP docs ↗",
 "Agent 的研究、决策与执行流程":"The Agent research, decision, and execution journey",
 "独立体验预览 · 正式入口尚未替换":"Standalone experience · homepage entry unchanged",
@@ -244,7 +237,7 @@ window.BI_UI_EN = {
 "资金会从注册Owner钱包发到":"Funds will be sent from the registered Owner wallet to",
 "模拟记录对应真实报价与虚拟账本。":"Paper records use real quotes and a virtual ledger.",
 "当前筛选下没有公开 Agent":"No public Agent matches this filter",
-"BNB Chain，一个网络。":"BNB Chain. One network.",
+"Robinhood Chain，一个网络。":"Robinhood Chain. One network.",
 "直接 HTTPS 或 MCP。":"Connect through HTTPS or MCP.",
 "策略与退出条件（最多600字）":"Strategy and exit conditions (600 characters max)",
 "模拟订单已提交，等待新区块核价":"Paper order submitted; waiting for repricing in a new block",
@@ -267,7 +260,7 @@ window.BI_UI_EN = {
 "当前榜单暂无公开 Agent":"No public Agents on this leaderboard yet",
 "把每一次判断，交给市场检验。":"Let the market test every decision.",
 "REBOUND / 回撤反弹":"REBOUND / PULLBACK RECOVERY",
-"BNB · FIFO 成本":"BNB · FIFO costs",
+"ETH · FIFO 成本":"ETH · FIFO costs",
 "接入你的交易 Agent。":"Connect your trading Agent.",
 "让 Agent 开始工作。":"Put your Agent to work.",
 "研究由它完成，执行在这里。":"Your Agent researches. Execution happens here.",
@@ -281,13 +274,13 @@ window.BI_UI_EN = {
 "研究：看见信号，找到依据。":"Research: identify signals and supporting evidence.",
 "决策：选择视角，构建策略。":"Decision: choose a perspective and build a strategy.",
 "执行：交给市场，记录结果。":"Execution: test in the market and record the result.",
-"从 BSC 模拟交易开始。":"Start with BSC paper trading.",
+"从 Robinhood Chain 模拟交易开始。":"Start with Robinhood Chain paper trading.",
 "每个 Agent 独立模拟":"Independent paper trading per Agent",
 "个持仓 · 最近成交":"positions · latest fill",
 "创建我的 Agent ↗":"Create my Agent ↗",
 "你的钱包，就是你的账户。":"Your wallet is your account.",
 "给 Agent 起个名字":"Name your Agent",
-"单笔Gas上限（BNB）":"Gas limit per trade (BNB)",
+"单笔Gas上限（ETH）":"Gas limit per trade (ETH)",
 "接入我的 Agent ↗":"Connect my Agent ↗",
 "探索交易 Agent ↓":"Explore trading Agents ↓",
 "bi trade品牌标记":"bi trade brand mark",
@@ -308,7 +301,7 @@ window.BI_UI_EN = {
 "试一笔真实报价模拟交易":"Try one paper trade with a real quote",
 "策略名称（最多60字）":"Strategy name (60 characters max)",
 "Agent可接收新指令":"Agent is ready for new instructions",
-"向Agent充值BNB":"Deposit BNB to the Agent",
+"向Agent充值ETH":"Deposit ETH to the Agent",
 "恢复Agent钱包私钥":"Recover the Agent wallet key",
 "请切换回Owner钱包":"Switch back to the Owner wallet",
 "实盘记录对应链上回执。":"Live records correspond to on-chain receipts.",
@@ -342,7 +335,7 @@ window.BI_UI_EN = {
 "比较候选资产的强弱，":"Compare relative asset strength.",
 "寻找轮动与配置机会。":"Explore rotation and allocation.",
 "把你的 Agent，":"Bring your Agent",
-"链上 BNB 余额":"On-chain BNB balance",
+"链上 ETH 余额":"On-chain ETH balance",
 "这笔订单未提供说明":"No explanation provided for this order",
 "还没有公开交易记录":"No public trades yet",
 "每15秒刷新 ·":"Refreshes every 15 seconds ·",
@@ -350,13 +343,13 @@ window.BI_UI_EN = {
 "你的钱包就是账户。":"Your wallet is your account.",
 "你决定它能花多少。":"You decide how much it can spend.",
 "。除注册外，需要":". All tools except registration require",
-"请切换到BSC主网":"Switch to BSC mainnet",
+"请切换到Robinhood Chain主网":"Switch to Robinhood Chain mainnet",
 "需要Owner钱包":"An Owner wallet is required",
 "· 请勿公开分享":"· Keep this link private",
 "复制Agent凭据":"Copy Agent credentials",
 "公开展示设置已更新":"Public visibility updated",
-"充值数量（BNB）":"Deposit amount (BNB)",
-"提现数量（BNB）":"Withdrawal amount (BNB)",
+"充值数量（ETH）":"Deposit amount (ETH)",
+"提现数量（ETH）":"Withdrawal amount (ETH)",
 "Agent交易权限":"Agent trading permissions",
 "01 / 自主决策":"01 / AUTONOMOUS DECISIONS",
 "02 / 独立账户":"02 / INDEPENDENT ACCOUNTS",
@@ -373,7 +366,7 @@ window.BI_UI_EN = {
 "我的 Agent":"My Agents",
 "公开 Agent":"Public Agents",
 "读取公开账户中…":"Loading public accounts…",
-"BSC 合约地址":"BSC contract address",
+"Robinhood Chain 合约地址":"Robinhood Chain contract address",
 "连接我的钱包 ↗":"Connect my wallet ↗",
 "创建配对链接 ↗":"Create a pairing link ↗",
 "导出 CSV ↓":"Export CSV ↓",
@@ -408,8 +401,8 @@ window.BI_UI_EN = {
 "操作 / 代币":"Action / token",
 "筛选Agent":"Filter Agents",
 "24小时成交量":"24h volume",
-"链上BNB余额":"On-chain BNB balance",
-"虚拟 BNB":"Virtual BNB",
+"链上ETH余额":"On-chain ETH balance",
+"虚拟 ETH":"Virtual ETH",
 "· 更多控制":"· More controls",
 "切换至实盘钱包":"Switch to the live wallet",
 "切换至模拟账户":"Switch to the paper account",
@@ -417,13 +410,13 @@ window.BI_UI_EN = {
 "订单与决策说明":"Orders and decision summaries",
 "还没有交易指令":"No trade instructions yet",
 "每一笔都可查。":"Every trade is traceable.",
-"选择BSC市场":"Choose a BSC market",
+"选择Robinhood Chain市场":"Choose a Robinhood Chain market",
 "策略说明已保存":"Strategy description saved",
 "配对链接已复制":"Pairing link copied",
 "钱包地址已复制":"Wallet address copied",
 "合约地址已复制":"Contract address copied",
 "账户模式已切换":"Account mode changed",
-"累计BNB预算":"Cumulative BNB budget",
+"累计ETH预算":"Cumulative ETH budget",
 "交易权限已更新":"Trading permissions updated",
 "累计已实现盈亏":"Total realized profit / loss",
 "策略各有主张。":"Independent strategies.",
@@ -451,10 +444,10 @@ window.BI_UI_EN = {
 "独立策略账户":"Independent strategy accounts",
 "管理全部 →":"Manage all →",
 "链上执行失败":"On-chain execution failed",
-"BSC 合约":"BSC contract",
+"Robinhood Chain 合约":"Robinhood Chain contract",
 "复制BI合约":"Copy BI contract",
 "等待合约发布":"Waiting for contract release",
-"充值 BNB":"Deposit BNB",
+"充值 ETH":"Deposit ETH",
 "关闭公开展示":"Hide from public view",
 "填写公开策略":"Edit public strategy",
 "账户交易记录":"Account trade history",
@@ -535,7 +528,7 @@ window.BI_UI_EN = {
 "记录结果。":"Record the result.",
 "带进市场。":"into the market.",
 "核对报价":"Verifying the quote",
-"模拟成交":"Filled (paper)",
+"模拟成交":"Paper execution",
 "链上确认":"Confirmed on-chain",
 "链上失败":"Failed on-chain",
 "请求失败":"Request failed",
@@ -652,12 +645,10 @@ window.BI_UI_EN = {
 "查看":"View",
 "取消":"Cancel",
 "查看账户 →":"View account →",
-"查看 PancakeSwap ↗":"View PancakeSwap ↗",
 "链上回执 ↗":"On-chain receipt ↗",
 "模拟榜 · USD 收益率":"Paper · USD return",
-"实盘榜 · BNB 盈亏":"Live · BNB profit / loss",
+"实盘榜 · ETH 盈亏":"Live · ETH profit / loss",
 "全部交易类型":"All trade types",
-"模拟交易":"Paper trading",
 "实盘交易":"Live trades",
 "模拟卖出":"Paper sell",
 "钱包地址":"wallet address",
@@ -670,198 +661,200 @@ window.BI_UI_EN = {
 "外观和语言":"Appearance and language",
 "趋势动量":"Trend momentum",
 "回撤反弹":"Pullback rebound",
-"相对强弱轮动":"Relative-strength rotation"
- ,"\" aria-label=\"复制":"\" aria-label=\"Copy "
- ,"钱包地址\">⧉":" wallet address\">⧉"
- ,"钱包地址\">":" wallet address\">"
- ,"比较实际价格采样的方向和持续性，寻找趋势机会；结合可用流动性、费用和退出条件决定仓位。数据不足时观察。":"Compare the direction and persistence of actual price samples to find trends. Size positions using available liquidity, costs, and exit conditions. Observe when data is insufficient."
- ,"研究实际采样中的回撤与企稳迹象，避免仅因价格下跌买入；为每笔入场设定止损、止盈与最长持有时间。":"Study pullbacks and stabilization in actual samples. Avoid buying solely because prices fell. Set a stop, take-profit, and maximum holding time for each entry."
- ,"比较候选市场的实际价格表现与可用深度，研究资金轮动；评估持仓退出成本后决定买入、卖出或保持观察。":"Compare actual price performance and available depth across candidate markets. Study rotation and evaluate exit costs before buying, selling, or holding."
- ,"等待站点管理员配置 AI API 密钥；尚未启动 AI 决策。":"Waiting for the administrator to configure the AI API key. AI decisions have not started."
- ,"等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。":"Waiting for the administrator to configure the OpenAI API key. AI decisions have not started."
- ,"等待核对行情与 AI 配置":"Waiting to verify market data and AI configuration"
- ,"AI 配置无法读取，请在本机重新配置。":"AI settings could not be read. Reconfigure them locally."
- ,"内置展示账户仅支持模拟模式":"Built-in showcase accounts only support paper mode"
- ,"展示 Agent 已暂停":"Showcase Agent paused"
- ,"模拟订单等待后续区块重新核价":"Paper order waiting for repricing in a later block"
- ,"最近订单未成交":"The latest order did not fill"
- ,"暂无法核对持仓退出报价":"Position exit quotes are temporarily unavailable"
- ,"等待新鲜 BNB 美元行情":"Waiting for fresh BNB/USD data"
- ,"等待新鲜且已核实的 BSC 候选市场":"Waiting for fresh, verified BSC candidate markets"
- ,"等待 BSC 行情恢复":"Waiting for the BSC feed to recover"
- ,"今日 AI 调用额度已用完；持仓退出检查继续。":"The daily AI request quota is exhausted. Position exit checks continue."
- ,"AI 正在评估真实行情和当前模拟持仓":"AI is evaluating real market data and current paper positions"
- ,"AI 决策本轮未执行，请检查本机服务。":"No AI decision executed this round. Check the local service."
- ,"账户主人尚未提供公开策略说明。":"The Owner has not provided a public strategy description."
- ,"已实现美元盈亏 ÷ 初始虚拟本金；包含成交费用，补足本金不算盈利。":"Realized USD profit / initial virtual capital. Execution costs are included; capital top-ups are not profit."
- ,"按已知 FIFO 成本的已实现 BNB 盈亏排序；充值、提现和成本未知资产不算盈利。":"Ranked by realized BNB profit with known FIFO costs. Deposits, withdrawals, and assets with unknown costs are excluded."
- ,"已关闭":"Closed"
- ,"需要重连 Agent":"Reconnect required"
- ,"待接入 Agent":"Awaiting Agent connection"
- ,"关闭账户":"Close account"
- ,"连接凭据已撤销。请点击重连，把新链接交给你的 Agent。":"Connection credentials were revoked. Reconnect and give the new link to your Agent."
- ,"尚未收到 Agent 的认证访问。请先在你的 Agent 中保存配对凭据并完成接入。":"No authenticated Agent access has been received. Save the pairing credentials in your Agent and complete the connection."
- ,"接口访问不代表策略持续运行；自动交易由你接入的 Agent 运行。":"API access does not confirm a continuously running strategy. Your connected Agent runs the strategy."
- ,"已关闭账户":"Closed accounts"
- ,"钱包、余额和历史记录已保留。恢复后保持暂停，需要重新接入 Agent。":"Wallets, balances, and history are retained. Restored accounts stay paused and require a new Agent connection."
- ,"关闭时间：":"Closed: "
- ,"查看归档":"View archive"
- ,"恢复账户":"Restore account"
- ,"账户归档":"Account archive"
- ,"先配置并运行你的 Agent，再把此页链接交给它。只有 Agent 完成配对后，才会生成独立钱包和模拟账户。":"Configure and run your Agent, then give it this link. Its wallet and paper account are created only when the Agent completes pairing."
- ,"配对码只用一次，15分钟后过期。此页面仅提供接入说明，不会创建账户。":"The one-use pairing code expires in 15 minutes. This page provides connection instructions and does not create an account."
- ,"关闭 Agent 账户":"Close Agent account"
- ,"将停止接收新指令，撤销连接凭据和配对链接，取消尚未成交的模拟订单。钱包、余额和历史记录会保留，你可以在已关闭账户中恢复。":"Stop accepting instructions, revoke credentials and pairing links, and cancel unfilled paper orders. The wallet, balances, and history are retained. You can restore the account from Closed accounts."
- ,"关闭并归档":"Close and archive"
- ,"账户已关闭，连接已撤销；历史记录已归档。":"Account closed and credentials revoked. History is archived."
- ,"账户已恢复并保持暂停，请重新接入 Agent。":"Account restored and paused. Please reconnect your Agent."
- ,"恢复后保持暂停；旧凭据不会恢复，需要重新配对。":"Restored accounts stay paused. Old credentials remain revoked; pair again."
- ,"蓝色尖耳狐":"Sky Fox"
- ,"淡紫垂耳犬":"Lilac Pup"
- ,"薄荷圆耳熊":"Mint Bear"
- ,"更换 Agent 形象":"Change Agent avatar"
- ,"选择你的 Agent 形象":"Choose your Agent avatar"
- ,"形象会同步显示在账户、公开展示和排行榜。":"Your avatar appears on your account, public profile, and leaderboard."
- ,"先选择形象，再生成链接交给已配置的 Agent。生成配对链接不会创建交易账户。":"Choose an avatar, then give the generated link to your configured Agent. Generating a link does not create a trading account."
- ,"保存形象":"Save avatar"
- ,"生成配对链接":"Generate pairing link"
- ,"Agent 形象已更新":"Agent avatar updated"
- ,"把链接交给已配置的 Agent。只有它完成配对后，才会生成独立钱包和1000U模拟账户。":"Give the link to your configured Agent. Its wallet and 1,000U paper account are created only after it completes pairing."
- ,"请在已配置的Agent中完成配对；网页不能手动创建交易账户":"Complete pairing from your configured Agent. The webpage cannot create trading accounts manually."
- ,"账户已关闭，请先恢复并重连Agent":"This account is closed. Restore it and reconnect the Agent first."
- ,"有待核对的实盘交易，暂不能关闭账户":"Unresolved live transactions must be reconciled before closing the account."
- ,"请选择提供的三款Agent形象之一":"Choose one of the three available Agent avatars."
- ,"OpenAI 密钥验证失败（HTTP 401），AI 调用已停用，请重新配置有效密钥。":"OpenAI key validation failed (HTTP 401). AI calls are disabled; configure a valid key."
- ,"页面不会手动创建交易账户。请把配对链接交给已配置并运行的 Agent，由它完成注册；首次认证访问前显示“待接入 Agent”。":"The webpage cannot create trading accounts manually. Give the pairing link to your configured, running Agent to register. Until its first authenticated access, the account shows Awaiting Agent connection."
- ,"账户卡片可关闭并归档。关闭会撤销凭据和配对链接、取消未成交模拟订单、停止公开展示；钱包、余额和历史保留。恢复后保持暂停，需要重新配对。有待核对实盘交易时不能关闭。":"Close and archive an account from its card. Credentials and pairing links are revoked, unfilled paper orders are cancelled, and public display stops. The wallet, balances, and history are retained. Restored accounts stay paused and require new pairing. Unresolved live transactions block closure."
- ,"“待接入 Agent”表示尚未收到认证访问；“最近有接口访问”表示最近五分钟内有访问，不保证策略持续运行。先确认外部 Agent 已配置并运行，再查看订单说明。行情过期时等待恢复，不会使用旧价格制造成交。":"Awaiting Agent connection means no authenticated access has been received. Recent API access means access within five minutes and does not guarantee a continuously running strategy. Configure and run your external Agent, then check its orders. Stale market data never creates fabricated fills."
- ,"近期代币风险：新开仓检查未通过，详情中可查看依据。":"Recent-token risk: new entries are blocked. Open details for the evidence."
- ,"近期代币风险检查":"Recent-token entry risk checks"
- ,"这是开仓筛查结果；未检出标签不代表没有关联钱包。现有持仓仍按退出规则处理。":"These are entry screening results. Missing tags do not prove wallets are unrelated. Existing positions retain their exit rules."
- ,"本次筛查未触发拦截":"No block triggered in this screening"
- ,"新开仓检查未通过":"New-entry checks failed"
- ,"池持有占总供应":"Pool share of total supply"
- ,"观测捆绑持仓占可交易筹码":"Observed bundled holdings / tradeable float"
- ,"捆绑交易量占比":"Bundled trading volume share"
- ,"GMGN 池流动性":"GMGN pool liquidity"
- ,"读取时间：":"Fetched at: "
- ,"尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。":"No candidate currently passes holder-risk screening. Missing data or excessive risk prevents new entries."
- ,"尚未取得持仓和捆绑风险资料":"Holder and bundler risk data has not been fetched"
- ,"持仓风险资料已过期，需要重新核查":"Holder-risk data has expired and needs a fresh check"
- ,"持仓风险资料时间未核实，需要重新核查":"The holder-risk timestamp was not verified. A fresh check is required"
- ,"风险资料的合约地址未核实":"The contract address in the risk data was not verified"
- ,"持仓列表缺失":"The holder list is missing"
- ,"持仓地址、占比或地址类型未核实":"Holder addresses, percentages, or address types were not verified"
- ,"池外可交易筹码不足2%，不能据此判定持仓结构安全":"Tradeable float outside pools is below 2%; holder safety cannot be assessed from these percentages"
- ,"前100持仓未覆盖足够可交易筹码，捆绑占比仍有未知部分":"The top 100 holders do not cover enough tradeable float; part of the bundled share remains unknown"
- ,"持仓风险标签未返回":"Holder risk tags were not returned"
- ,"捆绑交易量占比缺失":"Bundled trading volume share is missing"
- ,"池流动性未核实":"Pool liquidity was not verified"
- ,"独立价格参考未核实":"The independent reference price was not verified"
- ,"合约限制交易字段未核实":"Contract trading restriction fields were not verified"
- ,"存在禁止卖出或貔貅标记":"A sell restriction or honeypot flag was found"
- ,"存在黑名单能力标记":"A blacklist capability flag was found"
- ,"捆绑交易量占比超过30%的筛查上限":"Bundled trading volume exceeds the 30% screening limit"
- ,"带捆绑标签的钱包持有超过30%的可交易筹码":"Bundler-tagged wallets hold more than 30% of tradeable float"
- ,"老鼠仓标签筹码超过5%的可交易筹码":"Rat-trader-tagged holdings exceed 5% of tradeable float"
- ,"最大普通钱包持有超过10%的可交易筹码":"The largest ordinary wallet holds over 10% of tradeable float"
- ,"创建者曾为当前持币钱包提供资金":"The creator has funded a current holder wallet"
- ,"同源资金样本持有超过25%的可交易筹码，需进一步核查":"Common-funding samples hold over 25% of tradeable float and need further review"
- ,"独立参考与当前价格偏差超过20%，不能使用不一致的数据开仓":"Independent and current prices differ by over 20%; inconsistent data cannot support a new entry"
- ,"持仓、捆绑或安全资料读取失败；暂不允许买入":"Holder, bundler, or security reads failed; buying is temporarily blocked"
+"相对强弱轮动":"Relative-strength rotation",
+"\" aria-label=\"复制":"\" aria-label=\"Copy ",
+"钱包地址\">⧉":" wallet address\">⧉",
+"钱包地址\">":" wallet address\">",
+"比较实际价格采样的方向和持续性，寻找趋势机会；结合可用流动性、费用和退出条件决定仓位。数据不足时观察。":"Compare the direction and persistence of actual price samples to find trends. Size positions using available liquidity, costs, and exit conditions. Observe when data is insufficient.",
+"研究实际采样中的回撤与企稳迹象，避免仅因价格下跌买入；为每笔入场设定止损、止盈与最长持有时间。":"Study pullbacks and stabilization in actual samples. Avoid buying solely because prices fell. Set a stop, take-profit, and maximum holding time for each entry.",
+"比较候选市场的实际价格表现与可用深度，研究资金轮动；评估持仓退出成本后决定买入、卖出或保持观察。":"Compare actual price performance and available depth across candidate markets. Study rotation and evaluate exit costs before buying, selling, or holding.",
+"等待站点管理员配置 AI API 密钥；尚未启动 AI 决策。":"Waiting for the administrator to configure the AI API key. AI decisions have not started.",
+"等待站点管理员配置 OpenAI API 密钥；尚未启动 AI 决策。":"Waiting for the administrator to configure the OpenAI API key. AI decisions have not started.",
+"等待核对行情与 AI 配置":"Waiting to verify market data and AI configuration",
+"AI 配置无法读取，请在本机重新配置。":"AI settings could not be read. Reconfigure them locally.",
+"内置展示账户仅支持模拟模式":"Built-in showcase accounts only support paper mode",
+"展示 Agent 已暂停":"Showcase Agent paused",
+"模拟订单等待后续区块重新核价":"Paper order waiting for repricing in a later block",
+"最近订单未成交":"The latest order did not fill",
+"暂无法核对持仓退出报价":"Position exit quotes are temporarily unavailable",
+"等待新鲜 ETH 美元行情":"Waiting for fresh ETH/USD data",
+"等待新鲜且已核实的 Robinhood Chain 候选市场":"Waiting for fresh, verified Robinhood Chain candidate markets",
+"等待 Robinhood Chain 行情恢复":"Waiting for the Robinhood Chain feed to recover",
+"今日 AI 调用额度已用完；持仓退出检查继续。":"The daily AI request quota is exhausted. Position exit checks continue.",
+"AI 正在评估真实行情和当前模拟持仓":"AI is evaluating real market data and current paper positions",
+"AI 决策本轮未执行，请检查本机服务。":"No AI decision executed this round. Check the local service.",
+"账户主人尚未提供公开策略说明。":"The Owner has not provided a public strategy description.",
+"已实现美元盈亏 ÷ 初始虚拟本金；包含成交费用，补足本金不算盈利。":"Realized USD profit / initial virtual capital. Execution costs are included; capital top-ups are not profit.",
+"按已知 FIFO 成本的已实现 ETH 盈亏排序；充值、提现和成本未知资产不算盈利。":"Ranked by realized ETH profit with known FIFO costs. Deposits, withdrawals, and assets with unknown costs are excluded.",
+"已关闭":"Closed",
+"需要重连 Agent":"Reconnect required",
+"待接入 Agent":"Awaiting Agent connection",
+"关闭账户":"Close account",
+"连接凭据已撤销。请点击重连，把新链接交给你的 Agent。":"Connection credentials were revoked. Reconnect and give the new link to your Agent.",
+"尚未收到 Agent 的认证访问。请先在你的 Agent 中保存配对凭据并完成接入。":"No authenticated Agent access has been received. Save the pairing credentials in your Agent and complete the connection.",
+"接口访问不代表策略持续运行；自动交易由你接入的 Agent 运行。":"API access does not confirm a continuously running strategy. Your connected Agent runs the strategy.",
+"已关闭账户":"Closed accounts",
+"钱包、余额和历史记录已保留。恢复后保持暂停，需要重新接入 Agent。":"Wallets, balances, and history are retained. Restored accounts stay paused and require a new Agent connection.",
+"关闭时间：":"Closed: ",
+"查看归档":"View archive",
+"恢复账户":"Restore account",
+"账户归档":"Account archive",
+"先配置并运行你的 Agent，再把此页链接交给它。只有 Agent 完成配对后，才会生成独立钱包和模拟账户。":"Configure and run your Agent, then give it this link. Its wallet and paper account are created only when the Agent completes pairing.",
+"配对码只用一次，15分钟后过期。此页面仅提供接入说明，不会创建账户。":"The one-use pairing code expires in 15 minutes. This page provides connection instructions and does not create an account.",
+"关闭 Agent 账户":"Close Agent account",
+"将停止接收新指令，撤销连接凭据和配对链接，取消尚未成交的模拟订单。钱包、余额和历史记录会保留，你可以在已关闭账户中恢复。":"Stop accepting instructions, revoke credentials and pairing links, and cancel unfilled paper orders. The wallet, balances, and history are retained. You can restore the account from Closed accounts.",
+"关闭并归档":"Close and archive",
+"账户已关闭，连接已撤销；历史记录已归档。":"Account closed and credentials revoked. History is archived.",
+"账户已恢复并保持暂停，请重新接入 Agent。":"Account restored and paused. Please reconnect your Agent.",
+"恢复后保持暂停；旧凭据不会恢复，需要重新配对。":"Restored accounts stay paused. Old credentials remain revoked; pair again.",
+"蓝色尖耳狐":"Sky Fox",
+"淡紫垂耳犬":"Lilac Pup",
+"薄荷圆耳熊":"Mint Bear",
+"更换 Agent 形象":"Change Agent avatar",
+"选择你的 Agent 形象":"Choose your Agent avatar",
+"形象会同步显示在账户、公开展示和排行榜。":"Your avatar appears on your account, public profile, and leaderboard.",
+"先选择形象，再生成链接交给已配置的 Agent。生成配对链接不会创建交易账户。":"Choose an avatar, then give the generated link to your configured Agent. Generating a link does not create a trading account.",
+"保存形象":"Save avatar",
+"生成配对链接":"Generate pairing link",
+"Agent 形象已更新":"Agent avatar updated",
+"把链接交给已配置的 Agent。只有它完成配对后，才会生成独立钱包和1000U模拟账户。":"Give the link to your configured Agent. Its wallet and 1,000U paper account are created only after it completes pairing.",
+"请在已配置的Agent中完成配对；网页不能手动创建交易账户":"Complete pairing from your configured Agent. The webpage cannot create trading accounts manually.",
+"账户已关闭，请先恢复并重连Agent":"This account is closed. Restore it and reconnect the Agent first.",
+"有待核对的实盘交易，暂不能关闭账户":"Unresolved live transactions must be reconciled before closing the account.",
+"请选择提供的三款Agent形象之一":"Choose one of the three available Agent avatars.",
+"OpenAI 密钥验证失败（HTTP 401），AI 调用已停用，请重新配置有效密钥。":"OpenAI key validation failed (HTTP 401). AI calls are disabled; configure a valid key.",
+"页面不会手动创建交易账户。请把配对链接交给已配置并运行的 Agent，由它完成注册；首次认证访问前显示“待接入 Agent”。":"The webpage cannot create trading accounts manually. Give the pairing link to your configured, running Agent to register. Until its first authenticated access, the account shows Awaiting Agent connection.",
+"账户卡片可关闭并归档。关闭会撤销凭据和配对链接、取消未成交模拟订单、停止公开展示；钱包、余额和历史保留。恢复后保持暂停，需要重新配对。有待核对实盘交易时不能关闭。":"Close and archive an account from its card. Credentials and pairing links are revoked, unfilled paper orders are cancelled, and public display stops. The wallet, balances, and history are retained. Restored accounts stay paused and require new pairing. Unresolved live transactions block closure.",
+"“待接入 Agent”表示尚未收到认证访问；“最近有接口访问”表示最近五分钟内有访问，不保证策略持续运行。先确认外部 Agent 已配置并运行，再查看订单说明。行情过期时等待恢复，不会使用旧价格制造成交。":"Awaiting Agent connection means no authenticated access has been received. Recent API access means access within five minutes and does not guarantee a continuously running strategy. Configure and run your external Agent, then check its orders. Stale market data never creates fabricated fills.",
+"近期代币风险：新开仓检查未通过，详情中可查看依据。":"Recent-token risk: new entries are blocked. Open details for the evidence.",
+"近期代币风险检查":"Recent-token entry risk checks",
+"这是开仓筛查结果；未检出标签不代表没有关联钱包。现有持仓仍按退出规则处理。":"These are entry screening results. Missing tags do not prove wallets are unrelated. Existing positions retain their exit rules.",
+"本次筛查未触发拦截":"No block triggered in this screening",
+"新开仓检查未通过":"New-entry checks failed",
+"池持有占总供应":"Pool share of total supply",
+"观测捆绑持仓占可交易筹码":"Observed bundled holdings / tradeable float",
+"捆绑交易量占比":"Bundled trading volume share",
+"GMGN 池流动性":"GMGN pool liquidity",
+"读取时间：":"Fetched at: ",
+"尚无通过持仓风险筛查的候选；数据缺失或风险过高时暂不开仓。":"No candidate currently passes holder-risk screening. Missing data or excessive risk prevents new entries.",
+"尚未取得持仓和捆绑风险资料":"Holder and bundler risk data has not been fetched",
+"持仓风险资料已过期，需要重新核查":"Holder-risk data has expired and needs a fresh check",
+"持仓风险资料时间未核实，需要重新核查":"The holder-risk timestamp was not verified. A fresh check is required",
+"风险资料的合约地址未核实":"The contract address in the risk data was not verified",
+"持仓列表缺失":"The holder list is missing",
+"持仓地址、占比或地址类型未核实":"Holder addresses, percentages, or address types were not verified",
+"池外可交易筹码不足2%，不能据此判定持仓结构安全":"Tradeable float outside pools is below 2%; holder safety cannot be assessed from these percentages",
+"前100持仓未覆盖足够可交易筹码，捆绑占比仍有未知部分":"The top 100 holders do not cover enough tradeable float; part of the bundled share remains unknown",
+"持仓风险标签未返回":"Holder risk tags were not returned",
+"捆绑交易量占比缺失":"Bundled trading volume share is missing",
+"池流动性未核实":"Pool liquidity was not verified",
+"独立价格参考未核实":"The independent reference price was not verified",
+"合约限制交易字段未核实":"Contract trading restriction fields were not verified",
+"存在禁止卖出或貔貅标记":"A sell restriction or honeypot flag was found",
+"存在黑名单能力标记":"A blacklist capability flag was found",
+"捆绑交易量占比超过30%的筛查上限":"Bundled trading volume exceeds the 30% screening limit",
+"带捆绑标签的钱包持有超过30%的可交易筹码":"Bundler-tagged wallets hold more than 30% of tradeable float",
+"老鼠仓标签筹码超过5%的可交易筹码":"Rat-trader-tagged holdings exceed 5% of tradeable float",
+"最大普通钱包持有超过10%的可交易筹码":"The largest ordinary wallet holds over 10% of tradeable float",
+"创建者曾为当前持币钱包提供资金":"The creator has funded a current holder wallet",
+"同源资金样本持有超过25%的可交易筹码，需进一步核查":"Common-funding samples hold over 25% of tradeable float and need further review",
+"独立参考与当前价格偏差超过20%，不能使用不一致的数据开仓":"Independent and current prices differ by over 20%; inconsistent data cannot support a new entry",
+"持仓、捆绑或安全资料读取失败；暂不允许买入":"Holder, bundler, or security reads failed; buying is temporarily blocked",
+"上轮 AI 评估因服务重启中断，等待重新评估。":"The previous AI evaluation was interrupted by a service restart. Waiting for a new evaluation.",
+"当前退出计划":"Current exit plan",
+"AI 自主决定退出方式，可明确修改条件或继续持有。自动条件按整仓扣除退出费用后的收益判断；卖出仍需重新核价成交。":"AI chooses how to exit and can explicitly revise conditions or continue holding. Automated conditions use whole-position returns after exit costs. Sales still require a fresh execution quote.",
+"AI 自选条件 · 可调整":"AI-selected conditions · Adjustable",
+"AI 自主退出":"AI-managed exit",
+"未设置固定条件":"No fixed condition",
+"未设固定止盈、止损或持仓期限；由 AI 根据后续行情评估继续持有或卖出。":"No fixed take-profit, stop-loss or holding deadline. AI evaluates later market data to decide whether to hold or sell.",
+"原入场参数保留为历史参考，已不作为自动退出条件。":"Original entry parameters remain as historical context and no longer trigger automatic exits.",
+"AI 自主退出依赖行情与模型服务；服务中断可能延迟决策。暂停或报价不可用时不会假定已成交。":"AI-managed exits depend on market data and model availability; interruptions can delay decisions. Pauses or unavailable quotes do not imply a fill.",
+"可以从趋势和动量出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。":"Trend and momentum offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
+"可以从回撤与企稳迹象出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。":"Pullbacks and stabilization offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
+"可以从相对强弱和资金轮动出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。":"Relative strength and rotation offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
+"你的下一笔交易，":"Your next trade.",
+"让":"Let ",
+"智能先行。":"intelligence lead.",
+"给 Agent 一个独立账户，给策略一个真实的检验场。":"An independent account for your Agent. A real proving ground for its strategy.",
+"从 Robinhood Chain 模拟交易开始，看见每一步决策与表现。":"Start with Robinhood Chain paper trading. See every decision and result.",
+"三个视角。一个市场。":"Three perspectives. One market.",
+"三个 Agent，":"Three Agents.",
+"各有自己的判断。":"Each with its own perspective.",
+"趋势、回弹、轮动，各自在交易桌前观察市场、研究下一步。":"Trend, rebound and rotation: each studies the market at its own desk before deciding what comes next.",
+"认识三位 Agent ↗":"Meet the three Agents ↗",
+"趋势、回弹、轮动三位 Agent 在交易室各自的电脑前研究行情的动态场景":"Animated scene of the trend, rebound and rotation Agents studying charts at their own desks",
+"动态场景为示意；屏幕曲线不是实时行情，成交以交易记录为准。":"Illustrative animation. Screen charts are not live market data; consult the trade journal for actual fills.",
+"趋势 · 回撤 · 轮动":"Trend · Rebound · Rotation",
+"体验品牌故事":"Explore our story",
+"三款 Agent 围绕 bi trade 品牌的动态示意":"An animated illustration of the three Agents around bi trade",
+"捕捉趋势":"Follow momentum",
+"寻找转折":"Find reversals",
+"发现机会":"Discover opportunities",
+"研究 → 决策 → 执行":"RESEARCH → DECIDE → EXECUTE",
+"系统流程示意":"WORKFLOW ILLUSTRATION",
+"把策略交给智能。":"Intelligence sets the strategy.",
+"把控制留给你。":"You stay in control.",
+"从市场信号到交易记录，每一环都有自己的位置。":"From market signals to trade records, every step has a role.",
+"你的 Agent 独立决策，你始终掌握账户与展示权。":"Your Agent decides independently. You control the account and its visibility.",
+"了解运行方式 ↗":"See how it works ↗",
+"Agent 决策与执行流程":"Agent decision and execution workflow",
+"市场信号":"Market signals",
+"独立决策":"Independent decisions",
+"风险核验":"Risk checks",
+"公开记录":"Public records",
+"真实行情 · 独立账本 · 可随时暂停":"Real market data · Independent ledger · Pause anytime",
+"向下滚动探索 · 随时进入主页":"Scroll to explore · Enter the platform anytime",
+"平台 Agent":"Platform Agents",
+"选择交易 Agent":"Select a trading Agent",
+"场景动作仅为示意；成交与收益来自模拟账本。":"The scene is illustrative. Fills and returns come from the paper ledger.",
+"策略与完整记录 ↗":"Strategy and full journal ↗",
+"还没有成交":"No fills yet",
+"通过评估与核价后，模拟成交会记录在这里。":"Paper fills appear here after a decision passes execution checks.",
+"等待 AI 服务恢复":"Waiting for the AI service",
+"等待下一轮评估":"Waiting for the next evaluation",
+"最近 AI 评估":"Latest AI evaluation",
+"上次有效评估":"Last valid evaluation",
+"尚无有效评估":"No valid evaluation yet",
+"正在等待真实行情与有效评估，尚未发起交易。":"Waiting for live market evidence and a valid evaluation. No trade has been proposed.",
+"本轮暂未完成，恢复后自动继续；未生成新的交易。":"This round did not finish. Evaluation will resume automatically; no new trade was created.",
+"下次评估：":"Next evaluation: ",
+"最近一次未成交尝试":"Most recent unfilled attempt",
+"正在准备 Agent 工位…":"Preparing the Agent desk…",
+" 个公开账户":" public accounts",
+"当前持仓":"Open positions",
+"AI 服务响应较慢，本轮未生成决策，稍后自动重试。":"The AI service is responding slowly. This round produced no decision; it will retry automatically.",
+"AI 服务连接暂时不稳定，本轮未生成决策，稍后自动重试。":"The AI connection is temporarily unstable. This round produced no decision; it will retry automatically.",
+"AI 服务暂时繁忙，本轮未生成决策，稍后自动重试。":"The AI service is temporarily busy. This round produced no decision; it will retry automatically.",
+"AI 服务配置需要维护，本轮暂停评估。":"The AI service configuration needs attention. Evaluation is temporarily paused.",
+"本轮评估已中止。":"This evaluation was interrupted.",
+"本轮评估暂未更新。":"This evaluation has not been updated yet.",
+"本次未成交，等待后续评估。":"No fill was created. A later evaluation will reassess the opportunity.",
+"市场条件已变化，本次未成交。":"Market conditions changed. No fill was created.",
+"本次暂未取得可用报价，未发生成交。":"An executable quote was unavailable. No fill was created.",
+"评估时间：":"Evaluation time: ",
+"数据暂时无法更新，请稍后再试。已保存的账户和记录会保留。":"Data is temporarily unavailable. Please try again later. Your saved accounts and records are retained.",
+"还没有社区 Agent，来创建第一位。":"Be the first to publish a community Agent.",
+"尚无同时满足开仓条件的候选；最近5分钟成交量需至少3,000美元，资料不足时继续观察。":"No candidate currently meets the entry conditions. At least $3,000 of verified volume in the last 5 minutes is required; incomplete evidence keeps the Agent observing.",
+"最近5分钟成交量尚未核实，暂不开新仓。":"Volume in the last 5 minutes is unverified; no new position will be opened.",
+"最近5分钟成交量尚未核实达到3,000美元，暂不开新仓。":"Verified volume in the last 5 minutes has not reached $3,000; no new position will be opened.",
+"本次尚未完成叙事判断，等待重新评估。":"The narrative assessment is incomplete; awaiting a new evaluation.",
+"本次尚未完成新的开仓评估，等待重新判断。":"The updated entry assessment is incomplete; awaiting a new evaluation.",
+"查看合约 ↗":"View contract ↗",
+"在 Robinhood Chain 检验你的策略。":"Test your strategy on Robinhood Chain.",
+"接入自行运行的 Agent，使用真实 Pons V2 行情和独立的 1000U 虚拟本金。当前仅模拟，不使用真实资金。":"Connect your running Agent to real Pons V2 market data and an independent $1,000 paper account. Paper trading only; no real funds.",
+"如何开始":"Getting started",
+"开始模拟后，在我的账户生成配对链接，交给运行中的 Agent。配对一次并保存凭据，下次使用同一浏览器即可管理。":"Start a paper session, create a pairing link in My Account and give it to your running Agent. Pair once, retain its credentials and return in the same browser to manage it.",
+"交易范围":"Supported markets",
+"当前接入 Pons V2 的 ETH/WETH 交易对：毕业前按曲线报价，毕业后按已核实的 Uniswap V4 池报价。其他报价资产暂未开放。":"Pons V2 ETH/WETH pairs are supported: curve quotes before graduation and verified Uniswap V4 pool quotes afterwards. Other quote assets are not available yet.",
+"资金、费用与成交":"Capital, fees and fills",
+"每个 Agent 在本网络独立获得 1000U 虚拟本金，首次核实 ETH 美元参考后换算。金额由 Agent 自主选择，须留足费用并能取得双向报价。后续区块重新核价，最大允许滑点为 30%；不是固定损耗，也不保证成交。":"Each Agent receives an independent $1,000 paper allocation on this network, converted at its first verified ETH/USD reference. Agents choose their own size while reserving fees and obtaining two-way quotes. A later block is quoted again with up to 30% allowed slippage; this is not a fixed loss or a fill guarantee.",
+"保存你的账户":"Keep access to your account",
+"交易面向 Robinhood Chain 上的 Pons V2，当前支持 ETH/WETH 交易对。风险资料未知时如实保留。":"Trading focuses on Pons V2 on Robinhood Chain, currently supporting ETH/WETH pairs. Missing risk evidence remains unknown.",
+"下载原始记录 ↗":"Download original records ↗",
+"笔成交":"fills",
+"平台 Agent 已暂停":"Platform Agents are paused",
+"Robinhood Chain，探索 Pons V2。":"Robinhood Chain. Explore Pons V2.",
+"Pons V2 模拟 · 有限检测":"Pons V2 paper trading · Limited checks",
+"Agent 接入说明 ↗":"Agent integration guide ↗",
+"请保留当前浏览器的 Cookie；清除会话或更换设备暂不支持找回。":"Keep this browser’s cookies. Recovery after clearing the session or switching devices is not available yet."
 };
-
-Object.assign(window.BI_UI_EN,{
-  "上轮 AI 评估因服务重启中断，等待重新评估。": "The previous AI evaluation was interrupted by a service restart. Waiting for a new evaluation.",
-  "当前退出计划": "Current exit plan",
-  "AI 自主决定退出方式，可明确修改条件或继续持有。自动条件按整仓扣除退出费用后的收益判断；卖出仍需重新核价成交。": "AI chooses how to exit and can explicitly revise conditions or continue holding. Automated conditions use whole-position returns after exit costs. Sales still require a fresh execution quote.",
-  "AI 自选条件 · 可调整": "AI-selected conditions · Adjustable",
-  "AI 自主退出": "AI-managed exit",
-  "未设置固定条件": "No fixed condition",
-  "未设固定止盈、止损或持仓期限；由 AI 根据后续行情评估继续持有或卖出。": "No fixed take-profit, stop-loss or holding deadline. AI evaluates later market data to decide whether to hold or sell.",
-  "原入场参数保留为历史参考，已不作为自动退出条件。": "Original entry parameters remain as historical context and no longer trigger automatic exits.",
-  "AI 自主退出依赖行情与模型服务；服务中断可能延迟决策。暂停或报价不可用时不会假定已成交。": "AI-managed exits depend on market data and model availability; interruptions can delay decisions. Pauses or unavailable quotes do not imply a fill.",
-  "可以从趋势和动量出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Trend and momentum offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
-  "可以从回撤与企稳迹象出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Pullbacks and stabilization offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
-  "可以从相对强弱和资金轮动出发研究机会，也可以依据新证据自主切换策略。入场、仓位和退出方式由AI自主评估，不要求固定止盈止损。": "Relative strength and rotation offer a starting perspective. AI can switch strategies with new evidence and choose entries, position sizes and exits without mandatory fixed thresholds.",
-  "你的下一笔交易，": "Your next trade.",
-  "让": "Let ",
-  "智能先行。": "intelligence lead.",
-  "给 Agent 一个独立账户，给策略一个真实的检验场。": "An independent account for your Agent. A real proving ground for its strategy.",
-  "从 BNB Chain 模拟交易开始，看见每一步决策与表现。": "Start with BNB Chain paper trading. See every decision and result.",
-  "三个视角。一个市场。": "Three perspectives. One market.",
-  "三个 Agent，": "Three Agents.",
-  "各有自己的判断。": "Each with its own perspective.",
-  "趋势、回弹、轮动，各自在交易桌前观察市场、研究下一步。": "Trend, rebound and rotation: each studies the market at its own desk before deciding what comes next.",
-  "认识三位 Agent ↗": "Meet the three Agents ↗",
-  "趋势、回弹、轮动三位 Agent 在交易室各自的电脑前研究行情的动态场景": "Animated scene of the trend, rebound and rotation Agents studying charts at their own desks",
-  "动态场景为示意；屏幕曲线不是实时行情，成交以交易记录为准。": "Illustrative animation. Screen charts are not live market data; consult the trade journal for actual fills.",
-  "趋势 · 回撤 · 轮动": "Trend · Rebound · Rotation",
-  "体验品牌故事": "Explore our story",
-  "三款 Agent 围绕 bi trade 品牌的动态示意": "An animated illustration of the three Agents around bi trade",
-  "捕捉趋势": "Follow momentum",
-  "寻找转折": "Find reversals",
-  "发现机会": "Discover opportunities",
-  "研究 → 决策 → 执行": "RESEARCH → DECIDE → EXECUTE",
-  "系统流程示意": "WORKFLOW ILLUSTRATION",
-  "把策略交给智能。": "Intelligence sets the strategy.",
-  "把控制留给你。": "You stay in control.",
-  "从市场信号到交易记录，每一环都有自己的位置。": "From market signals to trade records, every step has a role.",
-  "你的 Agent 独立决策，你始终掌握账户与展示权。": "Your Agent decides independently. You control the account and its visibility.",
-  "了解运行方式 ↗": "See how it works ↗",
-  "Agent 决策与执行流程": "Agent decision and execution workflow",
-  "市场信号": "Market signals",
-  "独立决策": "Independent decisions",
-  "风险核验": "Risk checks",
-  "模拟成交": "Paper execution",
-  "公开记录": "Public records",
-  "真实行情 · 独立账本 · 可随时暂停": "Real market data · Independent ledger · Pause anytime",
-  "向下滚动探索 · 随时进入主页": "Scroll to explore · Enter the platform anytime"
-});
-Object.assign(window.BI_UI_EN,{
- "平台 Agent":"Platform Agents",
- "选择交易 Agent":"Select a trading Agent",
- "最近成交":"Recent fills",
- "场景动作仅为示意；成交与收益来自模拟账本。":"The scene is illustrative. Fills and returns come from the paper ledger.",
- "策略与完整记录 ↗":"Strategy and full journal ↗",
- "还没有成交":"No fills yet",
- "通过评估与核价后，模拟成交会记录在这里。":"Paper fills appear here after a decision passes execution checks.",
- "等待 AI 服务恢复":"Waiting for the AI service",
- "等待下一轮评估":"Waiting for the next evaluation",
- "最近 AI 评估":"Latest AI evaluation",
- "上次有效评估":"Last valid evaluation",
- "尚无有效评估":"No valid evaluation yet",
- "正在等待真实行情与有效评估，尚未发起交易。":"Waiting for live market evidence and a valid evaluation. No trade has been proposed.",
- "本轮暂未完成，恢复后自动继续；未生成新的交易。":"This round did not finish. Evaluation will resume automatically; no new trade was created.",
- "下次评估：":"Next evaluation: ",
- "最近一次未成交尝试":"Most recent unfilled attempt",
- "正在准备 Agent 工位…":"Preparing the Agent desk…",
- " 个公开账户":" public accounts",
- "当前持仓":"Open positions",
- "已实现收益率":"Realized return",
- "AI 服务响应较慢，本轮未生成决策，稍后自动重试。":"The AI service is responding slowly. This round produced no decision; it will retry automatically.",
- "AI 服务连接暂时不稳定，本轮未生成决策，稍后自动重试。":"The AI connection is temporarily unstable. This round produced no decision; it will retry automatically.",
- "AI 服务暂时繁忙，本轮未生成决策，稍后自动重试。":"The AI service is temporarily busy. This round produced no decision; it will retry automatically.",
- "AI 服务配置需要维护，本轮暂停评估。":"The AI service configuration needs attention. Evaluation is temporarily paused.",
- "本轮评估已中止。":"This evaluation was interrupted."
-});
-Object.assign(window.BI_UI_EN,{"本轮评估暂未更新。":"This evaluation has not been updated yet."});
-Object.assign(window.BI_UI_EN,{
- "本次未成交，等待后续评估。":"No fill was created. A later evaluation will reassess the opportunity.",
- "市场条件已变化，本次未成交。":"Market conditions changed. No fill was created.",
- "本次暂未取得可用报价，未发生成交。":"An executable quote was unavailable. No fill was created."
-});
-
-Object.assign(window.BI_UI_EN,{"评估时间：":"Evaluation time: "});
-
-Object.assign(window.BI_UI_EN,{"数据暂时无法更新，请稍后再试。已保存的账户和记录会保留。":"Data is temporarily unavailable. Please try again later. Your saved accounts and records are retained.","还没有社区 Agent，来创建第一位。":"Be the first to publish a community Agent."});
-
-Object.assign(window.BI_UI_EN,{
- "尚无同时满足开仓条件的候选；最近5分钟成交量需至少3,000美元，资料不足时继续观察。":"No candidate currently meets the entry conditions. At least $3,000 of verified volume in the last 5 minutes is required; incomplete evidence keeps the Agent observing.",
- "最近5分钟成交量尚未核实，暂不开新仓。":"Volume in the last 5 minutes is unverified; no new position will be opened.",
- "最近5分钟成交量尚未核实达到3,000美元，暂不开新仓。":"Verified volume in the last 5 minutes has not reached $3,000; no new position will be opened.",
- "本次尚未完成叙事判断，等待重新评估。":"The narrative assessment is incomplete; awaiting a new evaluation.",
- "本次尚未完成新的开仓评估，等待重新判断。":"The updated entry assessment is incomplete; awaiting a new evaluation."
-});
-
-Object.assign(window.BI_UI_EN,{"查看合约 ↗":"View contract ↗"});

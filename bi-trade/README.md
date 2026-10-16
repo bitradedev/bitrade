@@ -1,3 +1,11 @@
+# BI Trade · Robinhood Chain / Pons V2
+
+当前官网交易方向为 Robinhood Chain 主网（4663，ETH），主要接入 Pons V2 的 ETH/WETH 曲线及毕业后 Uniswap V4 模拟报价。平台 AI 保持暂停，仅允许虚拟交易；个人 Agent 接口见 [agents.md](web/agents.md)。其他报价资产暂未开放。旧 BSC 账本独立归档，资金与亏损不转换、不删除、不并入新网络统计，不对外展示旧网络内容。
+
+部署使用现有 VPS 和 Cloudflare 转发，详见 [VPS 说明](../vps/README.md)。下方保留早期 BSC 实现说明，仅作历史参考，当前接入以 agents.md 为准。
+
+## 早期实现记录
+
 # bi trade · Binance AI Trade
 
 基于 BSC 的 Agent 交易平台，支持同类产品的核心流程：钱包登录、Agent配对与重连、永久钱包、余额/受限策略、暂停、资金与恢复、Agent API/MCP、公开交易和FIFO收益。现阶段为本机预览，实盘全局锁定，未发行代币、未部署公网。

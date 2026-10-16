@@ -9,7 +9,7 @@ import {
   canonicalJson,
 } from './lib/database-core.mjs';
 import { OwnerAuth, address, COOKIE } from './lib/auth.mjs';
-import officialToken from './web/official-token.json' with { type: 'json' };
+import { tradingNetwork } from './lib/trading-network.mjs';
 
 import { PaperDesk } from './lib/paper-desk.mjs';
 import { PAPER_EXECUTION_POLICY } from './lib/paper-execution-policy.mjs';
@@ -104,8 +104,45 @@ function originUrl(value) {
 }
 export async function createPlatformCore(options) {
   let origin = originUrl(options.origin ?? 'http://127.0.0.1:8794');
+  const network = tradingNetwork(options.gateway.chain ?? 'bsc');
   const store = options.store,
-    auth = new OwnerAuth(store, origin);
+    auth = new OwnerAuth(store, origin, network);
+  const appTools =
+    network.chain === 'robinhood'
+      ? toolsList
+          .filter((t) => t.name !== 'submit_transaction')
+          .map((t) => {
+            const copy = structuredClone(t);
+            if (copy.name === 'get_account')
+              copy.description =
+                'Read your Robinhood Chain paper account, virtual ETH balance, positions and network.';
+            if (copy.name === 'buy_token') {
+              copy.description =
+                'Simulate a Pons V2 buy on Robinhood Chain with native ETH wei; 30% later-block slippage, balance and fee checks apply. No real funds.';
+              copy.inputSchema.properties.chainId = { type: 'integer', const: 4663 };
+              copy.inputSchema.required.push('chainId');
+            }
+            return copy;
+          })
+      : toolsList;
+  if (network.chain === 'robinhood')
+    appTools.push({
+      name: 'sell_token',
+      description:
+        'Simulate selling a known Pons V2 position. amount is token base units. No signatures or broadcasts.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          token: { type: 'string' },
+          amount: { type: 'string' },
+          chainId: { type: 'integer', const: 4663 },
+          requestKey: { type: 'string' },
+          reason: { type: 'string' },
+        },
+        required: ['token', 'amount', 'chainId', 'requestKey'],
+        additionalProperties: false,
+      },
+    });
   const vault = options.vault;
   for (const a of store.all('agents')) {
     try {
@@ -117,7 +154,7 @@ export async function createPlatformCore(options) {
   }
   let paper;
   const gap = (c) => {
-    if (!c || c === 'bsc') paper?.gap();
+    if (!c || c === network.chain) paper?.gap();
   };
   const gateway = options.gateway;
   const riskGuard = options.showcase === false ? null : options.riskGuard;
@@ -154,7 +191,7 @@ export async function createPlatformCore(options) {
   const rpc = options.rpc ?? new BscRpc(options.rpcUrl ?? process.env.BI_TRADE_BSC_RPC);
   const live = new LiveDesk(store, vault, rpc, {
     readOnly: options.readOnly === true,
-    enabled: options.liveEnabled === true,
+    enabled: network.chain === 'bsc' && options.liveEnabled === true,
     confirmations: 3,
   });
   for (const r of store
@@ -240,7 +277,9 @@ export async function createPlatformCore(options) {
       connectionState,
       paper: paper.view(a.id),
       live: live.view(a),
-      explorer: 'https://bscscan.com/address/' + a.address,
+      network,
+      chainId: network.chainId,
+      explorer: network.explorer + '/address/' + a.address,
     };
   }
   function state(session) {
@@ -253,7 +292,7 @@ export async function createPlatformCore(options) {
     return {
       app: 'bi-trade',
       version: 2,
-      network: { name: 'BNB Chain', chainId: 56, native: 'BNB' },
+      network,
       liveEnabled: live.enabled,
       csrf: session?.csrf ?? null,
       owner: session
@@ -269,7 +308,10 @@ export async function createPlatformCore(options) {
         .flatMap((a) => [...paper.fills(a.id), ...store.forAgent('live-activity', a.id)])
         .sort((a, b) => b.at - a.at)
         .slice(0, 100),
-      market: gateway.statuses().find((x) => x.chain === 'bsc') ?? { connected: false, head: 0 },
+      market: gateway.statuses().find((x) => x.chain === network.chain) ?? {
+        connected: false,
+        head: 0,
+      },
       capitalUsd: 1000,
       maxOrderUsd: null,
     };
@@ -351,7 +393,8 @@ export async function createPlatformCore(options) {
         dotId: a.id,
         agentId: a.id,
         address: a.address,
-        chainId: 56,
+        chainId: network.chainId,
+        network,
         agentToken: token,
         mode: a.mode,
         paused: a.paused,
@@ -367,6 +410,10 @@ export async function createPlatformCore(options) {
     return o;
   }
   async function execute(a, action, args) {
+    if (network.chain === 'robinhood' && args.chainId !== network.chainId)
+      throw fail('请使用 Robinhood Chain（chainId 4663）重新提交；仅接受本网络交易指令', 409);
+    if (network.chain === 'robinhood' && !['buy_token', 'sell_token'].includes(action))
+      throw fail('请使用 buy_token 或 sell_token 提交模拟意图', 409);
     a = store.get('agents', a.id);
     if (!a || a.closedAt) throw fail('账户已关闭，不能接收交易指令', 409);
     if (typeof args.requestKey !== 'string' || !/^[\w.:~-]{1,100}$/.test(args.requestKey))
@@ -403,7 +450,7 @@ export async function createPlatformCore(options) {
     });
     try {
       let tx;
-      if (action === 'buy_token') {
+      if (action === 'buy_token' || action === 'sell_token') {
         const token = address(args.token),
           amount = raw(args.amount);
         if (a.mode === 'paper')
@@ -412,7 +459,7 @@ export async function createPlatformCore(options) {
               id,
               token,
               amount: String(amount),
-              side: 'buy',
+              side: action === 'sell_token' ? 'sell' : 'buy',
               reason: args.reason,
             }),
           );
@@ -480,7 +527,7 @@ export async function createPlatformCore(options) {
     return store.put('agents', current);
   }
   async function action(req, name, args = {}) {
-    if (!toolsList.some((t) => t.name === name)) throw fail('未知Agent工具', 404);
+    if (!appTools.some((t) => t.name === name)) throw fail('未知Agent工具', 404);
     if (name === 'register_dot') {
       if (req.headers.origin || req.headers['sec-fetch-site'] || auth.session(req))
         throw fail('请在已配置的Agent中完成配对；网页不能手动创建交易账户', 403);
@@ -502,7 +549,7 @@ export async function createPlatformCore(options) {
           maxBuyPriceImpactPct:
             a.source === 'builtin' ? PAPER_EXECUTION_POLICY.maxBuyPriceImpactPct : null,
           maxFillSlippageBps: PAPER_EXECUTION_POLICY.maxFillSlippageBps,
-          scope: 'supported-bsc-meme',
+          scope: network.chain === 'robinhood' ? 'pons-v2-eth-weth-pairs' : 'supported-bsc-meme',
         },
       };
     }
@@ -516,8 +563,10 @@ export async function createPlatformCore(options) {
     fields(
       args,
       name === 'buy_token'
-        ? ['token', 'amount', 'requestKey', 'reason']
-        : ['to', 'data', 'value', 'requestKey', 'reason'],
+        ? ['token', 'amount', 'chainId', 'requestKey', 'reason']
+        : name === 'sell_token'
+          ? ['token', 'amount', 'chainId', 'requestKey', 'reason']
+          : ['to', 'data', 'value', 'requestKey', 'reason'],
     );
     return execute(touchAgent(a, name), name, args);
   }
@@ -583,36 +632,6 @@ export async function createPlatformCore(options) {
     res.writeHead(status, { 'Content-Type': type });
     res.end(typeof value === 'string' || Buffer.isBuffer(value) ? value : json(value));
   }
-  let tokenCache = { at: 0, market: null };
-  async function tokenInfo() {
-    const ca = options.tokenAddress ?? process.env.BI_TRADE_TOKEN_ADDRESS ?? officialToken.address;
-    if (!ca) return { symbol: 'BI', address: null, issued: false, market: null };
-    const token = address(ca);
-    if (Date.now() - tokenCache.at > 60000) {
-      tokenCache.at = Date.now();
-      try {
-        const r = await fetch('https://api.dexscreener.com/latest/dex/tokens/' + token, {
-          signal: AbortSignal.timeout(5000),
-        });
-        const data = await r.json();
-        tokenCache.market =
-          (data.pairs ?? [])
-            .filter((p) => p.chainId === 'bsc' && p.baseToken?.address.toLowerCase() === token)
-            .sort((a, b) => (b.liquidity?.usd ?? 0) - (a.liquidity?.usd ?? 0))[0] ?? null;
-      } catch {
-        tokenCache.market = null;
-      }
-    }
-    return {
-      symbol: token === officialToken.address ? officialToken.symbol : 'BI',
-      name: token === officialToken.address ? officialToken.name : null,
-      chainId: 56,
-      address: token,
-      issued: true,
-      market: tokenCache.market,
-      holders: null,
-    };
-  }
   function publicState(url) {
     const tracked = store.all('agents').filter((a) => a.public && !a.closedAt),
       filter = url.searchParams.get('agent'),
@@ -638,6 +657,7 @@ export async function createPlatformCore(options) {
       unknownCost: allRows.filter((x) => x.mode === type && x.unknownCost).length,
     }));
     return {
+      network,
       agents,
       summary,
       marketScope: gateway.marketScope?.() ?? null,
@@ -670,6 +690,7 @@ export async function createPlatformCore(options) {
             version: 2,
             liveEnabled: live.enabled,
             virtualOnly: !live.enabled,
+            network,
           });
         if (path === '/api/state') {
           const s = auth.session(req);
@@ -707,16 +728,16 @@ export async function createPlatformCore(options) {
               .slice(0, 20),
           });
         }
-        if (path === '/api/token') return send(res, 200, await tokenInfo());
         if (path === '/api/agent')
           return send(res, 200, {
             name: 'bi trade',
-            chainId: 56,
+            chainId: network.chainId,
+            network,
             api: origin + '/api/agent',
             mcp: origin + '/mcp',
             liveEnabled: live.enabled,
-            tools: toolsList,
-            documentation: origin + '/agents.md?v=20261015-5',
+            tools: appTools,
+            documentation: origin + '/agents.md?v=20261016-1',
           });
         if (path === '/api/markets') {
           ownerSession(req);
@@ -725,7 +746,9 @@ export async function createPlatformCore(options) {
               .markets()
               .filter(
                 (m) =>
-                  m.chain === 'bsc' && m.quality === 'verified' && Date.now() - m.updatedAt < 15000,
+                  m.chain === network.chain &&
+                  m.quality === 'verified' &&
+                  Date.now() - m.updatedAt < 15000,
               )
               .slice(0, 50)
               .map((m) => ({
@@ -736,7 +759,7 @@ export async function createPlatformCore(options) {
                 at: m.updatedAt,
                 venue: m.venue,
               })),
-            head: gateway.statuses().find((x) => x.chain === 'bsc'),
+            head: gateway.statuses().find((x) => x.chain === network.chain),
           });
         }
         if (path === '/api/export') {
@@ -852,7 +875,7 @@ export async function createPlatformCore(options) {
               serverInfo: { name: 'bi-trade', version: '2.0.0' },
             };
           else if (data.method === 'notifications/initialized') return send(res, 202, '');
-          else if (data.method === 'tools/list') result = { tools: toolsList };
+          else if (data.method === 'tools/list') result = { tools: appTools };
           else if (data.method === 'tools/call') {
             const value = await action(req, data.params?.name, data.params?.arguments ?? {});
             result = { content: [{ type: 'text', text: json(value) }], isError: false };

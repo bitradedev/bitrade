@@ -2,7 +2,7 @@
   "name": "bitrade",
   "version": "0.2.0",
   "private": true,
-  "description": "BSC AI agent paper-trading platform",
+  "description": "Robinhood Chain Pons V2 agent paper-trading platform",
   "engines": {
     "node": ">=24"
   },

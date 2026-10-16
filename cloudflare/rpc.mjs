@@ -55,11 +55,14 @@ export class CloudRpc {
       store = null,
       now = Date.now,
       concurrency = 1,
+      chain = 'bsc',
     } = {},
   ) {
     this.url = publicEndpoint(url);
     this.fetch = fetchImpl;
-    this.chain = 'bsc';
+    if (!['bsc', 'robinhood'].includes(chain)) throw Error('Unsupported RPC chain');
+    this.chain = chain;
+    this.chainId = chain === 'robinhood' ? 4663n : 56n;
     this.cache = new Map();
     this.pending = new Map();
     this.id = 0;
@@ -73,13 +76,13 @@ export class CloudRpc {
     this.cooldown = store?.get('cloud-settings', this.budgetId) ?? { retryAt: 0 };
     this.receiptRpc =
       receiptUrl && publicEndpoint(receiptUrl) !== this.url
-        ? new CloudRpc(receiptUrl, { fetchImpl, store, now })
+        ? new CloudRpc(receiptUrl, { fetchImpl, store, now, chain })
         : null;
     this.backupRpc =
       backupUrl && publicEndpoint(backupUrl) !== this.url
         ? this.receiptRpc?.url === publicEndpoint(backupUrl)
           ? this.receiptRpc
-          : new CloudRpc(backupUrl, { fetchImpl, store, now })
+          : new CloudRpc(backupUrl, { fetchImpl, store, now, chain })
         : null;
     this.activeSource = 'primary';
     this.backupVerification = null;
@@ -147,7 +150,7 @@ export class CloudRpc {
       Promise.resolve()
         .then(() => {
           if (this.sourceStatus().limited)
-            throw Object.assign(Error('BSC RPC 限频冷却中，稍后自动重试'), {
+            throw Object.assign(Error('链上 RPC 限频冷却中，稍后自动重试'), {
               rpcUnavailable: true,
             });
           return task.execute();
@@ -177,13 +180,13 @@ export class CloudRpc {
           e?.code === 'CF_SUBREQUEST_BUDGET' ||
           /too many subrequests|subrequest limit/i.test(String(e?.message));
         throw Object.assign(
-          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : 'BSC RPC 网络不可用'),
+          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : '链上 RPC 网络不可用'),
           { rpcUnavailable: !local, ...(local ? { code: 'CF_SUBREQUEST_BUDGET' } : {}) },
         );
       }
-      if (!r.ok) throw this.#failed(r, 'BSC RPC 请求失败');
+      if (!r.ok) throw this.#failed(r, '链上 RPC 请求失败');
       const data = await r.json();
-      if (data.error || !Object.hasOwn(data, 'result')) throw Error('BSC RPC 未返回有效读取结果');
+      if (data.error || !Object.hasOwn(data, 'result')) throw Error('链上 RPC 未返回有效读取结果');
       this.#recovered(stateAtStart);
       this.activeSource = 'primary';
       return data.result;
@@ -201,7 +204,10 @@ export class CloudRpc {
         this.backupVerification = client
           .request('eth_chainId')
           .then((chain) => {
-            if (BigInt(chain) !== 56n) throw Error('备用 RPC 并非 BSC 主网');
+            if (BigInt(chain) !== this.chainId)
+              throw Error(
+                '备用 RPC 并非 ' + (this.chain === 'bsc' ? 'BSC 主网' : 'Robinhood Chain 主网'),
+              );
             client.verified = true;
           })
           .finally(() => {
@@ -273,7 +279,8 @@ export class CloudRpc {
   }
   async block(number, force = false) {
     if (!this.verified) {
-      if (BigInt(await this.request('eth_chainId')) !== 56n) throw Error('RPC 并非 BSC 主网');
+      if (BigInt(await this.request('eth_chainId')) !== this.chainId)
+        throw Error('RPC 并非 指定主网');
       this.verified = true;
     }
     if (number !== undefined && !force && this.cache.has(number)) return this.cache.get(number);
@@ -281,7 +288,7 @@ export class CloudRpc {
       number === undefined ? 'latest' : hexBlock(number),
       false,
     ]);
-    if (!raw?.hash || !Array.isArray(raw.transactions)) throw Error('BSC 区块读取失败');
+    if (!raw?.hash || !Array.isArray(raw.transactions)) throw Error('链上区块读取失败');
     const b = {
       number: Number(BigInt(raw.number)),
       hash: raw.hash,
@@ -312,11 +319,11 @@ export class CloudRpc {
       !/^0x[0-9a-f]+$/i.test(raw.blockNumber ?? '') ||
       !/^0x[0-9a-f]{64}$/i.test(raw.blockHash ?? '')
     )
-      throw Error('BSC 回执身份未核实');
+      throw Error('链上回执身份未核实');
     const block = Number(BigInt(raw.blockNumber)),
       [primary, secondary] = await Promise.all([this.block(block), this.receiptRpc.block(block)]);
     if (primary.hash !== secondary.hash || raw.blockHash !== primary.hash)
-      throw Error('BSC 回执节点与报价节点的区块不一致');
+      throw Error('链上回执节点与报价节点的区块不一致');
     return raw;
   }
   async receipts(hashes) {
@@ -327,7 +334,7 @@ export class CloudRpc {
       hashes.some((h) => typeof h !== 'string' || !/^0x[0-9a-f]{64}$/i.test(h)) ||
       new Set(hashes).size !== hashes.length
     )
-      throw Error('BSC 回执批次无效');
+      throw Error('链上回执批次无效');
     if (!this.receiptRpc) return Promise.all(hashes.map((h) => this.receipt(h)));
     const client = this.receiptRpc,
       requests = hashes.map((hash) => ({
@@ -352,22 +359,22 @@ export class CloudRpc {
           e?.code === 'CF_SUBREQUEST_BUDGET' ||
           /too many subrequests|subrequest limit/i.test(String(e?.message));
         throw Object.assign(
-          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : 'BSC 回执批次网络不可用'),
+          Error(local ? '云端单轮请求上限已到，下一轮自动重试' : '链上回执批次网络不可用'),
           local ? { code: 'CF_SUBREQUEST_BUDGET' } : {},
         );
       }
-      if (!response.ok) throw client.#failed(response, 'BSC 回执批次读取失败');
+      if (!response.ok) throw client.#failed(response, '链上回执批次读取失败');
       const rows = await response.json();
       if (
         !Array.isArray(rows) ||
         rows.length !== requests.length ||
         new Set(rows.map((r) => r.id)).size !== rows.length
       )
-        throw Error('BSC 回执批次身份未核实');
+        throw Error('链上回执批次身份未核实');
       for (const request of requests) {
         const row = rows.find((r) => r.id === request.id);
         if (!row || row.error || !Object.hasOwn(row, 'result'))
-          throw Error('BSC 回执批次未返回有效数据');
+          throw Error('链上回执批次未返回有效数据');
       }
       client.#recovered(stateAtStart);
       return rows;
@@ -376,7 +383,7 @@ export class CloudRpc {
     for (let i = 0; i < requests.length; i++) {
       const row = rows.find((r) => r.id === requests[i].id);
       if (!row || row.error || !Object.hasOwn(row, 'result'))
-        throw Error('BSC 回执批次未返回有效数据');
+        throw Error('链上回执批次未返回有效数据');
       results.push(await this.confirmReceipt(hashes[i], row.result));
     }
     return results;

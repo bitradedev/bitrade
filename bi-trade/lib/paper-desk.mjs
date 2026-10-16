@@ -1,3 +1,4 @@
+import { tradingNetwork } from './trading-network.mjs';
 import { identifier, fail, json } from './database-core.mjs';
 import { address } from './auth.mjs';
 import { PAPER_EXECUTION_POLICY, assertEntryQuoteImpact } from './paper-execution-policy.mjs';
@@ -12,6 +13,8 @@ export class PaperDesk {
     gateway,
     { buyGuard, preserveQueued = false, maxOrdersPerTick = Infinity, readOnly = false } = {},
   ) {
+    this.network = tradingNetwork(gateway.chain ?? 'bsc');
+    this.chain = this.network.chain;
     this.store = store;
     this.gateway = gateway;
     this.buyGuard = buyGuard;
@@ -41,10 +44,10 @@ export class PaperDesk {
       .sort((a, b) => a.at - b.at);
   }
   fx() {
-    const h = this.gateway.statuses().find((x) => x.chain === 'bsc');
+    const h = this.gateway.statuses().find((x) => x.chain === this.chain);
     if (!h?.connected || Date.now() - h.headAt < 0 || Date.now() - h.headAt > 15000) return null;
     if (typeof this.gateway.nativeReference === 'function') {
-      const reference = this.gateway.nativeReference('bsc');
+      const reference = this.gateway.nativeReference(this.chain);
       return reference &&
         Number.isFinite(reference.usd) &&
         reference.usd > 0 &&
@@ -58,7 +61,7 @@ export class PaperDesk {
       .markets()
       .filter(
         (x) =>
-          x.chain === 'bsc' &&
+          x.chain === this.chain &&
           x.quality === 'verified' &&
           Date.now() - x.updatedAt >= 0 &&
           Date.now() - x.updatedAt <= 15000 &&
@@ -77,6 +80,8 @@ export class PaperDesk {
     if (!a) {
       a = {
         id,
+        chainId: this.network.chainId,
+        nativeSymbol: this.network.native,
         initialUsd: 1000,
         nativeRaw: null,
         realizedNativeRaw: '0',
@@ -108,6 +113,7 @@ export class PaperDesk {
     this.store.put('paper-ledger', {
       id: identifier(),
       agentId: id,
+      chainId: this.network.chainId,
       deltaRaw: String(delta),
       kind,
       orderId,
@@ -116,7 +122,7 @@ export class PaperDesk {
     });
   }
   seed(id, fx) {
-    if (!Number.isFinite(fx) || fx <= 0) throw fail('BNB美元参考价无效');
+    if (!Number.isFinite(fx) || fx <= 0) throw fail('原生币美元参考价无效');
     return this.store.transaction(() => {
       const a = this.account(id);
       if (a.nativeRaw === null) {
@@ -129,16 +135,19 @@ export class PaperDesk {
     });
   }
   head() {
-    const h = this.gateway.statuses().find((c) => c.chain === 'bsc');
+    const h = this.gateway.statuses().find((c) => c.chain === this.chain);
     if (!h?.connected || Date.now() - h.headAt > 15000 || !h.head)
-      throw fail('BSC行情已过期，暂缓模拟交易', 503);
+      throw fail(
+        (this.chain === 'bsc' ? 'BSC' : 'Robinhood Chain') + '行情已过期，暂缓模拟交易',
+        503,
+      );
     return h;
   }
   async quote(agent, side, token, amount, block) {
     let q;
     try {
       q = await this.gateway.quote({
-        chain: 'bsc',
+        chain: this.chain,
         token,
         side,
         recipient: agent.address,
@@ -149,7 +158,7 @@ export class PaperDesk {
       throw fail(e.message, 503);
     }
     if (
-      q.chain !== 'bsc' ||
+      q.chain !== this.chain ||
       q.token.toLowerCase() !== token ||
       q.side !== side ||
       q.block !== block ||
@@ -222,7 +231,7 @@ export class PaperDesk {
         inputRaw: amount,
         nativeUsd: this.fx(),
         refresh: true,
-        marketPrice: this.gateway.getMarket('bsc', token)?.priceUsd,
+        marketPrice: this.gateway.getMarket(this.chain, token)?.priceUsd,
       });
     const revision = this.revision,
       head = this.head(),
@@ -250,7 +259,7 @@ export class PaperDesk {
       id,
       agentId: agent.id,
       mode: 'paper',
-      chainId: 56,
+      chainId: this.network.chainId,
       token,
       side,
       inputRaw: amount,
@@ -413,7 +422,7 @@ export class PaperDesk {
         orderId: o.id,
         agentId: o.agentId,
         mode: 'paper',
-        chainId: 56,
+        chainId: this.network.chainId,
         token: o.token,
         side: o.side,
         tokenRaw: o.side === 'buy' ? q.outputRaw : q.spentInputRaw,
@@ -453,11 +462,14 @@ export class PaperDesk {
       lots = this.lots(id);
     return {
       ...a,
+      chainId: this.network.chainId,
+      nativeSymbol: this.network.native,
       balanceWei: a.nativeRaw,
       balanceUsd: a.nativeRaw === null ? a.initialUsd : fx ? nativeUsd(a.nativeRaw, fx) : null,
-      realizedBnb: Number(BigInt(a.realizedNativeRaw)) / 1e18,
+      realizedNative: Number(BigInt(a.realizedNativeRaw)) / 1e18,
+      ...(this.chain === 'bsc' ? { realizedBnb: Number(BigInt(a.realizedNativeRaw)) / 1e18 } : {}),
       positions: lots.map((p) => {
-        const m = this.gateway.getMarket('bsc', p.token);
+        const m = this.gateway.getMarket(this.chain, p.token);
         return {
           ...p,
           symbol: m?.symbol ?? p.token.slice(0, 10),

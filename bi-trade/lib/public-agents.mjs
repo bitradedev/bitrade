@@ -80,6 +80,7 @@ export function publicAgent(store, paper, live, agent) {
       : [];
   return {
     id: agent.id,
+    network: paper.network,
     name: agent.name,
     avatar: avatarFor(agent),
     address: agent.address,
@@ -178,7 +179,8 @@ export function leaderboard(store, paper, live, url) {
   return {
     mode,
     source,
-    metric: mode === 'paper' ? 'realized-usd-return' : 'realized-bnb-profit',
+    network: paper.network,
+    metric: mode === 'paper' ? 'realized-usd-return' : 'realized-native-profit',
     definition:
       mode === 'paper'
         ? '已实现美元盈亏 ÷ 初始虚拟本金；包含成交费用，补足本金不算盈利。'

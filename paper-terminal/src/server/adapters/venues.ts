@@ -10,7 +10,7 @@ export class Venues {
  private decimalsCache=new Map<string,number>();private conversionCache=new Map<string,{at:number;route:Route}>();
  private ponsFees=new Map<string,{block:number;fee:bigint;creator:bigint}>();private revision=0;
  private poolAssets=new Map<string,{block:number;token0:Address;token1:Address}>();
- constructor(readonly rpc:ReadRpc){}
+ constructor(readonly rpc:ReadRpc,readonly options:{verifyPonsReserve?:boolean}={}){}
  invalidate(){this.revision++;this.decimalsCache.clear();this.conversionCache.clear();this.ponsFees.clear();this.poolAssets.clear();}
  private async curveFees(curve:Address,block:number){const cached=this.ponsFees.get(curve);if(cached&&block>=cached.block)return cached;const revision=this.revision;
   // Official curve fee terms are immutable; the proof's first block is kept.
@@ -99,11 +99,13 @@ export class Venues {
   if((route.kind==='flap'||route.state?.platform==='flap')&&route.state?.extensionID&&!/^0x0{64}$/i.test(route.state.extensionID))throw new RouteBlocked('FLAP_EXTENSION_UNVERIFIED','Flap 当前扩展合约尚未核实，拒绝模拟成交');
   const read=(contract:Address,abi:any,name:string,args:readonly unknown[]=[])=>this.rpc.read<any>(contract,abi,name,args,block,recipient);
   if(route.kind==='pons-v2'){
-   const names=['getReserves','sellableTokens','readyToGraduate','graduated'];
-   const [values,fees,s]=await Promise.all([Promise.all(names.map(n=>read(route.curve!,PONS_V2_ABI,n))),this.curveFees(route.curve!,block),side==='buy'?read(route.curve!,PONS_V2_ABI,'currentSnipeTaxBps',[recipient]):Promise.resolve(0n)]);
-   const [[q,t],sellable,ready,graduated]=values,{fee:f,creator:c}=fees;
+   const names=['getReserves','sellableTokens','readyToGraduate','graduated',...(this.options.verifyPonsReserve?['realQuoteReserve']:[])];
+   const [values,fees,s]=await Promise.all([route.state?.virtualPreview?Promise.resolve([route.state.virtualReserves,route.state.virtualSellable,false,false,route.state.virtualRealReserve]):Promise.all(names.map(n=>read(route.curve!,PONS_V2_ABI,n))),this.curveFees(route.curve!,block),side==='buy'?read(route.curve!,PONS_V2_ABI,'currentSnipeTaxBps',[recipient]):Promise.resolve(0n)]);
+   const [[q,t],sellable,ready,graduated,realReserve]=values,{fee:f,creator:c}=fees;
    const result=quotePons({quoteReserve:q,tokenReserve:t,sellable,feeBps:f,creatorTaxBps:c,snipeBps:s,ready,graduated},side,input);
-   return {...result,spot:Number(q)/Number(t),notes:[`独立模拟收款地址 ${recipient}`,side==='buy'?`当前反狙击税 ${s} bps（按实际收款地址读取）`:'卖出不适用反狙击税；未查询买入税率',`创建时固定的协议费/创作者税已在区块 ${fees.block} 实链核实；动态储备与毕业状态按报价区块读取`,'储备包含 phantom，使用 getReserves；输出已扣协议费和税']};
+   if(side==='sell'&&this.options.verifyPonsReserve&&result.out+result.protocol+result.tax>BigInt(realReserve))throw new RouteBlocked('PONS_RESERVE_INSUFFICIENT','曲线实际报价资产储备不足');
+   const postBuyState=side==='buy'&&this.options.verifyPonsReserve?{virtualReserves:[q+result.spent-result.protocol-result.tax,t-result.out],virtualRealReserve:BigInt(realReserve)+result.spent-result.protocol-result.tax,virtualSellable:sellable-result.out}:undefined;
+   return {...result,postBuyState,quality:route.state?.virtualPreview?'estimated':undefined,spot:Number(q)/Number(t),notes:[`独立模拟收款地址 ${recipient}`,side==='buy'?`当前反狙击税 ${s} bps（按实际收款地址读取）`:'卖出不适用反狙击税；未查询买入税率',`创建时固定的协议费/创作者税已在区块 ${fees.block} 实链核实；动态储备与毕业状态按报价区块读取`,'储备包含 phantom，使用 getReserves；输出已扣协议费和税']};
   }
   if(route.kind==='flap'){
    const s=route.state!,qDecimals=await this.decimals(route.quote,block);const fee=BigInt(side==='buy'?s.buyFeeBps:s.sellFeeBps),tax=BigInt(side==='buy'?s.buyTaxRate:s.sellTaxRate);

@@ -29,9 +29,9 @@ test('Workerd proxy forwards API and MCP to the new origin without exposing its 
  const mcp=await mf.dispatchFetch('https://bitrade.site/mcp',{method:'POST',body:'{}'});assert.equal(mcp.status,201);assert.equal(seen[1].url,'https://origin.bitrade.site/mcp');
 });
 test('Agent integration guide bypasses old asset keys and requires revalidation after strategy-policy changes',async t=>{
- const seen=[];const mf=new Miniflare(convertV4MiniflareOptions({name:'agent-guide-cache',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],bindings:{SITE_ORIGIN:'https://bitrade.site'},serviceBindings:{ASSETS:async request=>{seen.push(request.url);return new Response(new URL(request.url).searchParams.get('v')==='20261015-5'?'current-personal-policy':'old-screening-policy',{headers:{'Cache-Control':'public, max-age=3600'}});}}}));t.after(()=>mf.dispose());await mf.ready;
+ const seen=[];const mf=new Miniflare(convertV4MiniflareOptions({name:'agent-guide-cache',modules:true,scriptPath:'.cloud-test-build/worker.mjs',compatibilityDate:'2026-10-09',compatibilityFlags:['nodejs_compat'],bindings:{SITE_ORIGIN:'https://bitrade.site'},serviceBindings:{ASSETS:async request=>{seen.push(request.url);return new Response(new URL(request.url).searchParams.get('v')==='20261016-1'?'current-personal-policy':'old-screening-policy',{headers:{'Cache-Control':'public, max-age=3600'}});}}}));t.after(()=>mf.dispose());await mf.ready;
  for(const suffix of ['', '?v=old']){const response=await mf.dispatchFetch('https://bitrade.site/agents.md'+suffix);assert.equal(await response.text(),'current-personal-policy');assert.equal(response.headers.get('Cache-Control'),'no-cache');}
- assert.ok(seen.every(url=>new URL(url).searchParams.get('v')==='20261015-5'));
+ assert.ok(seen.every(url=>new URL(url).searchParams.get('v')==='20261016-1'));
 });
 
 test('Workerd proxy refuses an insecure origin before sending the shared secret',async t=>{

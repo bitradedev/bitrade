@@ -1,4 +1,7 @@
 import { parseAbi, decodeEventLog, getEventSelector } from 'viem';
+import { PONS_EVENTS } from './robinhood-data.mjs';
+import { CHAIN_CONFIG } from '../paper-terminal/src/server/adapters/types.js';
+import { poolId } from '../paper-terminal/src/server/adapters/venues.js';
 import { FLAP_EVENTS } from './flap-data.mjs';
 import { FLAP } from '../paper-terminal/src/server/adapters/types.js';
 import { assertVolume5m, volumeEligibility } from '../bi-trade/lib/builtin-entry-policy.mjs';
@@ -9,6 +12,7 @@ export const SWAPS = parseAbi([
   'event Swap(address indexed sender,address indexed recipient,int256 amount0,int256 amount1,uint160 sqrtPriceX96,uint128 liquidity,int24 tick,uint128 protocolFeesToken0,uint128 protocolFeesToken1)',
 ]);
 const META = parseAbi(['function metaURI() view returns (string)']);
+const lower = (x) => String(x).toLowerCase();
 const hex = (n) => '0x' + n.toString(16);
 const hash = (x) => /^0x[0-9a-f]{64}$/i.test(x ?? '');
 const cidOf = (x) => {
@@ -71,7 +75,14 @@ export function turnoverRows(logs, route, from, to, token0) {
     if (log.removed) continue;
     const block = Number(BigInt(log.blockNumber ?? '-1'));
     if (
-      String(log.address).toLowerCase() !== (route.kind === 'flap' ? FLAP : route.pool) ||
+      String(log.address).toLowerCase() !==
+        (route.kind === 'pons-v2'
+          ? route.curve
+          : route.kind === 'v4'
+            ? CHAIN_CONFIG.robinhood.v4Manager
+            : route.kind === 'flap'
+              ? FLAP
+              : route.pool) ||
       !hash(log.blockHash) ||
       !hash(log.transactionHash) ||
       !/^0x[0-9a-f]+$/i.test(log.logIndex ?? '') ||
@@ -83,11 +94,28 @@ export function turnoverRows(logs, route, from, to, token0) {
     const key = [log.blockHash, log.transactionHash, log.logIndex].join(':');
     if (seen.has(key)) throw Error('成交事件重复');
     seen.add(key);
-    const abi = route.kind === 'flap' ? FLAP_EVENTS : [SWAPS[route.kind === 'v2' ? 0 : 1]],
+    if (route.kind === 'v4' && lower(log.topics[1]) !== lower(poolId(route.key)))
+      throw Error('成交池身份不匹配');
+    const abi =
+        route.kind === 'pons-v2'
+          ? [PONS_EVENTS[1], PONS_EVENTS[2]]
+          : route.kind === 'v4'
+            ? [PONS_EVENTS[3]]
+            : route.kind === 'flap'
+              ? FLAP_EVENTS
+              : [SWAPS[route.kind === 'v2' ? 0 : 1]],
       e = decodeEventLog({ abi, data: log.data, topics: log.topics, strict: true }),
       a = e.args;
     let raw, buy;
-    if (route.kind === 'flap') {
+    if (route.kind === 'pons-v2') {
+      if (!['CurveBuy', 'CurveSell'].includes(e.eventName)) throw Error('曲线成交类型不匹配');
+      buy = e.eventName === 'CurveBuy';
+      raw = buy ? a.quoteIn : a.quoteOut;
+    } else if (route.kind === 'v4') {
+      const amount = route.key.currency0 === route.quote ? a.amount0 : a.amount1;
+      raw = amount < 0n ? -amount : amount;
+      buy = amount < 0n;
+    } else if (route.kind === 'flap') {
       if (!['TokenBought', 'TokenSold'].includes(e.eventName)) throw Error('曲线成交类型不匹配');
       if (a.token.toLowerCase() !== route.token) continue;
       raw = a.eth;
@@ -152,7 +180,7 @@ export class BuiltinEntryEvidence {
     assertVolume5m(v.volume5m, this.now());
   }
   async volume(token) {
-    const market = this.market.getMarket('bsc', token);
+    const market = this.market.getMarket(this.market.chain ?? 'bsc', token);
     if (
       !market ||
       market.quality !== 'verified' ||
@@ -161,9 +189,13 @@ export class BuiltinEntryEvidence {
       this.now() - market.updatedAt >= 15000
     )
       throw Error('报价资产换算已过期');
-    const route = await this.market.route('bsc', token, this.market.head.head);
-    if (!['flap', 'v2', 'v3'].includes(route.kind)) throw Error('当前路线的5分钟成交量尚未支持');
-    const key = route.kind === 'flap' ? 'portal' : route.kind + ':' + route.pool;
+    const route = await this.market.route(this.market.chain ?? 'bsc', token, this.market.head.head);
+    if (!['flap', 'v2', 'v3', 'pons-v2', 'v4'].includes(route.kind))
+      throw Error('当前路线的5分钟成交量尚未支持');
+    const key =
+      route.kind === 'flap'
+        ? 'portal'
+        : route.kind + ':' + (route.curve ?? (route.key ? poolId(route.key) : route.pool));
     let sample = this.samples.get(key);
     if (!sample || this.now() < sample.at || this.now() - sample.at >= 15000) {
       if (!this.pending.has(key))
@@ -187,11 +219,14 @@ export class BuiltinEntryEvidence {
       route,
       from.number,
       sample.to.number,
-      route.kind === 'flap'
+      ['flap', 'pons-v2', 'v4'].includes(route.kind)
         ? null
-        : await this.market.venues.bsc.poolToken0(route, sample.to.number),
+        : await this.market.venues[this.market.chain ?? 'bsc'].poolToken0(route, sample.to.number),
     );
-    const qd = await this.market.venues.bsc.decimals(route.quote, sample.to.number),
+    const qd = await this.market.venues[this.market.chain ?? 'bsc'].decimals(
+        route.quote,
+        sample.to.number,
+      ),
       raw = rows.reduce((n, r) => n + BigInt(r.quoteRaw), 0n),
       usd = (Number(raw) / 10 ** qd) * market.quoteUsd;
     if (!Number.isFinite(usd) || usd < 0) throw Error('成交量换算无效');
@@ -233,25 +268,41 @@ export class BuiltinEntryEvidence {
     if (to.time > at || at - to.time >= 15000) throw Error('成交观测链头已过期');
     let lo = Math.max(0, to.number - 1024),
       start = await this.rpc.block(lo);
-    for (let i = 0; start.time > at - 300000 && lo > 0 && i < 2; i++) {
+    for (
+      let i = 0;
+      start.time > at - 300000 && lo > 0 && i < (this.market.chain === 'robinhood' ? 8 : 2);
+      i++
+    ) {
       lo = Math.max(0, lo - 2048);
       start = await this.rpc.block(lo);
     }
     if (start.time > at - 300000) throw Error('成交观测窗口不足');
     const from = await this.boundary(lo, to.number, at - 300000);
-    if (to.number - from.number > 3999) throw Error('成交窗口超过单轮读取上限');
+    if (to.number - from.number > (this.market.chain === 'robinhood' ? 19999 : 3999))
+      throw Error('成交窗口超过单轮读取上限');
     const topics =
-      route.kind === 'flap'
-        ? [getEventSelector(FLAP_EVENTS[1]), getEventSelector(FLAP_EVENTS[2])]
-        : [getEventSelector(SWAPS[route.kind === 'v2' ? 0 : 1])];
+      route.kind === 'pons-v2'
+        ? [getEventSelector(PONS_EVENTS[1]), getEventSelector(PONS_EVENTS[2])]
+        : route.kind === 'v4'
+          ? [getEventSelector(PONS_EVENTS[3])]
+          : route.kind === 'flap'
+            ? [getEventSelector(FLAP_EVENTS[1]), getEventSelector(FLAP_EVENTS[2])]
+            : [getEventSelector(SWAPS[route.kind === 'v2' ? 0 : 1])];
     const logs = [];
     for (let b = from.number; b <= to.number; b += 1000) {
       const page = await this.rpc.request('eth_getLogs', [
         {
-          address: route.kind === 'flap' ? FLAP : route.pool,
+          address:
+            route.kind === 'pons-v2'
+              ? route.curve
+              : route.kind === 'v4'
+                ? CHAIN_CONFIG.robinhood.v4Manager
+                : route.kind === 'flap'
+                  ? FLAP
+                  : route.pool,
           fromBlock: hex(b),
           toBlock: hex(Math.min(to.number, b + 999)),
-          topics: [topics],
+          topics: route.kind === 'v4' ? [topics, poolId(route.key)] : [topics],
         },
       ]);
       if (!Array.isArray(page) || page.length > 10000 || logs.length + page.length > 10000)
@@ -267,6 +318,7 @@ export class BuiltinEntryEvidence {
       return old;
     let sources = [];
     const data = this.market.memeData;
+    if (data?.narrative) return data.narrative(token);
     try {
       if (data?.flap.supports(token)) {
         let cid = cidOf(this.store.get('cloud-flap-launches', token)?.metadataCid);

@@ -23,6 +23,7 @@ export const PONS_V2_ABI=parseAbi([
  'function getLaunchedToken(address token) view returns (Launch)',
  'function memeHook() view returns (address)','function poolManager() view returns (address)',
  'function getReserves() view returns (uint256 quoteReserve,uint256 tokenReserve)',
+ 'function realQuoteReserve() view returns (uint256)',
  'function sellableTokens() view returns (uint256)','function feeBps() view returns (uint256)','function creatorTaxBps() view returns (uint256)',
  'function currentSnipeTaxBps(address recipient) view returns (uint256)','function readyToGraduate() view returns (bool)','function graduated() view returns (bool)',
  'function launches(bytes32 id) view returns (bool registered,bool memecoinIsCurrency0,address memecoin,address quoteToken,address creator,address buybackCreatorRecipient,address protocolFeeRecipient,uint16 creatorTaxBps,uint16 protocolFeeShareBps,uint16 buybackBurnBps,uint16 hookFeeBps,uint16 maxInternalPriceImpactBps,bool buybackEnabled)',

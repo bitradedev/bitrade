@@ -1,5 +1,7 @@
 # BI Trade self-hosted paper service
 
+当前交易网络配置：`BI_TRADE_CHAIN=robinhood`、`ROBINHOOD_RPC_URL=https://rpc.mainnet.chain.robinhood.com`。保留 `BI_TRADE_SHOWCASE_PAUSED=true`。当前只接入 Pons V2 ETH/WETH 模拟路线；链数据与纸面交易按网络隔离，BSC 原实体不改名、不转换。旧网络只留后台备份，不向官网提供旧 CA、旧市场或历史入口。
+
 This deployment starts an **empty** SQLite ledger. It does not import Cloudflare Durable Object users, custom Agents, balances, trades, risk records, or sessions. Keep the old Durable Object as a read-only archive; do not delete its namespace. There is no on-chain signing or broadcast path.
 
 ## Routing

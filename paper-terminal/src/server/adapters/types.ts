@@ -18,7 +18,7 @@ export const PONS_V2 = '0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e' as Address;
 export const PONS_V1 = ['0xa5aab3f0c6eeadf30ef1d3eb997108e976351feb','0x0c37a24f5d23a486fa692d1500881d698b1f77a4'] as Address[];
 export interface PoolKey {currency0:Address;currency1:Address;fee:number;tickSpacing:number;hooks:Address;}
 export interface Route {kind:'flap'|'four'|'pons-v2'|'v2'|'v3'|'v4';token:Address;quote:Address;pool?:Address;factory?:Address;curve?:Address;key?:PoolKey;fee?:number;state?:Record<string,any>;}
-export interface RouteQuote {out:bigint;spent:bigint;refund:bigint;protocol:bigint;tax:bigint;spot:number;notes:string[];impactPct?:number;impactQuality?:'verified'|'estimated';quality?:'verified'|'estimated';}
+export interface RouteQuote {out:bigint;spent:bigint;refund:bigint;protocol:bigint;tax:bigint;spot:number;notes:string[];impactPct?:number;impactQuality?:'verified'|'estimated';quality?:'verified'|'estimated';postBuyState?:Record<string,any>;}
 export interface GasContext {gasUsedRaw:string;gasPriceRaw:string;sampleBlock:number;sampleTransaction:string;sourceFeeFrozenAt:number;}
 export interface Snapshot {chain:Chain;token:string;block:number;blockHash:string;chainTime:number;capturedAt:number;market:Market;gasContext?:GasContext;}
 export interface RepriceRequest extends Omit<QuoteRequest,'chain'|'token'|'block'> {}

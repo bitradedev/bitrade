@@ -163,6 +163,7 @@ export class TokenRiskGuard {
   constructor(store, { source, now = () => Date.now(), maxTokensPerTick = 4 } = {}) {
     if (!source) throw Error('A read-only risk source is required');
     Object.assign(this, { store, source, now, maxTokensPerTick });
+    this.chain = source.chain ?? 'bsc';
     this.pending = new Map();
     this.stopped = false;
     this.refreshAt = 0;
@@ -220,7 +221,7 @@ export class TokenRiskGuard {
           if (provided) {
             if (
               provided.token !== token ||
-              provided.chain !== 'bsc' ||
+              provided.chain !== this.chain ||
               !Number.isFinite(provided.fetchedAt) ||
               provided.fetchedAt > this.now()
             )
@@ -229,9 +230,9 @@ export class TokenRiskGuard {
             return this.snapshot(token);
           }
           const responses = [
-              await this.source.info('bsc', token),
-              await this.source.holders('bsc', token),
-              await this.source.security('bsc', token),
+              await this.source.info(this.chain, token),
+              await this.source.holders(this.chain, token),
+              await this.source.security(this.chain, token),
             ],
             [info, holders, security] = responses.map(unwrap);
           const capturedAt = Math.min(
@@ -254,7 +255,7 @@ export class TokenRiskGuard {
             this.store.put('token-risk-reports', {
               id: token,
               token,
-              chain: 'bsc',
+              chain: this.chain,
               source: this.source.label?.(token) ?? 'GMGN CLI',
               fetchedAt: this.now(),
               state: 'unknown',

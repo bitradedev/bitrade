@@ -71,6 +71,9 @@ const MARKET_STATE_FIELDS = [
 ];
 
 export class CloudMarket {
+  chain: any;
+  portal: any;
+  nativeSymbol: string;
   rpc: any;
   gmgn: any;
   publicData: any;
@@ -101,6 +104,9 @@ export class CloudMarket {
     store: any,
     {
       rpc = new CloudRpc(),
+      chain = 'bsc',
+      portal = FLAP,
+      nativePrice = null,
       gmgn = new GmgnHTTP(null),
       publicData = null,
       memeData = null,
@@ -109,13 +115,29 @@ export class CloudMarket {
       onGap = () => {},
     }: any = {},
   ) {
-    Object.assign(this, { store, rpc, gmgn, publicData, memeData, memeOnly, runtime, gap: onGap });
-    this.venues = { bsc: new Venues(rpc) };
-    this.gas = { bsc: new ReceiptGas(rpc) };
-    this.nativePrice = new NativePrice(rpc);
+    Object.assign(this, {
+      store,
+      rpc,
+      gmgn,
+      publicData,
+      memeData,
+      memeOnly,
+      runtime,
+      chain,
+      portal,
+      gap: onGap,
+    });
+    this.nativeSymbol = chain === 'robinhood' ? 'ETH' : 'BNB';
+    this.head.chain = chain;
+    this.quoteRevision = { [chain]: 0 };
+    this.venues = { [chain]: new Venues(rpc, { verifyPonsReserve: chain === 'robinhood' }) };
+    this.gas = { [chain]: new ReceiptGas(rpc) };
+    this.nativePrice = nativePrice ?? new NativePrice(rpc);
     this.entryEvidence = new BuiltinEntryEvidence(store, this);
     if (memeData?.flap) memeData.flap.market = this;
+    if (chain === 'robinhood' && memeData) memeData.market = this;
     for (const m of store.all('cloud-markets')) {
+      if (chain === 'robinhood' ? m.chain !== chain : m.chain && m.chain !== chain) continue;
       this.catalog.set(m.address, m);
       if (Number.isFinite(m.updatedAt) && m.updatedAt > 0)
         this.persistAt.set(m.id ?? m.address, m.updatedAt);
@@ -158,7 +180,9 @@ export class CloudMarket {
       return {
         kind: 'meme',
         tokens: this.memeData?.candidates().map((c: any) => c.symbol) ?? [],
-        policy: 'bsc-meme-paper-v1',
+        policy: this.chain === 'robinhood' ? 'robinhood-pons-v2-paper-v1' : 'bsc-meme-paper-v1',
+        chain: this.chain,
+        platform: this.chain === 'robinhood' ? 'pons-v2' : null,
       };
     return this.publicData
       ? {
@@ -168,23 +192,23 @@ export class CloudMarket {
         }
       : null;
   }
-  nativeReference(chain = 'bsc') {
-    return chain === 'bsc' ? this.fxValue : null;
+  nativeReference(chain = this.chain) {
+    return chain === this.chain ? this.fxValue : null;
   }
   getMarket(chain: string, token: string) {
-    return chain === 'bsc' ? this.catalog.get(token.toLowerCase()) : null;
+    return chain === this.chain ? this.catalog.get(token.toLowerCase()) : null;
   }
   isEntryCandidate(token: string) {
     return (
       !this.memeOnly ||
-      (!establishedAsset(token) &&
+      ((this.chain !== 'bsc' || !establishedAsset(token)) &&
         this.catalog.get(token.toLowerCase())?.category === 'meme' &&
         this.catalog.get(token.toLowerCase())?.entryActive !== false)
     );
   }
   assertEntry(token: string) {
     if (!this.isEntryCandidate(token))
-      throw Error('当前仅允许 BSC Meme 新开仓；原持仓继续核对退出。');
+      throw Error('当前仅允许 当前网络 Meme 新开仓；原持仓继续核对退出。');
   }
   builtinEntrySnapshot(token: string) {
     return this.entryEvidence.snapshot(token);
@@ -217,7 +241,7 @@ export class CloudMarket {
       if (!this.catalog.has(token)) {
         this.catalog.set(token, {
           ...identity,
-          chain: 'bsc',
+          chain: this.chain,
           entryActive: false,
           quality: 'unavailable',
           updatedAt: 0,
@@ -225,7 +249,7 @@ export class CloudMarket {
       }
     }
     await this.refresh([token], { limit: 1, onlyRequested: true });
-    const market = this.getMarket('bsc', token);
+    const market = this.getMarket(this.chain, token);
     if (
       !market ||
       market.quality !== 'verified' ||
@@ -239,16 +263,16 @@ export class CloudMarket {
     if (this.head.head) {
       const old = await this.rpc.block(this.head.head, true);
       if (old.hash !== this.head.hash || b.number < this.head.head) {
-        this.quoteRevision.bsc++;
+        this.quoteRevision[this.chain]++;
         this.routes.clear();
         this.buyPreviews.clear();
-        this.venues.bsc.invalidate();
-        this.gas.bsc.invalidate(Math.min(b.number, this.head.head));
+        this.venues[this.chain].invalidate();
+        this.gas[this.chain].invalidate(Math.min(b.number, this.head.head));
         this.gap();
       }
     }
     this.head = {
-      chain: 'bsc',
+      chain: this.chain,
       connected: Math.abs(Date.now() - b.time) <= 15000,
       head: b.number,
       headAt: Date.now(),
@@ -285,9 +309,10 @@ export class CloudMarket {
       return this.fxValue;
     try {
       this.fxValue = await this.nativePrice.read();
-    } catch {
+    } catch (error) {
+      if (this.chain !== 'bsc') throw error;
       // GMGN is a backup, not a prerequisite for the native USD reference.
-      const response = await this.gmgn.info('bsc', CHAIN_CONFIG.bsc.wrapped),
+      const response = await this.gmgn.info(this.chain, CHAIN_CONFIG[this.chain].wrapped),
         info = unwrap(response),
         usd = Number(info?.price?.price),
         at = response._bitradeReadAt ?? Date.now();
@@ -313,7 +338,7 @@ export class CloudMarket {
     if (old && Date.now() - old.at >= 0 && Date.now() - old.at < 90000) return old;
     if (
       this.memeData?.flap?.quoteAsset(token) &&
-      ![ZERO, CHAIN_CONFIG.bsc.wrapped].includes(token as any)
+      ![ZERO, CHAIN_CONFIG[this.chain].wrapped].includes(token as any)
     ) {
       const next = await this.memeData.flap.quoteMetadata(token);
       this.metadata.set(token, next);
@@ -332,7 +357,11 @@ export class CloudMarket {
       this.store.put('cloud-metadata', next);
       return next;
     }
-    const responses = [await this.gmgn.info('bsc', token), await this.gmgn.security('bsc', token)],
+    if (this.chain !== 'bsc') throw Error('该代币尚未核实为 Pons V2 发行');
+    const responses = [
+        await this.gmgn.info(this.chain, token),
+        await this.gmgn.security(this.chain, token),
+      ],
       [info, security] = responses.map(unwrap);
     if (address(info.address) !== token || address(security.address) !== token)
       throw Error('行情资料的合约地址不匹配');
@@ -343,6 +372,7 @@ export class CloudMarket {
     return next;
   }
   async route(chain: string, token: string, block: number) {
+    if (chain !== this.chain) throw Error('报价网络不匹配');
     const old = this.routes.get(token);
     if (
       old &&
@@ -353,7 +383,13 @@ export class CloudMarket {
       return old.route;
     if (old?.route.state?.platform === 'flap' && old.block === block) return old.route;
     if (old?.route.state?.platform === 'flap' && ['v2', 'v3'].includes(old.route.kind)) {
-      const s = await this.rpc.read(FLAP, FLAP_ABI, 'getTokenV8Safe', [address(token)], block);
+      const s = await this.rpc.read(
+        this.portal,
+        FLAP_ABI,
+        'getTokenV8Safe',
+        [address(token)],
+        block,
+      );
       if (
         Number(s.status) === 4 &&
         address(s.pool) === old.route.pool &&
@@ -366,16 +402,22 @@ export class CloudMarket {
     }
     const md = await this.loadMetadata(token),
       hint = md.info.biggest_pool_address;
-    const revision = this.quoteRevision.bsc,
+    const revision = this.quoteRevision[this.chain],
       route = ['public-bsc', 'meme-bsc'].includes(md.source)
-        ? await this.venues.bsc.pool(
+        ? await this.venues[this.chain].pool(
             address(token),
-            address(CHAIN_CONFIG.bsc.wrapped),
+            address(CHAIN_CONFIG[this.chain].wrapped),
             address(hint),
             block,
           )
-        : await this.venues.bsc.resolve(address(token), block, hint);
-    if (revision !== this.quoteRevision.bsc) throw Error('核价期间发生区块重组');
+        : await this.venues[this.chain].resolve(address(token), block, hint);
+    if (
+      this.chain === 'robinhood' &&
+      route.kind !== 'pons-v2' &&
+      !(route.kind === 'v4' && route.state?.platform === 'pons-v2')
+    )
+      throw Error('当前仅接入 Pons V2 路线');
+    if (revision !== this.quoteRevision[this.chain]) throw Error('核价期间发生区块重组');
     this.routes.set(token, { block, route });
     capMap(this.routes, 100);
     return route;
@@ -408,7 +450,7 @@ export class CloudMarket {
     let m = this.catalog.get(token) ?? {
       id: token,
       address: token,
-      chain: 'bsc',
+      chain: this.chain,
       symbol: token.slice(0, 10),
       quality: 'unavailable',
       updatedAt: 0,
@@ -417,8 +459,8 @@ export class CloudMarket {
       const md = await this.loadMetadata(token),
         fx = await this.fx(),
         b = await this.updateHead(),
-        r = await this.route('bsc', token, b.number),
-        v = this.venues.bsc;
+        r = await this.route(this.chain, token, b.number),
+        v = this.venues[this.chain];
       const decimals = await v.decimals(address(token), b.number),
         qDecimals = await v.decimals(r.quote, b.number),
         spot = await v.spot(r, b.number),
@@ -426,7 +468,7 @@ export class CloudMarket {
       let quoteUsd = fx.usd;
       if (conversion) {
         await this.loadMetadata(conversion.token);
-        this.verifyExternalTaxes('bsc', conversion.token, conversion);
+        this.verifyExternalTaxes(this.chain, conversion.token, conversion);
         const cv = await v.quote(
           conversion,
           'sell',
@@ -438,7 +480,7 @@ export class CloudMarket {
       }
       const priceUsd = spot * 10 ** (decimals - qDecimals) * quoteUsd;
       if (!Number.isFinite(priceUsd) || priceUsd <= 0) throw Error('链上价格未核实');
-      this.verifyExternalTaxes('bsc', token, r);
+      this.verifyExternalTaxes(this.chain, token, r);
       if (
         ['v2', 'v3'].includes(r.kind) &&
         r.state?.platform !== 'flap' &&
@@ -451,15 +493,20 @@ export class CloudMarket {
             : md.at,
         statsFresh =
           Number.isFinite(statsAt) && Date.now() - statsAt >= 0 && Date.now() - statsAt < 120000,
-        curveDepth = r.kind === 'flap' ? flapCurveDepthUsd(r.state, quoteUsd) : null;
+        curveDepth = r.kind === 'flap' ? flapCurveDepthUsd(r.state, quoteUsd) : null,
+        ponsStats =
+          this.chain === 'robinhood'
+            ? await this.memeData.marketStats(r, b.number, quoteUsd)
+            : null;
       m = {
         ...m,
         decimals,
+        ...(ponsStats ?? {}),
         symbol: String(md.info.symbol ?? m.symbol).slice(0, 60),
         name: String(md.info.name ?? m.symbol).slice(0, 100),
         venue: r.kind,
-        platform: r.state?.platform ?? r.kind,
-        stage: ['flap', 'four'].includes(r.kind) ? 'curve' : 'dex',
+        platform: this.chain === 'robinhood' ? 'pons-v2' : (r.state?.platform ?? r.kind),
+        stage: ['flap', 'four', 'pons-v2'].includes(r.kind) ? 'curve' : 'dex',
         priceUsd,
         nativeUsd: fx.usd,
         quoteUsd,
@@ -468,26 +515,30 @@ export class CloudMarket {
           : null,
         quoteSymbol:
           md.flap?.quoteSymbol ??
-          (conversion ? this.metadata.get(conversion.token)?.info.symbol : 'BNB'),
+          (conversion ? this.metadata.get(conversion.token)?.info.symbol : this.nativeSymbol),
         progressPct:
           r.state?.platform === 'flap' || r.kind === 'flap'
             ? Number(r.state?.progress) / 1e16
-            : null,
+            : (ponsStats?.progressPct ?? null),
         createdAt: md.flap?.createdAt ?? m.createdAt ?? null,
         reserveUsd:
-          r.kind === 'flap' ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd : null,
+          r.kind === 'flap'
+            ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd
+            : (ponsStats?.reserveUsd ?? null),
         // Curve depth includes the virtual term used by the Portal invariant.
         // It is a model input, not real funds or an executable-size guarantee.
-        curveVirtualReserveUsd: curveDepth,
-        curveDepthQuality: curveDepth === null ? null : 'curve-model-estimate',
-        liquidityUsd:
-          md.source === 'flap-bsc'
+        curveVirtualReserveUsd: ponsStats?.curveVirtualReserveUsd ?? curveDepth,
+        curveDepthQuality:
+          ponsStats?.curveDepthQuality ?? (curveDepth === null ? null : 'curve-model-estimate'),
+        liquidityUsd: ponsStats
+          ? ponsStats.liquidityUsd
+          : md.source === `flap-${this.chain}`
             ? r.kind === 'flap'
               ? units(BigInt(r.state!.reserve), qDecimals) * quoteUsd
               : units(
                   BigInt(
                     await this.rpc.read(
-                      r.quote === ZERO ? address(CHAIN_CONFIG.bsc.wrapped) : r.quote,
+                      r.quote === ZERO ? address(CHAIN_CONFIG[this.chain].wrapped) : r.quote,
                       ERC20,
                       'balanceOf',
                       [r.pool],
@@ -503,17 +554,19 @@ export class CloudMarket {
         buyTaxPct: Number(r.state?.buyTaxRate ?? 0) / 100,
         sellTaxPct: Number(r.state?.sellTaxRate ?? 0) / 100,
         dataSource:
-          md.source === 'flap-bsc'
-            ? 'Flap Portal · BSC RPC · actual quote conversion'
-            : md.source === 'meme-bsc'
-              ? 'BSC RPC · Four.meme / Flap · ' +
-                (md.info.chartSource ?? 'independent pool data') +
-                ' · Honeypot.is'
-              : md.source === 'public-bsc'
-                ? statsFresh
-                  ? 'BSC RPC · DEX Screener · Honeypot.is'
-                  : 'BSC RPC · Honeypot.is'
-                : 'BSC RPC · GMGN',
+          this.chain === 'robinhood'
+            ? 'Pons V2 · Robinhood Chain RPC'
+            : md.source === `flap-${this.chain}`
+              ? `Flap Portal · ${this.chain} RPC · actual quote conversion`
+              : md.source === 'meme-bsc'
+                ? 'BSC RPC · Four.meme / Flap · ' +
+                  (md.info.chartSource ?? 'independent pool data') +
+                  ' · Honeypot.is'
+                : md.source === 'public-bsc'
+                  ? statsFresh
+                    ? 'BSC RPC · DEX Screener · Honeypot.is'
+                    : 'BSC RPC · Honeypot.is'
+                  : 'BSC RPC · GMGN',
         marketDataAt: statsFresh ? statsAt : null,
         priceChange: statsFresh ? (md.info.priceChange ?? null) : null,
         transactions: statsFresh ? (md.info.txns ?? null) : null,
@@ -540,7 +593,7 @@ export class CloudMarket {
           ...old,
           ...candidate,
           category: 'meme',
-          chain: 'bsc',
+          chain: this.chain,
           quality: old?.quality ?? 'unavailable',
           updatedAt: old?.updatedAt ?? 0,
           discoveredAt: old?.discoveredAt ?? candidate.at,
@@ -578,7 +631,7 @@ export class CloudMarket {
         const m = {
           id: item.address,
           address: item.address,
-          chain: 'bsc',
+          chain: this.chain,
           symbol: item.symbol,
           quality: 'unavailable',
           updatedAt: 0,
@@ -597,7 +650,7 @@ export class CloudMarket {
       if (!Array.isArray(rows)) continue;
       for (const item of rows) {
         if (
-          (item.chain && item.chain !== 'bsc') ||
+          (item.chain && item.chain !== this.chain) ||
           !/^0x[a-f0-9]{40}$/i.test(item.address) ||
           !/flap|four[._-]?meme|pool_pancake/i.test(item.launchpad_platform ?? '')
         )
@@ -608,7 +661,7 @@ export class CloudMarket {
           const m = {
             id: token,
             address: token,
-            chain: 'bsc',
+            chain: this.chain,
             symbol: String(item.symbol ?? token.slice(0, 10)).slice(0, 60),
             category: 'meme',
             quality: 'unavailable',
@@ -765,7 +818,11 @@ export class CloudMarket {
           const r = this.store.get('token-risk-reports', m.address);
           return (
             this.isEntryCandidate(m.address) &&
-            ['bsc-meme-paper-v1', 'bsc-flap-paper-v1'].includes(r?.policy) &&
+            [
+              'bsc-meme-paper-v1',
+              `${this.chain}-flap-paper-v1`,
+              'robinhood-pons-v2-paper-v1',
+            ].includes(r?.policy) &&
             r.buyAllowed === true &&
             Number.isFinite(r.fetchedAt) &&
             Date.now() - r.fetchedAt >= 0 &&
@@ -782,13 +839,13 @@ export class CloudMarket {
     const refresh = async (m: any) => {
       try {
         const md = this.metadata.get(m.address);
-        if (md.source === 'flap-bsc') {
+        if (md.source === `flap-${this.chain}` || md.source === 'pons-v2') {
           await this.refreshMarket(m.address);
           return;
         }
         if (Date.now() - md.at >= 120000) return;
         if (['public-bsc', 'meme-bsc'].includes(md.source) && !this.routes.has(m.address)) return;
-        const v = this.venues.bsc,
+        const v = this.venues[this.chain],
           cached = this.routes.get(m.address),
           r =
             cached &&
@@ -802,7 +859,7 @@ export class CloudMarket {
           conversion = await v.conversion(r.quote, b.number);
         let usd = fx.usd;
         if (conversion) {
-          this.verifyExternalTaxes('bsc', conversion.token, conversion);
+          this.verifyExternalTaxes(this.chain, conversion.token, conversion);
           const cv = await v.quote(
             conversion,
             'sell',
@@ -812,7 +869,7 @@ export class CloudMarket {
           );
           usd = units(cv.out, 18) * fx.usd;
         }
-        this.verifyExternalTaxes('bsc', m.address, r);
+        this.verifyExternalTaxes(this.chain, m.address, r);
         if (
           ['v2', 'v3'].includes(r.kind) &&
           r.state?.platform !== 'flap' &&
@@ -854,12 +911,12 @@ export class CloudMarket {
       await Promise.all(selected.slice(i, i + this.runtime.refreshConcurrency).map(refresh));
   }
   async quote(request: any) {
-    if (request.chain !== 'bsc' || !['buy', 'sell'].includes(request.side))
+    if (request.chain !== this.chain || !['buy', 'sell'].includes(request.side))
       throw Error('不支持的报价请求');
     const token = address(request.token),
       recipient = address(request.recipient);
     if (recipient === ZERO) throw Error('报价须使用独立账户地址');
-    const revision = this.quoteRevision.bsc,
+    const revision = this.quoteRevision[this.chain],
       b = await this.updateHead(),
       block = request.block ?? b.number;
     if (
@@ -871,9 +928,9 @@ export class CloudMarket {
       throw Error('BSC 区块或链头未核实');
     const exact = await this.rpc.block(block);
     if (b.time - exact.time > 15000) throw Error('报价区块已过期');
-    const r = await this.route('bsc', token, block);
+    const r = await this.route(this.chain, token, block);
     await this.loadMetadata(token);
-    const conversion = await this.venues.bsc.conversion(r.quote, block);
+    const conversion = await this.venues[this.chain].conversion(r.quote, block);
     if (conversion) await this.loadMetadata(conversion.token);
     const result = await this.quoteInternal(
       { ...request, token, recipient, block },
@@ -881,7 +938,7 @@ export class CloudMarket {
     );
     const fresh = await this.updateHead();
     if (
-      revision !== this.quoteRevision.bsc ||
+      revision !== this.quoteRevision[this.chain] ||
       !this.statuses()[0].connected ||
       fresh.time - exact.time > 15000
     )
@@ -903,7 +960,7 @@ export class CloudMarket {
     let counterfactual = false;
     if (
       side === 'sell' &&
-      r.kind === 'flap' &&
+      ['flap', 'pons-v2'].includes(r.kind) &&
       preview?.block === block &&
       preview.output === input
     ) {
@@ -959,6 +1016,19 @@ export class CloudMarket {
     let output = core.out,
       spent = core.spent,
       refund = core.refund;
+    if (side === 'buy' && r.kind === 'pons-v2') {
+      if (!core.postBuyState || core.postBuyState.virtualSellable <= 0n)
+        throw new RouteBlocked(
+          'PONS_GRADUATION_TRANSITION',
+          '本次虚拟买入会触发毕业，复合交易尚未核实',
+        );
+      this.buyPreviews.set(previewKey, {
+        block,
+        output: core.out,
+        route: { ...r, state: { ...r.state, ...core.postBuyState, virtualPreview: true } },
+      });
+      capMap(this.buyPreviews, 1000);
+    }
     if (side === 'buy' && r.kind === 'flap') {
       const s = r.state!,
         cs = {

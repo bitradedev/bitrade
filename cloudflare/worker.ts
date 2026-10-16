@@ -7,6 +7,8 @@ import { createPlatformCore } from '../bi-trade/platform-core.mjs';
 import { TokenRiskGuard } from '../bi-trade/lib/token-risk-core.mjs';
 import { OpenAIPlanner, validateConfig, reserveAICall } from '../bi-trade/lib/ai-provider.mjs';
 import { recordAIHealth } from './ai-health.mjs';
+import { chainStore, tradingNetwork } from '../bi-trade/lib/trading-network.mjs';
+import { RobinhoodData, EtherPrice } from './robinhood-data.mjs';
 import { CloudMarket } from './market.js';
 import { CloudRpc } from './rpc.mjs';
 import { GmgnHTTP } from './gmgn.mjs';
@@ -67,9 +69,12 @@ export class TradingPlatform extends DurableObject<any> {
   constructor(ctx: any, env: any) {
     super(ctx, env);
     const Store = env.BI_TRADE_SELF_HOSTED === 'true' ? SelfHostedStore : CloudStore;
-    this.store = new Store(ctx.storage, {
-      readOnlyUntil: Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '') || 0,
-    });
+    this.store = chainStore(
+      new Store(ctx.storage, {
+        readOnlyUntil: Date.parse(env.BI_TRADE_STORAGE_READ_ONLY_UNTIL ?? '') || 0,
+      }),
+      env.BI_TRADE_CHAIN ?? 'bsc',
+    );
     this.marketPolicy = marketRuntime(env);
     this.io = new IOBudget(this.marketPolicy.requestsPerRound);
   }
@@ -84,7 +89,8 @@ export class TradingPlatform extends DurableObject<any> {
     this.initializing = this.ctx
       .blockConcurrencyWhile(async () => {
         if (!this.env.BI_TRADE_VAULT_KEY) throw Error('Missing vault secret');
-        if (!this.store.readOnly)
+        const chain = tradingNetwork(this.env.BI_TRADE_CHAIN ?? 'bsc').chain;
+        if (!this.store.readOnly && chain === 'bsc')
           resetShowcasePaper(this.store, this.env.BI_TRADE_SHOWCASE_RESET_ID);
         const vault = new EncryptedVault(Buffer.from(this.env.BI_TRADE_VAULT_KEY, 'base64'));
         const source = new GmgnHTTP(
@@ -94,54 +100,75 @@ export class TradingPlatform extends DurableObject<any> {
               fetchImpl: marketFetch(this.env, this.io.fetch),
             },
           ),
-          rpc = new CloudRpc(this.env.BSC_RPC_URL, {
-            receiptUrl: this.env.BSC_RECEIPT_RPC_URL,
-            backupUrl: this.env.BSC_PRICE_BACKUP_RPC_URL ?? this.env.BSC_RECEIPT_RPC_URL,
-            fetchImpl: this.io.fetch,
-            store: this.store,
-            concurrency: this.marketPolicy.rpcConcurrency,
-          }),
+          rpc = new CloudRpc(
+            chain === 'robinhood'
+              ? (this.env.ROBINHOOD_RPC_URL ?? 'https://rpc.mainnet.chain.robinhood.com')
+              : this.env.BSC_RPC_URL,
+            {
+              chain,
+              receiptUrl: chain === 'robinhood' ? null : this.env.BSC_RECEIPT_RPC_URL,
+              backupUrl:
+                chain === 'robinhood'
+                  ? this.env.ROBINHOOD_BACKUP_RPC_URL
+                  : (this.env.BSC_PRICE_BACKUP_RPC_URL ?? this.env.BSC_RECEIPT_RPC_URL),
+              fetchImpl: this.io.fetch,
+              store: this.store,
+              concurrency: this.marketPolicy.rpcConcurrency,
+            },
+          ),
           memeData =
-            this.env.BI_TRADE_MEME_ONLY === 'true'
-              ? new MemeBscData(this.store, rpc, {
+            chain === 'robinhood'
+              ? new RobinhoodData(this.store, rpc, {
                   fetchImpl: this.io.fetch,
                   discoveryIntervalMs: this.marketPolicy.discoveryIntervalMs,
-                  flapIntervalMs: this.marketPolicy.flapIntervalMs,
                 })
-              : null,
+              : this.env.BI_TRADE_MEME_ONLY === 'true'
+                ? new MemeBscData(this.store, rpc, {
+                    fetchImpl: this.io.fetch,
+                    discoveryIntervalMs: this.marketPolicy.discoveryIntervalMs,
+                    flapIntervalMs: this.marketPolicy.flapIntervalMs,
+                  })
+                : null,
           publicData =
-            this.env.BI_TRADE_PUBLIC_MARKET === 'true'
+            chain === 'bsc' && this.env.BI_TRADE_PUBLIC_MARKET === 'true'
               ? new PublicBscData(this.store, rpc, {
                   fetchImpl: this.io.fetch,
                   sharedReader: memeData,
                 })
               : null,
           market = new CloudMarket(this.store, {
+            chain,
+            nativePrice: chain === 'robinhood' ? new EtherPrice(this.io.fetch) : null,
             rpc,
             gmgn: source,
             publicData,
             memeData,
-            memeOnly: this.env.BI_TRADE_MEME_ONLY === 'true',
+            memeOnly: chain === 'robinhood' || this.env.BI_TRADE_MEME_ONLY === 'true',
             runtime: this.marketPolicy,
             onGap: () => this.app?.paper.gap(),
           });
         const risk = new TokenRiskGuard(this.store, {
             maxTokensPerTick: 1,
             source: {
+              chain,
               label: (token: string) =>
-                memeData?.flap?.supports(token)
-                  ? 'Flap Portal · BSC RPC'
-                  : memeData?.supports(token)
-                    ? 'BSC Meme · Four.meme / GeckoTerminal · Honeypot.is · RPC'
-                    : publicData?.supports(token)
-                      ? 'BSC RPC · DEX Screener · Honeypot.is'
-                      : 'GMGN API',
+                chain === 'robinhood'
+                  ? 'Pons V2 · Robinhood Chain RPC'
+                  : memeData?.flap?.supports(token)
+                    ? 'Flap Portal · BSC RPC'
+                    : memeData?.supports(token)
+                      ? 'BSC Meme · Four.meme / GeckoTerminal · Honeypot.is · RPC'
+                      : publicData?.supports(token)
+                        ? 'BSC RPC · DEX Screener · Honeypot.is'
+                        : 'GMGN API',
               riskReport: (token: string) =>
-                memeData?.supports(token)
+                chain === 'robinhood'
                   ? memeData.riskReport(token)
-                  : publicData?.supports(token)
-                    ? publicData.riskReport(token)
-                    : null,
+                  : memeData?.supports(token)
+                    ? memeData.riskReport(token)
+                    : publicData?.supports(token)
+                      ? publicData.riskReport(token)
+                      : null,
               info: (...args: any[]) => source.info(...args),
               holders: (...args: any[]) => source.holders(...args),
               security: (...args: any[]) => source.security(...args),
@@ -197,6 +224,14 @@ export class TradingPlatform extends DurableObject<any> {
           .filter((a: any) => !this.store.readOnly && a.source === 'builtin')) {
           const paused = this.env.BI_TRADE_SHOWCASE_PAUSED === 'true';
           if (a.paused !== paused) this.store.put('agents', { ...a, paused });
+          if (paused && this.store.get('showcase-status', a.id)?.state !== 'paused')
+            this.store.put('showcase-status', {
+              ...this.store.get('showcase-status', a.id),
+              id: a.id,
+              state: 'paused',
+              reason: '平台 Agent 已暂停',
+              nextDecisionAt: null,
+            });
         }
         return this.app;
       })
@@ -262,6 +297,7 @@ export class TradingPlatform extends DurableObject<any> {
           aiConfigured: !!this.env.BI_TRADE_AI_API_KEY,
           showcaseReset: this.store.get('cloud-settings', 'showcase-paper-reset'),
           marketConfigured: !!(
+            this.market.memeData ||
             this.env.GMGN_API_KEY ||
             this.market.publicData ||
             (this.env.GMGN_RELAY_URL && this.env.GMGN_RELAY_TOKEN)
@@ -276,12 +312,22 @@ export class TradingPlatform extends DurableObject<any> {
           publicMarketSources: (this.market.memeData ?? this.market.publicData)?.status() ?? [],
           marketScope: this.market.marketScope(),
           rpcSources: [
-            { source: 'BSC price RPC', ...this.market.rpc.status() },
+            { source: this.market.chain + ' price RPC', ...this.market.rpc.status() },
             ...(this.market.rpc.backupRpc
-              ? [{ source: 'BSC price backup RPC', ...this.market.rpc.backupRpc.status() }]
+              ? [
+                  {
+                    source: this.market.chain + ' price backup RPC',
+                    ...this.market.rpc.backupRpc.status(),
+                  },
+                ]
               : []),
             ...(this.market.rpc.receiptRpc
-              ? [{ source: 'BSC receipt RPC', ...this.market.rpc.receiptRpc.status() }]
+              ? [
+                  {
+                    source: this.market.chain + ' receipt RPC',
+                    ...this.market.rpc.receiptRpc.status(),
+                  },
+                ]
               : []),
           ],
           networkBudget: this.io.lastAlarm,
@@ -430,7 +476,7 @@ export class TradingPlatform extends DurableObject<any> {
         { description: '连接验证。当前没有候选市场和持仓，保持观察，只输出 hold。' },
         {
           at: Date.now(),
-          chainId: 56,
+          chainId: tradingNetwork(this.env.BI_TRADE_CHAIN ?? 'bsc').chainId,
           account: { initialUsd: 1000, balanceUsd: 1000, realizedUsd: 0, positions: [] },
           markets: [],
         },
@@ -555,9 +601,10 @@ export default {
       }
     }
     if (!['GET', 'HEAD'].includes(request.method)) return json({ error: '不支持此请求方法' }, 405);
+    if (url.pathname === '/official-token.json') return json({ error: 'Not found' }, 404);
     const asset = ASSET_ROUTES[url.pathname];
     if (asset) url.pathname = '/' + asset;
-    if (url.pathname === '/agents.md') url.searchParams.set('v', '20261015-5');
+    if (url.pathname === '/agents.md') url.searchParams.set('v', '20261016-1');
     const response = await env.ASSETS.fetch(new Request(url, request));
     const headers = new Headers(response.headers);
     for (const [k, v] of Object.entries(SECURITY)) headers.set(k, v);
