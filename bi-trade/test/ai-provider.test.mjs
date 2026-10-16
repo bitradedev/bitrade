@@ -32,8 +32,8 @@ test('compatible provider URL normalization rejects credentials, insecure or amb
 });
 test('configured compatible endpoint gets strict decisions without redirects, secret context or fallback to another host',async()=>{
  let calls=0;const relay={...config,baseUrl:'https://provider.example/v1',model:'relay-model'};
- const planner=new OpenAIPlanner({fetchImpl:async(url,options)=>{calls++;assert.equal(url,'https://provider.example/v1/responses');assert.equal(options.redirect,'manual');assert.equal(options.headers.Authorization,'Bearer '+config.apiKey);const body=JSON.parse(options.body);assert.equal(body.model,'relay-model');assert.equal(body.text.format.strict,true);assert.doesNotMatch(JSON.stringify(body),/test-secret/);return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(buy())}]}]})};}});
- assert.equal((await planner.decide(relay,{description:'测试'},context)).action,'buy');assert.equal(calls,1);
+ const planner=new OpenAIPlanner({fetchImpl:async(url,options)=>{calls++;assert.equal(url,'https://provider.example/v1/responses');assert.equal(options.redirect,'manual');assert.equal(options.headers.Authorization,'Bearer '+config.apiKey);const body=JSON.parse(options.body);assert.equal(body.model,'relay-model');assert.equal(body.text.format.strict,true);assert.match(body.input[0].content,/Robinhood Chain/);assert.doesNotMatch(body.input[0].content,/BNB|BSC|Flap/);assert.doesNotMatch(JSON.stringify(body),/test-secret/);return {ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify(buy())}]}]})};}});
+ assert.equal((await planner.decide(relay,{description:'测试'},{...context,network:'Robinhood Chain'})).action,'buy');assert.equal(calls,1);
  const malicious=new OpenAIPlanner({fetchImpl:async()=>({ok:true,json:async()=>({status:'completed',output:[{content:[{type:'output_text',text:JSON.stringify({...buy(),reason:config.apiKey})}]}]})})});
  await assert.rejects(malicious.decide(relay,{description:'测试'},context),/无效敏感内容/);
 });

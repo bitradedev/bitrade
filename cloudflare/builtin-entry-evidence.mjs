@@ -249,7 +249,12 @@ export class BuiltinEntryEvidence {
       boundaryAt,
       buys: rows.filter((r) => r.buy).length,
       sells: rows.filter((r) => !r.buy).length,
-      source: route.kind === 'flap' ? 'Flap Portal events' : 'canonical-pool Swap events',
+      source:
+        route.kind === 'pons-v2'
+          ? 'Pons V2 CurveBuy / CurveSell events'
+          : route.kind === 'flap'
+            ? 'Flap Portal events'
+            : 'canonical-pool Swap events',
     };
   }
   async boundary(lo, hi, cutoff) {

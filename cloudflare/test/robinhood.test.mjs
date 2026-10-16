@@ -12,9 +12,9 @@ import {PaperDesk} from '../../bi-trade/lib/paper-desk.mjs';
 import {CloudRpc} from '../rpc.mjs';
 const require=createRequire(realpathSync('node_modules/wrangler/package.json'));
 mkdirSync('.cloud-test-build',{recursive:true});
-writeFileSync('.cloud-test-build/robinhood-test-entry.ts',`export {RobinhoodData,EtherPrice,ponsLaunches,PONS_EVENTS} from '../cloudflare/robinhood-data.mjs';export {turnoverRows} from '../cloudflare/builtin-entry-evidence.mjs';export {Venues,poolId} from '../paper-terminal/src/server/adapters/venues.js';export {CloudMarket} from '../cloudflare/market.js';`);
+writeFileSync('.cloud-test-build/robinhood-test-entry.ts',`export {RobinhoodData,EtherPrice,ponsLaunches,PONS_EVENTS} from '../cloudflare/robinhood-data.mjs';export {turnoverRows} from '../cloudflare/builtin-entry-evidence.mjs';export {Venues,poolId} from '../paper-terminal/src/server/adapters/venues.js';export {ReceiptGas} from '../paper-terminal/src/server/adapters/fees.js';export {CloudMarket} from '../cloudflare/market.js';`);
 await require('esbuild').build({entryPoints:['.cloud-test-build/robinhood-test-entry.ts'],bundle:true,platform:'node',format:'esm',outfile:'.cloud-test-build/robinhood-test-entry.mjs'});
-const {RobinhoodData,EtherPrice,ponsLaunches,PONS_EVENTS,turnoverRows,Venues,poolId,CloudMarket}=await import('../../.cloud-test-build/robinhood-test-entry.mjs');
+const {RobinhoodData,EtherPrice,ponsLaunches,PONS_EVENTS,turnoverRows,Venues,poolId,ReceiptGas,CloudMarket}=await import('../../.cloud-test-build/robinhood-test-entry.mjs');
 const TOKEN='0x1111111111111111111111111111111111111111',CURVE='0x2222222222222222222222222222222222222222',WALLET='0x3333333333333333333333333333333333333333',ZERO='0x'+'0'.repeat(40),FACTORY='0x7ed598bcef8bd9edd8c97a195c6d13f40801ec7e',hash='0x'+'1'.repeat(64);
 function repository(t){const db=new DatabaseSync(':memory:');db.exec('PRAGMA foreign_keys=ON');const base=new PlatformRepository(db,fn=>{db.exec('BEGIN');try{const result=fn();db.exec('COMMIT');return result;}catch(e){db.exec('ROLLBACK');throw e;}});t.after(()=>db.close());return base;}
 function gateway(){return {chain:'robinhood',block:100,headAt:Date.now(),wrongChain:false,statuses(){return [{chain:this.chain,head:this.block,headAt:this.headAt,connected:true}]},nativeReference(){return {usd:2000,at:Date.now()}},getMarket(){return {symbol:'TEST',quality:'verified',updatedAt:Date.now(),priceUsd:1}},markets(){return []},async assertExternalEntry(){},stop(){},advance(){this.block++;this.headAt=Date.now()},async quote(p){const input=p.nativeAmountRaw??p.tokenAmountRaw;return {id:'q',chain:this.wrongChain?'bsc':this.chain,token:p.token,side:p.side,block:p.block,at:Date.now(),inputRaw:input,spentInputRaw:input,refundRaw:'0',outputRaw:String(p.side==='buy'?BigInt(input)*2000n:BigInt(input)/2000n),quality:'verified',nativeUsd:2000,priceUsd:1,tokenDecimals:18,fees:{includedInOutput:true,quality:'estimated',gasUsd:.01,approvalUsd:0,protocolUsd:0,taxUsd:0,conversionUsd:0}}}};}
@@ -89,6 +89,20 @@ test('Pons quotes distinguish actual reserves and counterfactual reverse preview
 
 test('ETH dollar references verify the currency, never use BNB, and preserve the actual observed time',async()=>{
  const price=new EtherPrice(async()=>Response.json({data:{base:'BNB',currency:'USD',amount:'500'}}),()=>100);await assert.rejects(price.read(),/身份/);price.fetch=async()=>Response.json({data:{base:'ETH',currency:'USD',amount:'2400'}});assert.deepEqual(await price.read(),{id:'native-fx',usd:2400,at:100,readAt:100,source:'Coinbase ETH/USD spot · observed reference'});
+});
+
+test('WETH paper routes charge native-account wrapping, quote approval and exit unwrapping without changing native ETH fees',async()=>{
+ const gas=new ReceiptGas({chain:'robinhood'}),frozen={gasUsedRaw:'100000',gasPriceRaw:'1000000000',sampleBlock:99,sampleTransaction:hash,sourceFeeFrozenAt:1000};
+ const native={kind:'pons-v2',token:TOKEN,quote:ZERO,curve:CURVE},wrapped={...native,quote:'0x0bd7d308f8e1639fab988df18a8011f41eacad73'};
+ const buy=await gas.estimate(native,100,'buy',2000,1,frozen),sell=await gas.estimate(native,100,'sell',2000,1,frozen);
+ assert.equal(buy.gasUsd,.2);assert.equal(buy.approvalUsd,0);assert.equal(sell.gasUsd,.2);assert.equal(sell.approvalUsd,.05);
+ for(const side of ['buy','sell']){
+  const fee=await gas.estimate(wrapped,100,side,2000,1,frozen);
+  assert.equal(fee.gasUsd,.4);assert.equal(fee.approvalUsd,.05);assert.equal(fee.sourceFeeFrozenAt,1000);assert.match(fee.notes.join(' '),/WETH/);assert.match(fee.notes.join(' '),/未实测执行/);
+ }
+ const v4=await gas.estimate({...wrapped,kind:'v4'},100,'buy',2000,1,frozen);assert.equal(v4.gasUsd,.4);assert.equal(v4.approvalUsd,.05);
+ await assert.rejects(gas.estimate(wrapped,98,'buy',2000,1,frozen),/未来/);
+ const legacy=await new ReceiptGas({chain:'bsc'}).estimate(native,100,'sell',2000,2,frozen);assert.equal(legacy.gasUsd,.4);assert.equal(legacy.approvalUsd,.1);
 });
 
 test('Robinhood routes cannot fall back to Pons V1, Flap or a foreign catalog after launch identity changes',async t=>{

@@ -62,12 +62,16 @@ export class ReceiptGas {
   const context=frozen??await this.context(route,block);if(context.sampleBlock>block)throw new RouteBlocked('FUTURE_GAS_SAMPLE','不能用未来 Gas 样本给历史模拟定价');
   if(!Number.isFinite(context.sourceFeeFrozenAt)||context.sourceFeeFrozenAt<=0)throw new RouteBlocked('GAS_FREEZE_UNKNOWN','费用快照缺少实际读取冻结时间，请重新采集');
   const sample={gas:BigInt(context.gasUsedRaw),tx:context.sampleTransaction},gasPrice=BigInt(context.gasPriceRaw);
-  const gasRaw=sample.gas*gasPrice*BigInt(legs);
+  // Paper accounts hold native ETH. A WETH pair needs an explicit wrap on
+  // entry and unwrap on exit; use another real-swap proxy step conservatively
+  // rather than silently assuming the wrapper transaction is free.
+  const wrappedQuote=this.rpc.chain==='robinhood'&&route.quote.toLowerCase()===CHAIN_CONFIG.robinhood.wrapped;
+  const steps=legs+(wrappedQuote?1:0),gasRaw=sample.gas*gasPrice*BigInt(steps);
   // Approval is an explicit conservative estimate derived from a real swap's
   // gas use, never a purported gas estimate from a funded sender simulation.
   const approvalUnits=sample.gas/4n>21000n?sample.gas/4n:21000n;
-  const approvals=(side==='sell'?1:0)+(legs>1?1:0),approvalRaw=approvalUnits*gasPrice*BigInt(approvals);
-  return {gasUsd:Number(gasRaw)/1e18*nativeUsd,approvalUsd:Number(approvalRaw)/1e18*nativeUsd,sourceFeeFrozenAt:context.sourceFeeFrozenAt,notes:[`Gas 估计：近期真实成交 p75 样本 ${sample.tx} 的 ${sample.gas} gas × 实际读取后冻结的 gasPrice（${new Date(context.sourceFeeFrozenAt).toISOString()}）；${legs} 个交易步骤；优先同协议，缺失时为跨协议保守代理样本`,`授权估计：每次按真实成交 gas 的 25%（最低 21000）；虚拟首次授权保守计费，未使用签名或真实余额`,`Gas/授权费在报价金额之外；报价 Gas 估计不等于实际发送成本${this.rpc.chain==='robinhood'?'，L2 当前 gasPrice 已含链费用规则，未另造 L1 成本':''}`]};
+  const approvals=(side==='sell'?1:0)+(legs>1?1:0)+(wrappedQuote&&side==='buy'?1:0),approvalRaw=approvalUnits*gasPrice*BigInt(approvals);
+  return {gasUsd:Number(gasRaw)/1e18*nativeUsd,approvalUsd:Number(approvalRaw)/1e18*nativeUsd,sourceFeeFrozenAt:context.sourceFeeFrozenAt,notes:[`Gas 估计：近期真实成交 p75 样本 ${sample.tx} 的 ${sample.gas} gas × 实际读取后冻结的 gasPrice（${new Date(context.sourceFeeFrozenAt).toISOString()}）；${steps} 个交易步骤；优先同协议，缺失时为跨协议保守代理样本`,...(wrappedQuote?[`WETH ${side==='buy'?'包装及报价币首次授权':'解包'}另计；包装/解包沿用整笔真实 swap 的 Gas 作为保守代理，未实测执行`]:[]),`授权估计：${approvals} 次，每次按真实成交 gas 的 25%（最低 21000）；虚拟首次授权保守计费，未使用签名或真实余额`,`Gas/授权费在报价金额之外；报价 Gas 估计不等于实际发送成本${this.rpc.chain==='robinhood'?'，L2 当前 gasPrice 已含链费用规则，未另造 L1 成本':''}`]};
  }
  invalidate(fromBlock:number){this.revision++;this.samples=this.samples.filter(s=>s.block<fromBlock);for(const key of this.contexts.keys())if(Number(key.slice(key.lastIndexOf(':')+1))>=fromBlock)this.contexts.delete(key);for(const block of this.gasPrices.keys())if(block>=fromBlock)this.gasPrices.delete(block);}
 }
