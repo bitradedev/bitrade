@@ -114,4 +114,8 @@ changed to live mode or refilled by reopening the page. Keep the same browser co
 Preview buys in USD or ETH; sell a percentage of an existing position. Confirmation
 submits an idempotent order for later-block matching, subject to fees, balance,
 verified route and 30% slippage. No real transaction is signed or broadcast.
-The chart shows recorded price observations, not a full historical candle feed.
+The chart aggregates actual Pons curve and graduated V4 executions into ETH OHLC
+and quote-side volume. It supports 1m/5m/15m/1h periods, real-time browser updates
+and bounded earlier-history loading. Empty periods remain empty. Paper fills are
+separate markers and never contribute market volume; the loaded window is not a
+complete launch-to-present history.

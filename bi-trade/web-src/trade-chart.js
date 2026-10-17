@@ -375,8 +375,7 @@ class TradeChart {
           ),
     );
     this.host.querySelector('.candle-asof').textContent =
-      (data.delayed ? t('记录截至 ', 'Records through ') : t('已核对至 ', 'Checked through ')) +
-      clock(data.throughAt / 1000);
+      t('行情截至 ', 'Market data through ') + clock(data.throughAt / 1000);
     if (!this.hover) this.legend([...this.bars.values()].at(-1));
     this.updateMarkers();
     if (data.trades) this.tape(data.trades);
