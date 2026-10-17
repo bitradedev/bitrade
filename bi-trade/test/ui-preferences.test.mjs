@@ -15,6 +15,28 @@ test('manual trading renders both languages, escapes token names and keeps missi
   if(language==='en')assert.doesNotMatch(host.innerHTML,/[\u4e00-\u9fff]/);else assert.match(host.innerHTML,/手动模拟交易/);
  }
 });
+
+test('manual prices distinguish USD and ETH and never guess an unknown market is a curve',()=>{
+ for(const language of ['en','zh']){
+  const host={innerHTML:''},context={BiUI:{language,locale:language==='en'?'en-US':'zh-CN'},document:{activeElement:null,querySelector:s=>s==='#trade-main'?host:s==='#chart-region'?null:{addEventListener(){},scrollTop:0},addEventListener(){},getElementById(){return null}},setInterval(){}};
+  vm.createContext(context);vm.runInContext(readFileSync(resolve(web,'trade.js'),'utf8').replace('void boot();',''),context);
+  vm.runInContext(`chosen={token:'0x'+'11'.repeat(20),symbol:'COVENANT',priceUsd:0.000075,priceEth:0.0000000309,at:Date.now(),stage:null};render();`,context);
+  assert.match(host.innerHTML,/\$0\.000075/);assert.match(host.innerHTML,/0\.0000000309 ETH/);
+  assert.ok(host.innerHTML.includes(language==='en'?'Token price · USD':'单币价格 · USD'));
+  assert.doesNotMatch(host.innerHTML,/Pons V2 bonding curve|Pons V2 曲线交易/);
+ }
+});
+
+test('a manually searched token refreshes even when it is outside the discovery list; failures retain the original price time',async()=>{
+ let poll,lookupCalls=0,fail=false;
+ const token='0x'+'11'.repeat(20),observedAt=Date.now()-2000;
+ const context={BiUI:{language:'en',locale:'en-US'},document:{hidden:false,addEventListener(){},querySelector(){return {addEventListener(){}};}},setInterval(fn){poll=fn;}};
+ vm.createContext(context);vm.runInContext(readFileSync(resolve(web,'trade.js'),'utf8').replace('void boot();',''),context);
+ context.reply=async(path)=>{if(path==='/api/manual')return {account:null,positions:[],orders:[],fills:[]};if(path==='/api/manual/markets')return {markets:[]};if(path==='/api/manual/lookup'){lookupCalls++;if(fail)throw Error('Unavailable');return {market:{token,symbol:'COVENANT',priceUsd:0.000075,at:observedAt},points:[]};}throw Error('Unexpected route');};
+ vm.runInContext(`render=()=>{};api=reply;owner=true;chosen={token:'${token}',symbol:'Unknown',priceUsd:null,at:null};lastLookup=Date.now()-30000;`,context);
+ await poll();assert.equal(lookupCalls,1);assert.equal(vm.runInContext('chosen.symbol',context),'COVENANT');assert.equal(vm.runInContext('chosen.at',context),observedAt);
+ fail=true;vm.runInContext('lastLookup=Date.now()-30000',context);await poll();assert.equal(lookupCalls,2);assert.equal(vm.runInContext('chosen.at',context),observedAt);assert.equal(vm.runInContext('lookupPending',context),0);
+});
 function preferences(values={}){
  const readKeys=[],root={dataset:{}},context={window:{},localStorage:{getItem:key=>{readKeys.push(key);return values[key]??null;}},document:{documentElement:root,readyState:'loading',addEventListener(){}}};vm.createContext(context);
  for(const file of ['ui-catalog.js','ui-preferences.js'])vm.runInContext(readFileSync(resolve(web,file),'utf8'),context);

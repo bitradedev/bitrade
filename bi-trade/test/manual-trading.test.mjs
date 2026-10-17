@@ -53,6 +53,16 @@ test('manual real-quote previews do not fill, submissions are idempotent, partia
  v=(await f.call('/api/manual',undefined,s)).value;assert.equal(v.positions[0].remainingRaw,String(BigInt(p.outputRaw)*3n/4n));assert.ok(v.account.realizedUsd<0);assert.equal(v.fills.length,2);assert.equal(v.fills[0].decimals,18);assert.equal(f.app.paper.check(started.account.id),true);
  assert.equal(f.app.live.orders().length,0);assert.equal(f.base.all('paper-fills').length,0);
 });
+
+test('manual market prices expose USD and ETH from the same observed quote without creating a financial account',async t=>{
+ const f=await fixture(t),s=await f.owner(),at=Date.now();
+ f.g.getMarket=()=>({address:TOKEN,chain:'robinhood',symbol:'COVENANT',quality:'verified',updatedAt:at,priceUsd:.000075,nativeUsd:2424.8,stage:'dex'});
+ let r=await f.call('/api/manual/lookup',{token:TOKEN},s);
+ assert.equal(r.status,200);assert.equal(r.value.market.priceUsd,.000075);assert.equal(r.value.market.priceEth,.000075/2424.8);assert.equal(r.value.market.at,at);assert.equal(r.value.market.stage,'dex');
+ assert.equal(f.store.all('paper-accounts').length,0);assert.equal(f.store.all('paper-orders').length,0);
+ f.g.getMarket=()=>({address:TOKEN,chain:'robinhood',quality:'verified',updatedAt:at,priceUsd:.000075,nativeUsd:null});
+ r=await f.call('/api/manual/lookup',{token:TOKEN},s);assert.equal(r.value.market.priceEth,null);
+});
 test('manual trading rejects foreign previews and orders, stale quotes, oversells and insufficient fee balance without changing funds',async t=>{
  const f=await fixture(t),s=await f.owner(),other=await f.owner();await f.start(s);await f.start(other);
  const p=await f.preview(s),data={previewId:p.id,requestKey:'owned'};

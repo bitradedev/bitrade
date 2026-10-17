@@ -69,6 +69,7 @@ let csrf = null,
   requestKey = null,
   selection = 0,
   polling = false,
+  lookupPending = 0,
   lastLookup = 0,
   retryAfter = 0;
 const knownErrors = {
@@ -190,7 +191,7 @@ function render() {
     scroll = $('#market-list')?.scrollTop ?? 0;
   const pos = currentPosition(),
     a = book.account;
-  const content = `<div class="trade-title"><div><div class="trade-kicker">YOUR CALL. VIRTUAL CAPITAL.</div><h1>${t('手动模拟交易', 'Paper trading')}</h1><p>${t('真实行情，虚拟资金。每一笔由你决定。', 'Real quotes. Virtual funds. Every trade is your call.')}</p></div><span class="trade-badge">Robinhood Chain · Pons V2</span></div>${error ? `<div class="trade-error-banner" role="alert">${esc(error)}</div>` : ''}<div class="trade-layout"><aside class="trade-panel trade-watchlist"><div class="trade-panel-head"><h2>${t('发现代币', 'Discover tokens')}</h2><span class="trade-caption">${markets.length}</span></div><form class="trade-search" id="token-search"><label for="token-query">${t('名称或合约地址', 'Name or contract address')}</label><input id="token-query" placeholder="${t('搜索代币 / 粘贴 CA', 'Search tokens / paste CA')}" value="${esc(query)}" ${busy ? 'disabled' : ''} autocomplete="off" spellcheck="false"><button class="button secondary" ${busy ? 'disabled' : ''} type="submit">${t('查询合约', 'Look up contract')}</button></form><div class="market-list" id="market-list">${marketRows()}</div><p class="market-list-note">${t('最近收录的 Pons V2 代币。列表价格保留实际采样时间；下单前重新报价。', 'Recently indexed Pons V2 tokens. Listed prices keep their observation time; trades use a new quote.')}</p></aside><div class="trade-middle"><section class="trade-panel trade-price-panel">${chosen ? `<div class="token-head"><div><h2>${esc(chosen.symbol)}</h2><a href="https://robinhoodchain.blockscout.com/token/${esc(chosen.token)}" target="_blank" rel="noopener noreferrer">${esc(short(chosen.token))} ↗</a><p class="trade-caption">${chosen.stage === 'dex' ? t('已毕业 · Uniswap V4', 'Graduated · Uniswap V4') : t('Pons V2 曲线交易', 'Pons V2 bonding curve')}</p></div><div class="token-price"><strong>${price(chosen.priceUsd)}</strong><small>${t('采样时间', 'Observed at')} ${time(chosen.at)}</small><button class="trade-link" data-act="update" ${busy ? 'disabled' : ''}>${t('更新报价', 'Refresh price')}</button></div></div><div class="token-metrics"><div><small>${t('实有曲线储备', 'Actual curve reserve')}</small><b>${money(chosen.reserveUsd)}</b></div><div><small>${t('毕业进度', 'Graduation progress')}</small><b>${Number.isFinite(chosen.progressPct) ? Math.min(100, Math.max(0, chosen.progressPct)).toFixed(1) + '%' : '—'}</b></div><div><small>${t('买入 / 卖出税率', 'Buy / sell tax')}</small><b>${chosen.buyTaxPct === null || chosen.buyTaxPct === undefined ? '—' : Number(chosen.buyTaxPct).toFixed(2) + '%'} / ${chosen.sellTaxPct === null || chosen.sellTaxPct === undefined ? '—' : Number(chosen.sellTaxPct).toFixed(2) + '%'}</b></div></div><div id="chart-region" class="price-chart"></div>` : `<div class="trade-empty">${t('从左侧选择代币，或输入 Pons V2 合约地址。', 'Select a token, or paste a Pons V2 contract address.')}</div>`}</section><section class="trade-panel trade-history-panel"><div class="trade-history-tabs">${[
+  const content = `<div class="trade-title"><div><div class="trade-kicker">YOUR CALL. VIRTUAL CAPITAL.</div><h1>${t('手动模拟交易', 'Paper trading')}</h1><p>${t('真实行情，虚拟资金。每一笔由你决定。', 'Real quotes. Virtual funds. Every trade is your call.')}</p></div><span class="trade-badge">Robinhood Chain · Pons V2</span></div>${error ? `<div class="trade-error-banner" role="alert">${esc(error)}</div>` : ''}<div class="trade-layout"><aside class="trade-panel trade-watchlist"><div class="trade-panel-head"><h2>${t('发现代币', 'Discover tokens')}</h2><span class="trade-caption">${markets.length}</span></div><form class="trade-search" id="token-search"><label for="token-query">${t('名称或合约地址', 'Name or contract address')}</label><input id="token-query" placeholder="${t('搜索代币 / 粘贴 CA', 'Search tokens / paste CA')}" value="${esc(query)}" ${busy ? 'disabled' : ''} autocomplete="off" spellcheck="false"><button class="button secondary" ${busy ? 'disabled' : ''} type="submit">${t('查询合约', 'Look up contract')}</button></form><div class="market-list" id="market-list">${marketRows()}</div><p class="market-list-note">${t('最近收录的 Pons V2 代币。列表价格保留实际采样时间；下单前重新报价。', 'Recently indexed Pons V2 tokens. Listed prices keep their observation time; trades use a new quote.')}</p></aside><div class="trade-middle"><section class="trade-panel trade-price-panel">${chosen ? `<div class="token-head"><div><h2>${esc(chosen.symbol)}</h2><a href="https://robinhoodchain.blockscout.com/token/${esc(chosen.token)}" target="_blank" rel="noopener noreferrer">${esc(short(chosen.token))} ↗</a><p class="trade-caption">${chosen.stage === 'dex' ? t('已毕业 · Uniswap V4', 'Graduated · Uniswap V4') : chosen.stage === 'curve' ? t('Pons V2 曲线交易', 'Pons V2 bonding curve') : 'Pons V2'}</p></div><div class="token-price"><small>${t('单币价格 · USD', 'Token price · USD')}</small><strong>${price(chosen.priceUsd)}</strong>${chosen.priceEth > 0 ? `<span class="trade-caption">${Number(chosen.priceEth).toLocaleString(BiUI.locale, { maximumSignificantDigits: 6 })} ETH</span>` : ''}<small>${t('采样时间', 'Observed at')} ${time(chosen.at)}</small><button class="trade-link" data-act="update" ${busy ? 'disabled' : ''}>${t('更新报价', 'Refresh price')}</button></div></div><div class="token-metrics"><div><small>${t('实有曲线储备', 'Actual curve reserve')}</small><b>${money(chosen.reserveUsd)}</b></div><div><small>${t('毕业进度', 'Graduation progress')}</small><b>${Number.isFinite(chosen.progressPct) ? Math.min(100, Math.max(0, chosen.progressPct)).toFixed(1) + '%' : '—'}</b></div><div><small>${t('买入 / 卖出税率', 'Buy / sell tax')}</small><b>${chosen.buyTaxPct === null || chosen.buyTaxPct === undefined ? '—' : Number(chosen.buyTaxPct).toFixed(2) + '%'} / ${chosen.sellTaxPct === null || chosen.sellTaxPct === undefined ? '—' : Number(chosen.sellTaxPct).toFixed(2) + '%'}</b></div></div><div id="chart-region" class="price-chart"></div>` : `<div class="trade-empty">${t('从左侧选择代币，或输入 Pons V2 合约地址。', 'Select a token, or paste a Pons V2 contract address.')}</div>`}</section><section class="trade-panel trade-history-panel"><div class="trade-history-tabs">${[
     ['positions', t('持仓', 'Positions')],
     ['fills', t('成交记录', 'Fills')],
     ['orders', t('订单', 'Orders')],
@@ -246,19 +247,27 @@ async function choose(token) {
   error = '';
   render();
   if (!owner) return;
+  await lookupChosen(version);
+}
+async function lookupChosen(version, quiet = false) {
+  const token = chosen?.token;
+  if (!owner || !token) return;
+  lastLookup = Date.now();
+  lookupPending++;
   try {
     const v = await api('/api/manual/lookup', { token });
     if (version !== selection) return;
     chosen = v.market;
     points = v.points;
-    lastLookup = Date.now();
     if (!markets.some((m) => m.token === token)) markets.unshift(chosen);
     else markets = markets.map((m) => (m.token === token ? chosen : m));
     render();
   } catch (e) {
     if (version !== selection) return;
-    error = message(e);
+    if (!quiet) error = message(e);
     render();
+  } finally {
+    lookupPending--;
   }
 }
 function confirm() {
@@ -452,6 +461,8 @@ setInterval(async () => {
         chosen = next;
         points = [...points, { at: next.at, priceUsd: next.priceUsd }].slice(-120);
       }
+      if (owner && !lookupPending && Date.now() - lastLookup >= 20000)
+        await lookupChosen(selection, true);
     }
     render();
   } catch (e) {

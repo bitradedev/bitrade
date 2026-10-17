@@ -41,6 +41,26 @@ test('Exact requested refresh never spends its evidence window or request budget
   assert.equal(discovered, 0);
   assert.deepEqual(refreshed, [token(1)]);
 });
+
+test('A contract lookup arriving during background refresh still refreshes its exact token', async () => {
+  const {market}=fixture();
+  let release,entered;
+  const waiting=new Promise(resolve=>{release=resolve;}),started=new Promise(resolve=>{entered=resolve;});
+  const visited=[];
+  market.catalog.set(token(1),{address:token(1),category:'meme'});
+  market.discover=async()=>{};
+  market.refreshMarket=async value=>{visited.push(value);if(value===token(1)){entered();await waiting;}};
+  const background=market.refresh([],{limit:1});
+  await started;
+  const lookup=market.refresh([token(2)],{onlyRequested:true,limit:1});
+  const duplicate=market.refresh([token(2)],{onlyRequested:true,limit:1});
+  assert.equal(lookup,duplicate,'Identical contract lookups share one queued refresh');
+  const other=market.refresh([token(3)],{onlyRequested:true,limit:1});
+  release();
+  await Promise.all([background,lookup,duplicate,other]);
+  assert.deepEqual(visited,[token(1),token(2),token(3)]);
+  assert.equal(market.requestedRefreshes.size,0);
+});
 test('Self-hosted refresh prioritizes actual activity, covers all exploration slots and covers twelve candidates in three rounds with four jobs running', async () => {
   const now = Date.now(),
     candidates = Array.from({ length: 12 }, (_, i) => ({

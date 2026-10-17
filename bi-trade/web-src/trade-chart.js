@@ -49,7 +49,7 @@ class TradeChart {
       )
       .join(
         '',
-      )}</div><span class="candle-unit">ETH</span><button data-chart="older">${t('更早记录', 'Earlier')}</button><button data-chart="latest" title="${t('返回最新成交', 'Return to latest trades')}">↗ ${t('最新', 'Latest')}</button></div><div class="candle-legend" aria-live="off"></div><div class="candle-surface"><div class="candle-canvas" role="img" aria-label="${t('实际成交K线与成交量，支持缩放和拖动', 'Trade candlesticks and volume. Drag to pan; scroll to zoom.')}" tabindex="0"></div><div class="candle-empty"></div></div><div class="candle-footer"><span class="candle-asof"></span><span>${t('成交价 / 成交量 · ETH', 'Execution price / volume · ETH')}</span></div><div class="market-tape"><div class="market-tape-title">${t('市场成交', 'Market trades')}<span>${t('模拟订单不计入市场成交量', 'Paper orders do not add market volume')}</span></div><div class="market-tape-rows"></div></div>`;
+      )}</div><span class="candle-unit">${t('单币价格 · ETH', 'Token price · ETH')}</span><button data-chart="older">${t('更早记录', 'Earlier')}</button><button data-chart="latest" title="${t('返回最新成交', 'Return to latest trades')}">↗ ${t('最新', 'Latest')}</button></div><div class="candle-legend" aria-live="off"></div><div class="candle-surface"><div class="candle-canvas" role="img" aria-label="${t('实际成交K线与成交量，支持缩放和拖动', 'Trade candlesticks and volume. Drag to pan; scroll to zoom.')}" tabindex="0"></div><div class="candle-empty"></div></div><div class="candle-footer"><span class="candle-asof"></span><span>${t('成交价 / 成交量 · ETH', 'Execution price / volume · ETH')}</span></div><div class="market-tape"><div class="market-tape-title">${t('市场成交', 'Market trades')}<span>${t('模拟订单不计入市场成交量', 'Paper orders do not add market volume')}</span></div><div class="market-tape-rows"></div></div>`;
     this.canvas = host.querySelector('.candle-canvas');
     this.chart = createChart(this.canvas, {
       autoSize: true,
@@ -385,7 +385,7 @@ class TradeChart {
   }
   legend(c, volume) {
     this.host.querySelector('.candle-legend').textContent = c
-      ? `O ${fmt(c.open)}   H ${fmt(c.high)}   L ${fmt(c.low)}   C ${fmt(c.close)}   ${t('量', 'Vol')} ${fmt(volume ?? c.volume)} ETH`
+      ? `O ${fmt(c.open)}   H ${fmt(c.high)}   L ${fmt(c.low)}   C ${fmt(c.close)} ETH   ${t('量', 'Vol')} ${fmt(volume ?? c.volume)} ETH`
       : 'O —   H —   L —   C —';
   }
   setFills(fills) {

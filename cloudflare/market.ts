@@ -91,6 +91,7 @@ export class CloudMarket {
   fxPersistAt = 0;
   head: any = { chain: 'bsc', connected: false, head: 0, headAt: 0, chainTime: 0 };
   refreshTask: any = null;
+  requestedRefreshes = new Map<string, Promise<any>>();
   discoveryAt = 0;
   memeOnly = false;
   cursor = 0;
@@ -702,6 +703,24 @@ export class CloudMarket {
     }
   }
   refresh(tokens: string[] = [], { limit = 2, onlyRequested = false }: any = {}) {
+    if (onlyRequested && tokens.length) {
+      const requested = [...new Set(tokens)].slice(0, 8),
+        id = [...requested].sort().join(':');
+      const pending = this.requestedRefreshes.get(id);
+      if (pending) return pending;
+      // An unrelated background batch does not satisfy an exact-token lookup.
+      // Queue behind it, sharing identical requests without starting another
+      // concurrent batch or extending the age of any market/risk evidence.
+      const task = (async () => {
+        while (this.refreshTask) await this.refreshTask;
+        return this.refreshBatch(requested, { limit, onlyRequested: true });
+      })().finally(() => this.requestedRefreshes.delete(id));
+      this.requestedRefreshes.set(id, task);
+      return task;
+    }
+    return this.refreshBatch(tokens, { limit, onlyRequested });
+  }
+  refreshBatch(tokens: string[], { limit, onlyRequested }: any) {
     if (this.refreshTask) return this.refreshTask;
     this.refreshTask = (async () => {
       try {

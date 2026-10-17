@@ -36,6 +36,10 @@ export function createManualTrading({
       symbol: String(m.symbol ?? m.address.slice(0, 10)).slice(0, 60),
       name: String(m.name ?? '').slice(0, 100),
       priceUsd: Number.isFinite(m.priceUsd) ? m.priceUsd : null,
+      priceEth:
+        m.priceUsd > 0 && Number.isFinite(m.nativeUsd) && m.nativeUsd > 0
+          ? m.priceUsd / m.nativeUsd
+          : null,
       at: m.updatedAt ?? null,
       stage: m.stage ?? null,
       quoteSymbol: m.quoteSymbol ?? 'ETH',
