@@ -20,7 +20,8 @@
     "cloud:deploy": "wrangler deploy",
     "test:all": "pnpm test && pnpm test:cloud && pnpm --dir paper-terminal test",
     "format:core": "prettier --write bi-trade/platform*.mjs bi-trade/lib/*.mjs cloudflare/*.mjs cloudflare/*.ts",
-    "check:format": "prettier --check bi-trade/platform*.mjs bi-trade/lib/*.mjs cloudflare/*.mjs cloudflare/*.ts"
+    "check:format": "prettier --check bi-trade/platform*.mjs bi-trade/lib/*.mjs cloudflare/*.mjs cloudflare/*.ts",
+    "build:trade-chart": "node bi-trade/build-trade-chart.mjs"
   },
   "dependencies": {
     "gmgn-cli": "^1.6.6",

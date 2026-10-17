@@ -841,6 +841,9 @@ export async function createPlatformCore(options) {
           '/dashboard': 'index.html',
           '/trade': 'trade.html',
           '/trade.js': 'trade.js',
+          '/trade-chart.js': 'trade-chart.js',
+          '/chart-LICENSE.txt': 'chart-LICENSE.txt',
+          '/chart-NOTICE.txt': 'chart-NOTICE.txt',
           '/trade.css': 'trade.css',
           '/docs': 'index.html',
           '/pair': 'index.html',
@@ -873,9 +876,11 @@ export async function createPlatformCore(options) {
                 ? 'text/css; charset=utf-8'
                 : asset.endsWith('.svg')
                   ? 'image/svg+xml'
-                  : asset.endsWith('.md')
-                    ? 'text/markdown; charset=utf-8'
-                    : 'text/html; charset=utf-8',
+                  : asset.endsWith('.txt')
+                    ? 'text/plain; charset=utf-8'
+                    : asset.endsWith('.md')
+                      ? 'text/markdown; charset=utf-8'
+                      : 'text/html; charset=utf-8',
           );
         throw fail('页面不存在', 404);
       }

@@ -6,6 +6,7 @@ import { isIP } from 'node:net';
 import worker, { TradingPlatform } from './dist/worker.mjs';
 import { localDurableContext } from './context.mjs';
 import { SqliteStorage } from './sqlite-storage.mjs';
+import { createCandleService } from './dist/candles.mjs';
 
 process.umask(0o077);
 const origin = process.env.SITE_ORIGIN ?? 'http://127.0.0.1:8797';
@@ -68,6 +69,7 @@ const env = {
 };
 const context = localDurableContext(storage);
 platform = new TradingPlatform(context, env);
+const charts = createCandleService(env);
 
 async function scheduleAlarm() {
   clearTimeout(timer);
@@ -110,18 +112,27 @@ const server = createServer(async (req, res) => {
         ? proxyIp
         : (req.socket.remoteAddress ?? 'local'),
     );
+    const disconnected = new AbortController();
+    res.once('close', () => disconnected.abort());
     const input = new Request(new URL(req.url, origin), {
       method: req.method,
       headers,
+      signal: disconnected.signal,
       ...(chunks.length ? { body: Buffer.concat(chunks) } : {}),
     });
-    const output = await worker.fetch(input, env);
+    const output = (await charts?.handle(input)) ?? (await worker.fetch(input, env));
     for (const [key, value] of output.headers) if (key !== 'set-cookie') res.setHeader(key, value);
     const cookies = output.headers.getSetCookie();
     if (cookies.length) res.setHeader('Set-Cookie', cookies);
     res.writeHead(output.status);
     if (req.method === 'HEAD' || !output.body) res.end();
-    else Readable.fromWeb(output.body).pipe(res);
+    else {
+      res.flushHeaders();
+      const body = Readable.fromWeb(output.body);
+      body.on('error', () => res.destroy());
+      res.once('close', () => body.destroy());
+      body.pipe(res);
+    }
   } catch (error) {
     console.error('HTTP request failed:', error?.name ?? 'UnknownError');
     if (!res.headersSent) res.writeHead(503, { 'Content-Type': 'application/json' });
@@ -140,6 +151,7 @@ async function shutdown() {
   if (stopping) return;
   stopping = true;
   clearTimeout(timer);
+  await charts?.close();
   const closed = new Promise((resolve, reject) =>
     server.close((error) => (error ? reject(error) : resolve())),
   );

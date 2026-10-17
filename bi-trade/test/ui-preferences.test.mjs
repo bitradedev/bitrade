@@ -7,7 +7,7 @@ import vm from 'node:vm';
 const web=resolve(dirname(fileURLToPath(import.meta.url)),'../web');
 test('manual trading renders both languages, escapes token names and keeps missing values unknown without provider details',()=>{
  for(const language of ['en','zh']){
-  const host={innerHTML:''},context={BiUI:{language,locale:language==='en'?'en-US':'zh-CN'},document:{activeElement:null,querySelector:s=>s==='#trade-main'?host:{addEventListener(){},scrollTop:0},addEventListener(){},getElementById(){return null}},setInterval(){}};
+  const host={innerHTML:''},context={BiUI:{language,locale:language==='en'?'en-US':'zh-CN'},document:{activeElement:null,querySelector:s=>s==='#trade-main'?host:s==='#chart-region'?null:{addEventListener(){},scrollTop:0},addEventListener(){},getElementById(){return null}},setInterval(){}};
   vm.createContext(context);vm.runInContext(readFileSync(resolve(web,'trade.js'),'utf8').replace('void boot();',''),context);
   vm.runInContext(`chosen={token:'0x'+'11'.repeat(20),symbol:'<img src=x onerror=alert(1)>',priceUsd:null,at:null,stage:'curve',reserveUsd:null,buyTaxPct:null,sellTaxPct:null};markets=[chosen];book={account:{balanceUsd:1000,balanceWei:'500000000000000000',realizedUsd:0,feesUsd:0,pending:0},positions:[],orders:[],fills:[]};render();`,context);
   assert.match(host.innerHTML,/&lt;img/);assert.doesNotMatch(host.innerHTML,/<img src=x|OpenAI|Cloudflare|rpc\.mainnet|connecting|正在连接/i);

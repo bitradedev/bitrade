@@ -175,6 +175,9 @@
   margin-top: 8px;
 }
 .token-metrics {
+  margin: 0;
+  padding: 0;
+  gap: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border-block: 1px solid var(--bi-border);
@@ -713,5 +716,223 @@
   .nav nav a[data-copy='home'],
   .nav nav a[data-copy='docs'] {
     display: block;
+  }
+}
+
+/* The terminal chart owns its canvas; account and quote updates leave it mounted. */
+.trade-shell {
+  max-width: 1840px;
+}
+.trade-title {
+  margin-bottom: 18px;
+}
+.trade-title h1 {
+  font-size: 23px;
+}
+.trade-layout {
+  grid-template-columns: 210px minmax(0, 1fr) 310px;
+}
+.trade-price-panel .token-head {
+  padding: 18px 22px;
+}
+.trade-price-panel .token-metrics > div {
+  padding: 11px 20px;
+}
+.price-chart {
+  height: auto;
+  padding: 0;
+}
+.candle-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--bi-border);
+}
+.candle-periods {
+  display: flex;
+  gap: 3px;
+}
+.candle-toolbar button {
+  border: 1px solid transparent;
+  background: none;
+  color: var(--bi-muted);
+  padding: 7px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  font:
+    11px Consolas,
+    monospace;
+  white-space: nowrap;
+}
+.candle-toolbar button:hover {
+  background: var(--bi-bg);
+}
+.candle-toolbar button[aria-pressed='true'] {
+  color: var(--bi-primary);
+  background: var(--bi-primary-tint);
+  border-color: var(--bi-primary-border);
+}
+.candle-toolbar button[data-chart='older'] {
+  margin-left: auto;
+}
+.candle-unit {
+  color: var(--bi-muted);
+  font:
+    10px Consolas,
+    monospace;
+  padding-left: 10px;
+  border-left: 1px solid var(--bi-border);
+}
+.candle-legend {
+  height: 35px;
+  padding: 11px 16px 5px;
+  font:
+    10px/1.7 Consolas,
+    monospace;
+  color: var(--bi-muted);
+  overflow: hidden;
+  white-space: nowrap;
+}
+.candle-surface {
+  position: relative;
+  height: 370px;
+}
+.candle-canvas {
+  width: 100%;
+  height: 100%;
+}
+.candle-empty {
+  position: absolute;
+  inset: 0 45px 35px 15px;
+  display: grid;
+  place-content: center;
+  pointer-events: none;
+  text-align: center;
+  color: var(--bi-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.candle-empty[hidden] {
+  display: none;
+}
+.candle-footer {
+  padding: 10px 16px 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--bi-muted);
+  font-size: 10px;
+  border-bottom: 1px solid var(--bi-border);
+}
+.chart-credit {
+  color: var(--bi-muted);
+  font-size: 9px;
+  text-decoration: none;
+}
+.chart-credit:hover {
+  color: var(--bi-primary);
+}
+.market-tape-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  font-size: 12px;
+  padding: 14px 17px;
+  background: var(--bi-bg);
+}
+.market-tape-title span {
+  font-size: 10px;
+  color: var(--bi-muted);
+}
+.market-tape-rows {
+  max-height: 195px;
+  overflow-y: auto;
+}
+.tape-row {
+  display: grid;
+  grid-template-columns: 1.4fr 0.5fr 1fr 1fr 0.5fr;
+  gap: 10px;
+  padding: 9px 17px;
+  border-top: 1px solid var(--bi-border);
+  text-decoration: none;
+  font:
+    10px/1.6 Consolas,
+    monospace;
+  color: var(--bi-fg);
+}
+.tape-row:hover {
+  background: var(--bi-primary-tint);
+}
+.tape-row span:last-child {
+  text-align: right;
+  color: var(--bi-muted);
+}
+.trade-order-panel {
+  position: sticky;
+  top: 18px;
+}
+@media (max-width: 1180px) {
+  .trade-layout {
+    grid-template-columns: 175px minmax(0, 1fr) 270px;
+    gap: 12px;
+  }
+  .trade-shell {
+    padding-inline: 14px;
+  }
+  .candle-toolbar {
+    gap: 3px;
+    padding-inline: 9px;
+  }
+  .candle-toolbar button {
+    padding-inline: 7px;
+  }
+}
+@media (max-width: 960px) {
+  .trade-layout {
+    grid-template-columns: minmax(0, 1fr) 270px;
+  }
+  .candle-surface {
+    height: 340px;
+  }
+}
+@media (max-width: 670px) {
+  .trade-layout {
+    display: flex;
+  }
+  .trade-order-panel {
+    position: static;
+  }
+  .candle-surface {
+    height: 300px;
+  }
+  .candle-toolbar {
+    gap: 2px;
+  }
+  .candle-toolbar button {
+    font-size: 10px;
+    padding-inline: 7px;
+  }
+  .candle-unit {
+    padding-left: 6px;
+  }
+  .candle-footer {
+    font-size: 9px;
+    padding-inline: 12px;
+  }
+  .candle-legend {
+    font-size: 9px;
+    padding-left: 12px;
+  }
+  .market-tape-title span {
+    max-width: 55%;
+    text-align: right;
+    font-size: 9px;
+  }
+  .tape-row {
+    font-size: 9px;
+    padding-inline: 12px;
+    gap: 6px;
   }
 }

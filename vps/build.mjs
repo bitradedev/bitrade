@@ -13,3 +13,11 @@ await build({
   target: 'node24',
   alias: { 'cloudflare:workers': './vps/workers-shim.mjs' },
 });
+await build({
+  entryPoints: ['vps/candles.mjs'],
+  outfile: 'vps/dist/candles.mjs',
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node24',
+});

@@ -27,6 +27,8 @@ jobs:
         run: |
           pnpm build:agent-desk
           git diff --exit-code -- bi-trade/web/agent-desk.js
+          pnpm build:trade-chart
+          git diff --exit-code -- bi-trade/web/trade-chart.js bi-trade/web/chart-LICENSE.txt bi-trade/web/chart-NOTICE.txt
           node vps/build.mjs
           node --test --test-isolation=none vps/test/*.test.mjs
       - name: Test product, Cloudflare runtime and research terminal
