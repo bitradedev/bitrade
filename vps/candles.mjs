@@ -143,7 +143,7 @@ export class CandleRepository {
       throw e;
     }
   }
-  bars(token, interval) {
+  bars(token, interval, first = 0, last = Number.MAX_SAFE_INTEGER) {
     return this.db
       .prepare(
         `SELECT time,
@@ -152,18 +152,18 @@ export class CandleRepository {
       FROM (SELECT *, CAST(ts / ? AS INTEGER) * ? AS time,
         ROW_NUMBER() OVER(PARTITION BY CAST(ts / ? AS INTEGER) ORDER BY block,idx) AS first,
         ROW_NUMBER() OVER(PARTITION BY CAST(ts / ? AS INTEGER) ORDER BY block DESC,idx DESC) AS last
-        FROM chart_trades WHERE token=?) GROUP BY time ORDER BY time DESC LIMIT 600`,
+        FROM chart_trades WHERE token=? AND block>=? AND block<=?) GROUP BY time ORDER BY time DESC LIMIT 600`,
       )
-      .all(interval, interval, interval, interval, token)
+      .all(interval, interval, interval, interval, token, first, last)
       .reverse()
       .map((r) => ({ ...r }));
   }
-  recent(token) {
+  recent(token, first = 0, last = Number.MAX_SAFE_INTEGER) {
     return this.db
       .prepare(
-        'SELECT tx,ts,price,volume,buy,venue FROM chart_trades WHERE token=? ORDER BY block DESC,idx DESC LIMIT 30',
+        'SELECT tx,ts,price,volume,buy,venue FROM chart_trades WHERE token=? AND block>=? AND block<=? ORDER BY block DESC,idx DESC LIMIT 30',
       )
-      .all(token)
+      .all(token, first, last)
       .map((r) => ({ ...r, buy: !!r.buy }));
   }
   close() {
@@ -354,14 +354,33 @@ export class CandleService {
       for (const key of this.cache.keys()) if (key.startsWith(token + ':')) this.cache.delete(key);
     }
     if (older && cursor && this.now() - (cursor.olderAt ?? 0) < 5000) return;
+    // Returning visitors need the latest executions first. Do not serialize
+    // hours of dense historical catch-up ahead of the current quote window.
+    const resumeRecent =
+      cursor &&
+      !older &&
+      (!Number.isFinite(cursor.throughAt) || head.time - cursor.throughAt > 60000);
     const to = older && cursor ? cursor.first - 1 : head.number;
     if (to < 1) return;
     const from =
-      older || !cursor ? Math.max(1, to - 19999) : Math.max(cursor.first, cursor.last - 8);
-    const result = await this.scan(meta, from, Math.min(to, from + 19999), older || !cursor);
+      older || !cursor || resumeRecent
+        ? Math.max(1, to - 19999)
+        : Math.max(cursor.first, cursor.last - 8);
+    const result = await this.scan(
+      meta,
+      from,
+      Math.min(to, from + 19999),
+      older || !cursor || resumeRecent,
+    );
+    // Preserve older cache rows, but expose one verified contiguous interval.
+    // Earlier requests revalidate the adjacent range before joining it back.
+    const first =
+      cursor && result.from > cursor.last + 1
+        ? result.from
+        : Math.min(cursor?.first ?? result.from, result.from);
     const next = {
-      first: Math.min(cursor?.first ?? result.from, result.from),
-      firstAt: result.from < (cursor?.first ?? Infinity) ? result.firstAt : cursor.firstAt,
+      first,
+      firstAt: first === result.from ? result.firstAt : cursor.firstAt,
       last: Math.max(cursor?.last ?? result.to, result.to),
       hash: result.to >= (cursor?.last ?? 0) ? result.hash : cursor.hash,
       throughAt: result.to >= (cursor?.last ?? 0) ? result.throughAt : cursor.throughAt,
@@ -381,8 +400,8 @@ export class CandleService {
         chainId: 4663,
         currency: 'ETH',
         interval,
-        candles: this.repo.bars(token, interval),
-        trades: this.repo.recent(token),
+        candles: this.repo.bars(token, interval, cursor?.first, cursor?.last),
+        trades: this.repo.recent(token, cursor?.first, cursor?.last),
         revision: cursor?.revision ?? 0,
         firstAt: cursor?.firstAt ?? null,
         throughAt: cursor?.throughAt ?? null,

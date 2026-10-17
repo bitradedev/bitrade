@@ -379,6 +379,56 @@ test('a busy market catches up past the replay overlap instead of endlessly resc
   assert.equal(last, 200);
 });
 
+test('reopening an inactive dense market serves the latest contiguous window without erasing earlier cached trades', async (t) => {
+  const f = fixture(t);
+  for (let n = 1; n <= 500; n++) f.logs.push(log(n));
+  await f.service.sync(TOKEN);
+  const original = f.service.repo.cursor(TOKEN);
+  f.advance(500);
+  await f.service.sync(TOKEN);
+  const current = f.service.repo.cursor(TOKEN),
+    snapshot = f.service.snapshot(TOKEN, 60);
+  assert.equal(
+    current.last,
+    500,
+    'A returning visitor must reach the current head in one bounded scan',
+  );
+  assert.equal(snapshot.delayed, false);
+  assert.ok(current.first > original.last + 1);
+  assert.equal(
+    f.service.repo.db.prepare('SELECT COUNT(*) n FROM chart_trades WHERE block=100').get().n,
+    1,
+    'Earlier chart rows remain cached',
+  );
+  assert.ok(snapshot.trades.every((row) => row.ts * 1000 >= current.firstAt));
+  assert.ok(
+    snapshot.candles.every((row) => row.time >= Math.floor(current.firstAt / 60000) * 60),
+    'Unverified gaps are not stitched into the visible window',
+  );
+  await f.service.sync(TOKEN, true);
+  const older = f.service.repo.cursor(TOKEN);
+  assert.ok(older.first < current.first);
+  assert.equal(older.last, 500);
+  assert.ok(f.service.snapshot(TOKEN, 60).trades.every((row) => row.ts * 1000 >= older.firstAt));
+});
+
+test('a failed latest-window scan retains every original candle and its actual time', async (t) => {
+  const f = fixture(t);
+  f.logs.push(log());
+  await f.service.sync(TOKEN);
+  const before = f.service.snapshot(TOKEN, 60),
+    cursor = f.service.repo.cursor(TOKEN);
+  f.advance(10000);
+  f.rpc.request = async () => {
+    throw Error('Unavailable');
+  };
+  await assert.rejects(f.service.sync(TOKEN), /Unavailable/);
+  const after = f.service.snapshot(TOKEN, 60);
+  assert.deepEqual(after.candles, before.candles);
+  assert.equal(after.throughAt, before.throughAt);
+  assert.deepEqual(f.service.repo.cursor(TOKEN), cursor);
+});
+
 test('public chart endpoints reject invalid inputs and mutation; origin proxy secret cannot be bypassed', async (t) => {
   const f = fixture(t);
   for (const [query, status] of [

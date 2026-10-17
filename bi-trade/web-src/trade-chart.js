@@ -326,6 +326,7 @@ class TradeChart {
       return;
     // A late history response must never overwrite a newer stream revision.
     if (history && this.revision !== null && data.revision < this.revision) return;
+    if (this.throughAt && data.firstAt > this.throughAt) this.needsFit = true;
     const candles = data.candles.filter(
       (c) =>
         Number.isInteger(c.time) &&
