@@ -103,3 +103,15 @@ not constrain personal Agents or prevent exits. Platform AI remains paused.
 
 Sources: [Pons V2](https://docs.ponsfamily.com/v2),
 [Robinhood Chain](https://docs.robinhood.com/chain/connecting/).
+
+
+## Manual paper trading
+
+Visit `/trade` to make your own Pons V2 paper decisions without connecting an Agent.
+Each browser Owner has one separate 1000 USD manual account on Robinhood Chain.
+This account does not spend Agent capital and cannot be paired as an external Agent,
+changed to live mode or refilled by reopening the page. Keep the same browser cookies.
+Preview buys in USD or ETH; sell a percentage of an existing position. Confirmation
+submits an idempotent order for later-block matching, subject to fees, balance,
+verified route and 30% slippage. No real transaction is signed or broadcast.
+The chart shows recorded price observations, not a full historical candle feed.

@@ -12,6 +12,7 @@ import { OwnerAuth, address, COOKIE } from './lib/auth.mjs';
 import { tradingNetwork } from './lib/trading-network.mjs';
 
 import { PaperDesk } from './lib/paper-desk.mjs';
+import { createManualTrading } from './lib/manual-trading.mjs';
 import { PAPER_EXECUTION_POLICY } from './lib/paper-execution-policy.mjs';
 import { LiveDesk, swapIntent, executionError } from './lib/live-desk.mjs';
 import { BscRpc, v2Abi, ROUTER_V2 } from './lib/bsc-rpc.mjs';
@@ -215,7 +216,7 @@ export async function createPlatformCore(options) {
     recoverLocks = new Set();
   function limit(req, kind, max, ms = 60000) {
     let scope = 'ip:' + (req.clientAddress ?? req.socket.remoteAddress);
-    if (['requests', 'agent'].includes(kind)) {
+    if (['requests', 'agent', 'manual-lookup', 'manual-quote', 'manual-trade'].includes(kind)) {
       const session = auth.session(req);
       if (session) scope = 'owner:' + session.owner.id;
       else {
@@ -242,6 +243,7 @@ export async function createPlatformCore(options) {
   function own(session, id, includeClosed = false) {
     const a = store.get('agents', id);
     if (!a || a.ownerId !== session.owner.id) throw fail('Agent不存在或不属于此账户', 404);
+    if (a.source === 'manual') throw fail('请在手动模拟页面管理此账户', 409);
     if (a.closedAt && !includeClosed) throw fail('账户已关闭，请先恢复并重连Agent', 409);
     return a;
   }
@@ -283,7 +285,9 @@ export async function createPlatformCore(options) {
     };
   }
   function state(session) {
-    const agents = session ? store.byOwner('agents', session.owner.id) : [],
+    const agents = session
+        ? store.byOwner('agents', session.owner.id).filter((a) => a.source !== 'manual')
+        : [],
       orders = agents.flatMap((a) => [...paper.orders(a.id), ...live.orders(a.id)]),
       seen = new Set(orders.map((o) => o.id));
     orders.push(
@@ -319,7 +323,11 @@ export async function createPlatformCore(options) {
   function pair(session, id = null, avatar = 'trend') {
     const existing = id ? own(session, id) : null;
     validateAvatar(avatar);
-    if (store.byOwner('agents', session.owner.id).filter((a) => !a.closedAt).length >= 20 && !id)
+    if (
+      store.byOwner('agents', session.owner.id).filter((a) => !a.closedAt && a.source !== 'manual')
+        .length >= 20 &&
+      !id
+    )
       throw fail('每个账户最多20个Agent');
     const code = randomBytes(24).toString('hex'),
       p = {
@@ -355,7 +363,10 @@ export async function createPlatformCore(options) {
       if (p.agentId && (!a || a.ownerId !== p.ownerId || a.closedAt))
         throw fail('重连目标无效', 403);
       if (!a) {
-        if (store.byOwner('agents', p.ownerId).filter((a) => !a.closedAt).length >= 20)
+        if (
+          store.byOwner('agents', p.ownerId).filter((a) => !a.closedAt && a.source !== 'manual')
+            .length >= 20
+        )
           throw fail('账户Agent数量达到上限');
         const id = identifier();
         a = {
@@ -460,6 +471,7 @@ export async function createPlatformCore(options) {
               token,
               amount: String(amount),
               side: action === 'sell_token' ? 'sell' : 'buy',
+              ...(a.source === 'manual' ? { minOutput: args.minOutput } : {}),
               reason: args.reason,
             }),
           );
@@ -519,6 +531,15 @@ export async function createPlatformCore(options) {
       throw e;
     }
   }
+  const manual = createManualTrading({
+    store,
+    paper,
+    vault,
+    gateway,
+    network,
+    execute,
+    visibleOrder,
+  });
   function touchAgent(a, name) {
     const current = store.get('agents', a.id);
     if (!current || current.closedAt) throw fail('账户已关闭，连接已撤销', 401);
@@ -703,6 +724,8 @@ export async function createPlatformCore(options) {
             );
           return send(res, 200, state(s));
         }
+        if (path === '/api/manual') return send(res, 200, manual.view(ownerSession(req)));
+        if (path === '/api/manual/markets') return send(res, 200, manual.markets());
         if (path === '/api/public') {
           await Promise.allSettled(
             store
@@ -816,6 +839,9 @@ export async function createPlatformCore(options) {
           '/': 'intro.html',
           '/home': 'index.html',
           '/dashboard': 'index.html',
+          '/trade': 'trade.html',
+          '/trade.js': 'trade.js',
+          '/trade.css': 'trade.css',
           '/docs': 'index.html',
           '/pair': 'index.html',
           '/playbook': 'index.html',
@@ -929,6 +955,27 @@ export async function createPlatformCore(options) {
         return send(res, 200, state({ owner: issued.owner, csrf: issued.csrf }));
       }
       const s = ownerSession(req, true);
+      if (path.startsWith('/api/manual/')) {
+        if (options.readOnly) throw fail('模拟交易暂时不可用，请稍后重试', 503);
+        if (path === '/api/manual/start') {
+          fields(data, []);
+          return send(res, 200, manual.start(s));
+        }
+        if (path === '/api/manual/lookup') {
+          limit(req, 'manual-lookup', 15);
+          return send(res, 200, await manual.lookup(s, data));
+        }
+        if (path === '/api/manual/preview') {
+          limit(req, 'manual-quote', 15);
+          return send(res, 200, await manual.preview(s, data));
+        }
+        if (path === '/api/manual/order') {
+          limit(req, 'manual-trade', 20);
+          return send(res, 200, await manual.submit(s, data));
+        }
+        if (path === '/api/manual/cancel') return send(res, 200, manual.cancel(s, data));
+        throw fail('页面不存在', 404);
+      }
       if (path === '/api/logout') {
         fields(data, []);
         store.db.prepare('DELETE FROM credentials WHERE hash=?').run(s.hash);

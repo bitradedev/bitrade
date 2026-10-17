@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#f6f8fc" />
+    <title>Paper trading · BI Trade</title>
+    <meta
+      name="description"
+      content="Trade Pons V2 tokens on Robinhood Chain with virtual funds and real market quotes."
+    />
+    <link rel="icon" href="/orb.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/style.css" />
+    <link rel="stylesheet" href="/theme.css?v=20261013-1" />
+    <link rel="stylesheet" href="/trade.css?v=20261017-1" />
+    <script src="/ui-catalog.js?v=20261017-1"></script>
+    <script src="/ui-preferences.js?v=20261017-1"></script>
+    <script defer src="/trade.js?v=20261017-1"></script>
+  </head>
+  <body>
+    <a class="skip" href="#trade-main">Skip to trading</a>
+    <header class="nav">
+      <a class="logo" href="/home"
+        ><img src="/orb.svg" alt="" width="36" height="36" />bi<span>trade</span><i></i
+      ></a>
+      <nav aria-label="Navigation">
+        <a href="/home" data-copy="home">Overview</a
+        ><a href="/trade" aria-current="page" data-copy="trade">Paper trading</a
+        ><a href="/dashboard" data-copy="agents">My Agents</a
+        ><a href="/docs" data-copy="docs">Docs</a>
+      </nav>
+      <div class="nav-actions">
+        <a
+          class="social-link"
+          href="https://x.com/BITradeAgent"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="BI Trade on X"
+          >𝕏</a
+        >
+      </div>
+    </header>
+    <main id="trade-main" class="trade-shell"></main>
+    <div id="trade-toast" role="status" aria-live="polite"></div>
+    <dialog id="trade-confirm" aria-labelledby="confirm-title">
+      <div id="confirm-content"></div>
+    </dialog>
+  </body>
+</html>

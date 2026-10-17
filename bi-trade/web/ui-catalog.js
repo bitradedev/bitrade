@@ -858,3 +858,7 @@ window.BI_UI_EN = {
 "Agent 接入说明 ↗":"Agent integration guide ↗",
 "请保留当前浏览器的 Cookie；清除会话或更换设备暂不支持找回。":"Keep this browser’s cookies. Recovery after clearing the session or switching devices is not available yet."
 };
+
+Object.assign(window.BI_UI_EN,{'手动模拟':'Paper trading','手动模拟 ↗':'Paper trading ↗'});
+
+Object.assign(window.BI_UI_EN,{'想自己买卖？':'Want to place your own trades?','打开手动模拟页面，无需接入 Agent；独立 1000U 账户，保留持仓和成交记录。':'Open paper trading without connecting an Agent. Start with a separate 1,000 USD account and retain positions and trade history.'});

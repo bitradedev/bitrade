@@ -43,6 +43,7 @@ const ASSET_ROUTES: any = {
   '/': 'intro.html',
   '/home': 'index.html',
   '/dashboard': 'index.html',
+  '/trade': 'trade.html',
   '/docs': 'index.html',
   '/pair': 'index.html',
   '/playbook': 'index.html',

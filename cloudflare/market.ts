@@ -236,7 +236,14 @@ export class CloudMarket {
           throw Error('Unverified identity');
       } catch (error: any) {
         if (error?.code === 'CF_SUBREQUEST_BUDGET') throw error;
-        throw Object.assign(Error('该代币尚未核实为当前支持的 BSC Meme 交易路线'), { status: 409 });
+        throw Object.assign(
+          Error(
+            this.chain === 'robinhood'
+              ? '该代币尚未核实为当前支持的 Pons V2 交易路线'
+              : '该代币尚未核实为当前支持的 BSC Meme 交易路线',
+          ),
+          { status: 409 },
+        );
       }
       if (!this.catalog.has(token)) {
         this.catalog.set(token, {
@@ -278,7 +285,7 @@ export class CloudMarket {
       headAt: Date.now(),
       chainTime: b.time,
       hash: b.hash,
-      lastError: Math.abs(Date.now() - b.time) <= 15000 ? '' : 'BSC 链头时间已过期',
+      lastError: Math.abs(Date.now() - b.time) <= 15000 ? '' : this.chain + '链头时间已过期',
     };
     return b;
   }

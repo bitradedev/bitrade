@@ -13,3 +13,5 @@
 - The user explicitly paused the platform AI on 2026-10-15. Keep BI_TRADE_SHOWCASE_PAUSED=true on the VPS and Cloudflare; do not resume built-in Agents or their automatic exits without a new user request. Preserve account balances, losses and history.
 
 - Trading focus is Robinhood Chain mainnet (4663, ETH), primarily Pons V2. Do not use Flap or BSC markets as a fallback for this network. Keep the old BSC ledger separate and unchanged; never relabel BNB as ETH. The user explicitly removed all BSC content from the website, including its former token contract, token section and archive links. Preserve old records only in private backups; do not expose or reuse them in current trading.
+
+- The user authorized a separate manual paper-trading page on 2026-10-16. Use one persistent 1000 USD manual account per Owner/network, separate from Agent capital; no refill/reset, real signing or automatic AI resumption. Require Owner session and CSRF, exact quotes, known sell quantities, fee-aware balance checks and 30% later-block slippage. User previews must not become fictitious instant fills.
