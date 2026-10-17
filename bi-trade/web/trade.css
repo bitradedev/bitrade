@@ -909,6 +909,7 @@
   }
   .candle-toolbar {
     gap: 2px;
+    flex-wrap: wrap;
   }
   .candle-toolbar button {
     font-size: 10px;
@@ -916,6 +917,7 @@
   }
   .candle-unit {
     padding-left: 6px;
+    white-space: nowrap;
   }
   .candle-footer {
     font-size: 9px;
