@@ -27,6 +27,17 @@ test('manual prices distinguish USD and ETH and never guess an unknown market is
  }
 });
 
+test('manual token avatars use original images in the list and heading, escape metadata and fall back on a failed image',()=>{
+ const events={},host={innerHTML:''},context={URL,BiUI:{language:'en',locale:'en-US'},document:{activeElement:null,querySelector:s=>s==='#trade-main'?host:s==='#chart-region'?null:{addEventListener(){},scrollTop:0},addEventListener(type,fn){events[type]=fn;},getElementById(){return null}},setInterval(){}};
+ vm.createContext(context);vm.runInContext(readFileSync(resolve(web,'trade.js'),'utf8').replace('void boot();',''),context);
+ vm.runInContext(`chosen={token:'0x'+'11'.repeat(20),symbol:'COVENANT',logo:'https://cdn.example.org/original.png',priceUsd:0.000075,at:Date.now(),stage:'dex'};markets=[chosen];render();`,context);
+ assert.equal((host.innerHTML.match(/src="https:\/\/cdn.example.org\/original.png"/g)??[]).length,2);
+ assert.match(host.innerHTML,/referrerpolicy="no-referrer"/);assert.doesNotMatch(host.innerHTML,/onerror=/);
+ let removed=false;events.error({target:{matches:()=>true,remove(){removed=true;}}});assert.equal(removed,true);
+ vm.runInContext(`chosen.logo='javascript:alert(1)';chosen.symbol='<script>';render();`,context);assert.doesNotMatch(host.innerHTML,/src="javascript|<script>/);assert.match(host.innerHTML,/&lt;script&gt;/);
+ vm.runInContext(`chosen.logo=null;chosen.symbol='';render();`,context);assert.match(host.innerHTML,/◇/);
+});
+
 test('a manually searched token refreshes even when it is outside the discovery list; failures retain the original price time',async()=>{
  let poll,lookupCalls=0,fail=false;
  const token='0x'+'11'.repeat(20),observedAt=Date.now()-2000;
@@ -35,7 +46,7 @@ test('a manually searched token refreshes even when it is outside the discovery 
  context.reply=async(path)=>{if(path==='/api/manual')return {account:null,positions:[],orders:[],fills:[]};if(path==='/api/manual/markets')return {markets:[]};if(path==='/api/manual/lookup'){lookupCalls++;if(fail)throw Error('Unavailable');return {market:{token,symbol:'COVENANT',priceUsd:0.000075,at:observedAt},points:[]};}throw Error('Unexpected route');};
  vm.runInContext(`render=()=>{};api=reply;owner=true;chosen={token:'${token}',symbol:'Unknown',priceUsd:null,at:null};lastLookup=Date.now()-30000;`,context);
  await poll();assert.equal(lookupCalls,1);assert.equal(vm.runInContext('chosen.symbol',context),'COVENANT');assert.equal(vm.runInContext('chosen.at',context),observedAt);
- fail=true;vm.runInContext('lastLookup=Date.now()-30000',context);await poll();assert.equal(lookupCalls,2);assert.equal(vm.runInContext('chosen.at',context),observedAt);assert.equal(vm.runInContext('lookupPending',context),0);
+ fail=true;vm.runInContext('lastLookup=Date.now()-30000',context);await poll();assert.equal(lookupCalls,2);assert.equal(vm.runInContext('chosen.at',context),observedAt);assert.equal(vm.runInContext('lookupPending',context),0);assert.equal(vm.runInContext('markets[0].symbol',context),'COVENANT');
 });
 function preferences(values={}){
  const readKeys=[],root={dataset:{}},context={window:{},localStorage:{getItem:key=>{readKeys.push(key);return values[key]??null;}},document:{documentElement:root,readyState:'loading',addEventListener(){}}};vm.createContext(context);

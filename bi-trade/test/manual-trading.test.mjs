@@ -56,9 +56,10 @@ test('manual real-quote previews do not fill, submissions are idempotent, partia
 
 test('manual market prices expose USD and ETH from the same observed quote without creating a financial account',async t=>{
  const f=await fixture(t),s=await f.owner(),at=Date.now();
- f.g.getMarket=()=>({address:TOKEN,chain:'robinhood',symbol:'COVENANT',quality:'verified',updatedAt:at,priceUsd:.000075,nativeUsd:2424.8,stage:'dex'});
+ f.g.getMarket=()=>({address:TOKEN,chain:'robinhood',symbol:'COVENANT',quality:'verified',updatedAt:at,priceUsd:.000075,nativeUsd:2424.8,stage:'dex',logo:'https://cdn.example.org/original.png'});
  let r=await f.call('/api/manual/lookup',{token:TOKEN},s);
  assert.equal(r.status,200);assert.equal(r.value.market.priceUsd,.000075);assert.equal(r.value.market.priceEth,.000075/2424.8);assert.equal(r.value.market.at,at);assert.equal(r.value.market.stage,'dex');
+ assert.equal(r.value.market.logo,'https://cdn.example.org/original.png');
  assert.equal(f.store.all('paper-accounts').length,0);assert.equal(f.store.all('paper-orders').length,0);
  f.g.getMarket=()=>({address:TOKEN,chain:'robinhood',quality:'verified',updatedAt:at,priceUsd:.000075,nativeUsd:null});
  r=await f.call('/api/manual/lookup',{token:TOKEN},s);assert.equal(r.value.market.priceEth,null);

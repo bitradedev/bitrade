@@ -1,5 +1,6 @@
 import { address } from './auth.mjs';
 import { digest, identifier, fail, fields, raw } from './database-core.mjs';
+import { tokenLogo } from './token-logo.mjs';
 
 const pending = new Set(['preparing', 'queued', 'quoting']);
 const outsideRaw = (q) =>
@@ -35,6 +36,7 @@ export function createManualTrading({
       token: m.address,
       symbol: String(m.symbol ?? m.address.slice(0, 10)).slice(0, 60),
       name: String(m.name ?? '').slice(0, 100),
+      logo: tokenLogo(m.logo),
       priceUsd: Number.isFinite(m.priceUsd) ? m.priceUsd : null,
       priceEth:
         m.priceUsd > 0 && Number.isFinite(m.nativeUsd) && m.nativeUsd > 0

@@ -81,6 +81,18 @@ test('Pons curve and V4 volume counts exactly one quote side, rejects other curv
  const v4={...log,address:'0x8366a39cc670b4001a1121b8f6a443a643e40951',topics:v4topics,data:v4data};assert.equal(turnoverRows([v4],{kind:'v4',token:TOKEN,quote:ZERO,key},90,100,null)[0].quoteRaw,'100');assert.throws(()=>turnoverRows([{...v4,topics:[v4topics[0],hash,...v4topics.slice(2)]}],{kind:'v4',token:TOKEN,quote:ZERO,key},90,100,null));
 });
 
+test('Pons original logo metadata is optional and never blocks verified name, decimals or issuance',async t=>{
+ const store=chainStore(repository(t),'robinhood');let missing=false;
+ const source=new RobinhoodData(store,{block:async()=>({number:100,hash}),request:async()=> '0x1234',read:async(_to,_abi,name)=>{
+  if(name==='getLaunchedToken')return {exists:true,token:TOKEN,curve:CURVE,phase:2,pairToken:ZERO};
+  if(name==='name')return 'Covenant x402';if(name==='symbol')return 'COVENANT';if(name==='decimals')return 18;
+  if(name==='getTokenInfo'){if(missing)throw Error('Optional image unavailable');return [WALLET,'https://cdn.example.org/original.png','',{}];}
+  throw Error('Unexpected read');
+ }});
+ const info=await source.metadata(TOKEN);assert.equal(info.info.logo,'https://cdn.example.org/original.png');assert.equal(info.pons.decimals,18);
+ missing=true;const retained=await source.metadata(TOKEN);assert.equal(retained.info.logo,null);assert.equal(retained.info.symbol,'COVENANT');assert.equal(retained.pons.decimals,18);
+});
+
 test('Pons quotes distinguish actual reserves and counterfactual reverse previews without inheriting recipient exemptions',async()=>{
  const recipients=[];const rpc={chain:'robinhood',read:async(_address,_abi,name,args,_block,recipient)=>{if(name==='currentSnipeTaxBps'){recipients.push([args[0],recipient]);return 100n;}return {getReserves:[2n*10n**18n,1000n*10n**18n],sellableTokens:500n*10n**18n,readyToGraduate:false,graduated:false,realQuoteReserve:0n,feeBps:100n,creatorTaxBps:50n}[name];}};
  const v=new Venues(rpc,{verifyPonsReserve:true}),route={kind:'pons-v2',token:TOKEN,quote:ZERO,curve:CURVE};await assert.rejects(v.quote(route,'sell',10n**18n,100,WALLET),/储备不足/);

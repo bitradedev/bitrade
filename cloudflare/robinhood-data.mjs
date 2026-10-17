@@ -7,6 +7,7 @@ import {
 } from '../paper-terminal/src/server/adapters/types.js';
 import { PONS_V2_ABI, ERC20 } from '../paper-terminal/src/server/adapters/abi.js';
 import { poolId } from '../paper-terminal/src/server/adapters/venues.js';
+import { tokenLogo } from '../bi-trade/lib/token-logo.mjs';
 
 export const PONS_EVENTS = parseAbi([
   'event TokenLaunched(address indexed token,address indexed curve,address indexed deployer,address pairToken,uint256 launchConfigId,uint256 graduationThreshold)',
@@ -202,10 +203,11 @@ export class RobinhoodData {
   async metadata(token) {
     const e = await this.evidence(token),
       block = e.block;
-    const [name, symbol, decimals] = await Promise.all([
+    const [name, symbol, decimals, info] = await Promise.all([
       this.rpc.read(token, DETAILS, 'name', [], block),
       this.rpc.read(token, DETAILS, 'symbol', [], block),
       this.rpc.read(token, ERC20, 'decimals', [], block),
+      this.rpc.read(token, DETAILS, 'getTokenInfo', [], block).catch(() => null),
     ]);
     const old = this.store.get('pons-launches', token);
     if (old && (old.name !== name || old.symbol !== symbol))
@@ -219,7 +221,14 @@ export class RobinhoodData {
       at: e.at,
       source: 'pons-v2',
       pons: { ...e.state, decimals: Number(decimals), codeHash: e.codeHash },
-      info: { address: token, name, symbol, liquidity: null, price: {} },
+      info: {
+        address: token,
+        name,
+        symbol,
+        logo: tokenLogo(info?.[1]),
+        liquidity: null,
+        price: {},
+      },
       security: { address: token, is_honeypot: null, buy_tax: null, sell_tax: null },
     };
   }
